@@ -1,95 +1,69 @@
 // === UnStableCoin Leaderboard + Game API ===
 // by UnStableCoin community ⚡
-// Now using JSONBin.io for persistent storage
 
 const express = require("express");
 const bodyParser = require("body-parser");
-const fs = require("fs");
-const fetch = require("node-fetch");
 const TelegramBot = require("node-telegram-bot-api");
 const cors = require("cors");
+const axios = require("axios");
 require("dotenv").config();
 
-// --- ENV VARS ---
+// === Environment ===
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const BIN_ID = process.env.JSONBIN_ID;
-const BIN_KEY = process.env.JSONBIN_KEY;
+const JSONBIN_ID = process.env.JSONBIN_ID;
+const JSONBIN_KEY = process.env.JSONBIN_KEY;
 
-if (!token || !BIN_ID || !BIN_KEY) {
-  console.error("❌ Missing TELEGRAM_BOT_TOKEN or JSONBIN credentials!");
+if (!token || !JSONBIN_ID || !JSONBIN_KEY) {
+  console.error("❌ Missing environment variables (TOKEN / JSONBIN_ID / JSONBIN_KEY)");
   process.exit(1);
 }
 
-// --- Start bot + webserver ---
+// === Telegram bot + webserver ===
 const bot = new TelegramBot(token, { polling: true });
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json());
 
-// === Local cache ===
-let scores = {};
-const LOCAL_FILE = "scores.json";
+// === JSONBin config ===
+const BIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 
-// Try to load from local cache
-if (fs.existsSync(LOCAL_FILE)) {
+// === Helper functions ===
+async function getScores() {
   try {
-    scores = JSON.parse(fs.readFileSync(LOCAL_FILE));
-  } catch (err) {
-    console.error("⚠️ Failed to parse local scores.json:", err);
-  }
-}
-
-// === JSONBin helper functions ===
-async function loadFromJSONBin() {
-  try {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-      headers: {
-        "X-Master-Key": BIN_KEY,
-      },
+    const res = await axios.get(BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
     });
-    const data = await res.json();
-    if (data?.record) {
-      scores = data.record;
-      console.log("✅ Scores loaded from JSONBin:", Object.keys(scores).length, "entries");
-      return true;
-    }
+    return res.data.record || {};
   } catch (err) {
-    console.error("⚠️ Could not load from JSONBin:", err.message);
+    console.error("⚠️ Failed to fetch scores:", err.message);
+    return {};
   }
-  return false;
 }
 
-async function saveToJSONBin() {
+async function saveScores(scores) {
   try {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-      method: "PUT",
+    await axios.put(BIN_URL, scores, {
       headers: {
         "Content-Type": "application/json",
-        "X-Master-Key": BIN_KEY,
-      },
-      body: JSON.stringify(scores, null, 2),
+        "X-Master-Key": JSONBIN_KEY
+      }
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    console.log("✅ Scores saved to JSONBin");
   } catch (err) {
-    console.error("⚠️ JSONBin save failed, writing local backup:", err.message);
-    fs.writeFileSync(LOCAL_FILE, JSON.stringify(scores, null, 2));
+    console.error("⚠️ Failed to save scores:", err.message);
   }
 }
 
-// === Initialize from JSONBin ===
-loadFromJSONBin();
-
 // === REST endpoints ===
-app.get("/leaderboard", (req, res) => {
+app.get("/leaderboard", async (req, res) => {
+  const scores = await getScores();
   const sorted = Object.entries(scores)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([username, score]) => ({ username, score }));
-  res.json(sorted);
+    .slice(0, 10);
+  res.json(sorted.map(([username, score]) => ({ username, score })));
 });
 
-app.get("/top10", (req, res) => {
+app.get("/top10", async (req, res) => {
+  const scores = await getScores();
   const sorted = Object.entries(scores)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
@@ -103,16 +77,16 @@ app.post("/submit", async (req, res) => {
     return res.status(400).json({ error: "Missing username or score" });
   }
 
-  // Save only if higher
+  const scores = await getScores();
   if (!scores[username] || score > scores[username]) {
     scores[username] = score;
-    await saveToJSONBin();
+    await saveScores(scores);
   }
 
   res.json({ success: true, message: "Score saved", username, score });
 });
 
-// === Telegram Bot Commands ===
+// === Telegram commands ===
 bot.onText(/\/start/, (msg) => {
   const user = msg.from.username ? `@${msg.from.username}` : msg.from.first_name || "player";
   const text = [
@@ -124,7 +98,7 @@ bot.onText(/\/start/, (msg) => {
     `/play – Launch the FUD Dodge mini-game`,
     `/top10 – See the top 10 players`,
     `/rules – Learn how to play and score`,
-    `/help – Show available commands`,
+    `/help – Show available commands`
   ].join("\n");
 
   bot.sendMessage(msg.chat.id, text, { parse_mode: "Markdown" });
@@ -136,7 +110,7 @@ bot.onText(/\/help/, (msg) => {
     `/play – Launch the FUD Dodge mini-game`,
     `/top10 – See the top 10 players`,
     `/rules – Learn how to play and score`,
-    `/help – Show available commands`,
+    `/help – Show available commands`
   ].join("\n");
   bot.sendMessage(msg.chat.id, text);
 });
@@ -154,12 +128,13 @@ bot.onText(/\/rules/, (msg) => {
     `📈 Green candle: +200 + Shield`,
     `💀 FUD Skull: Game Over`,
     ``,
-    `Play at your own risk. Stay unstable. 💛⚡`,
+    `Play at your own risk. Stay unstable. 💛⚡`
   ].join("\n");
   bot.sendMessage(msg.chat.id, text, { parse_mode: "Markdown" });
 });
 
-bot.onText(/\/top10/, (msg) => {
+bot.onText(/\/top10/, async (msg) => {
+  const scores = await getScores();
   const sorted = Object.entries(scores)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10);
@@ -182,25 +157,25 @@ bot.onText(/\/play/, (msg) => {
   bot.sendGame(msg.chat.id, "US_FUD_Dodge");
 });
 
-// === Inline Game Handler ===
+// === Inline game callback ===
 bot.on("callback_query", (query) => {
   if (query.game_short_name === "US_FUD_Dodge") {
     bot.answerCallbackQuery({
       callback_query_id: query.id,
-      url: "https://theunstable.io/fuddodge",
+      url: "https://theunstable.io/fuddodge"
     });
   }
 });
 
-// === Root route ===
+// === Web root ===
 app.get("/", (req, res) => {
   res.send(`
-    <h1>🎮 UnStableCoin FUD Dodge - Leaderboard API</h1>
-    <p>Bot and server are running.</p>
-    <h3>API:</h3>
+    <h1>🎮 UnStableCoin FUD Dodge - Leaderboard Bot</h1>
+    <p>Bot is running and connected to JSONBin storage.</p>
+    <h3>API Endpoints:</h3>
     <ul>
-      <li>GET /leaderboard – top 10 scores</li>
-      <li>POST /submit – submit {username, score}</li>
+      <li>GET /leaderboard - View top 10 scores</li>
+      <li>POST /submit - Submit a score (JSON: {username, score})</li>
     </ul>
   `);
 });
