@@ -18,8 +18,7 @@ if (!token || !JSONBIN_ID || !JSONBIN_KEY) {
   process.exit(1);
 }
 
-// === Telegram bot + webserver ===
-const bot = new TelegramBot(token, { polling: true });
+// === Express setup ===
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json());
@@ -86,7 +85,19 @@ app.post("/submit", async (req, res) => {
   res.json({ success: true, message: "Score saved", username, score });
 });
 
-// === Telegram commands ===
+// === Telegram Bot Setup (Webhook mode for Render) ===
+const bot = new TelegramBot(token);
+const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
+
+// Set webhook so Telegram sends updates to Render
+bot.setWebHook(`${url}/bot${token}`);
+
+app.post(`/bot${token}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// === Telegram Commands ===
 bot.onText(/\/start/, (msg) => {
   const user = msg.from.username ? `@${msg.from.username}` : msg.from.first_name || "player";
   const text = [
@@ -183,5 +194,5 @@ app.get("/", (req, res) => {
 // === Start server ===
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 UnStableCoinBot running on port ${PORT}`);
+  console.log(`🚀 UnStableCoinBot webhook listening on port ${PORT}`);
 });
