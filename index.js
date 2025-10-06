@@ -192,7 +192,7 @@ bot.onText(/\/eventtop50/, (msg) => sendTopList(msg, EVENT_BIN_URL, "Event Leade
 bot.onText(/\/resetevent/, async (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username || "";
-  const ADMIN_USERS = ["YourTelegramUsername"]; // CHANGE THIS
+  const ADMIN_USERS = ["UnstablecoinX"]; // CHANGE THIS
 
   if (!ADMIN_USERS.includes(username)) {
     return bot.sendMessage(chatId, "⛔ You’re not authorized to reset the leaderboard.");
