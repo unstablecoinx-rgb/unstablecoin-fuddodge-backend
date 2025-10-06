@@ -1,6 +1,6 @@
-// === UnStableCoin Leaderboard + Game API ===
-// by UnStableCoin community ⚡
-// Version: dual-leaderboard + reset event + Markdown fix
+// === UnStableCoin Leaderboard Bot ===
+// Version: JSONBin fix + reset safe
+// ⚡ Built for Render deployment
 
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -9,57 +9,57 @@ const cors = require("cors");
 const axios = require("axios");
 require("dotenv").config();
 
-// === Environment ===
+// === ENV ===
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const JSONBIN_ID = process.env.JSONBIN_ID;             // Main leaderboard
-const EVENT_JSONBIN_ID = process.env.EVENT_JSONBIN_ID; // Event leaderboard
+const JSONBIN_ID = process.env.JSONBIN_ID;
+const EVENT_JSONBIN_ID = process.env.EVENT_JSONBIN_ID;
 const JSONBIN_KEY = process.env.JSONBIN_KEY;
-const RESET_KEY = process.env.RESET_KEY;               // For protection
+const RESET_KEY = process.env.RESET_KEY;
 
 if (!token || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY) {
-  console.error("❌ Missing environment variables (TOKEN / JSONBIN_ID / EVENT_JSONBIN_ID / JSONBIN_KEY)");
+  console.error("❌ Missing environment variables!");
   process.exit(1);
 }
 
-// === Admin usernames ===
-const ADMIN_USERS = ["UnstablecoinX", "unstablecoinx"]; // no @ — case-insensitive
+const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot"]; // lowercase usernames, no @
 
-// === Express setup ===
+// === Express ===
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json());
 
-// === JSONBin config ===
+// === JSONBin URLs ===
 const MAIN_BIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 const EVENT_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;
 
-// === Helper functions ===
+// === JSONBin Helpers ===
 async function getScores(binUrl) {
   try {
-    const res = await axios.get(binUrl, {
+    const res = await axios.get(`${binUrl}/latest`, {
       headers: { "X-Master-Key": JSONBIN_KEY }
     });
     return res.data.record || {};
   } catch (err) {
-    console.error("⚠️ Failed to fetch scores:", err.message);
+    console.error("⚠️ Failed to fetch scores:", err.response?.data || err.message);
     return {};
   }
 }
 
 async function saveScores(binUrl, scores) {
   try {
-    await axios.put(binUrl, scores, {
+    const data = Object.keys(scores).length ? scores : { _reset: true };
+    await axios.put(binUrl, data, {
       headers: {
         "Content-Type": "application/json",
         "X-Master-Key": JSONBIN_KEY
       }
     });
   } catch (err) {
-    console.error("⚠️ Failed to save scores:", err.message);
+    console.error("⚠️ Failed to save scores:", err.response?.data || err.message);
   }
 }
 
-// === REST endpoints ===
+// === REST Endpoints ===
 app.get("/leaderboard", async (req, res) => {
   const scores = await getScores(MAIN_BIN_URL);
   const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 10);
@@ -79,9 +79,7 @@ app.post("/submit", async (req, res) => {
     return res.status(400).json({ error: "Missing username or score" });
   }
 
-  // Normalize username — remove extra @ and lowercase check
   username = username.replace(/^@+/, "@");
-
   const mainScores = await getScores(MAIN_BIN_URL);
   const eventScores = await getScores(EVENT_BIN_URL);
 
@@ -91,10 +89,9 @@ app.post("/submit", async (req, res) => {
   await saveScores(MAIN_BIN_URL, mainScores);
   await saveScores(EVENT_BIN_URL, eventScores);
 
-  res.json({ success: true, message: "Score saved to both leaderboards", username, score });
+  res.json({ success: true, message: "Score saved", username, score });
 });
 
-// === Reset event leaderboard (admin + confirm) ===
 app.post("/resetevent", async (req, res) => {
   const key = req.query.key || req.body.key;
   if (key !== RESET_KEY) return res.status(403).json({ error: "Invalid RESET_KEY" });
@@ -104,7 +101,7 @@ app.post("/resetevent", async (req, res) => {
   res.json({ success: true, message: "Event leaderboard reset" });
 });
 
-// === Telegram Bot Setup ===
+// === Telegram Setup ===
 const bot = new TelegramBot(token, { webHook: true });
 const url = `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`;
 bot.setWebHook(`${url}/bot${token}`);
@@ -114,10 +111,10 @@ app.post(`/bot${token}`, (req, res) => {
   res.sendStatus(200);
 });
 
-// === Helper for top lists ===
+// === Helpers ===
 async function sendTopList(msg, binUrl, title, limit = 10) {
   const scores = await getScores(binUrl);
-  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, limit);
+  const sorted = Object.entries(scores).filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]).slice(0, limit);
   if (!sorted.length) return bot.sendMessage(msg.chat.id, "No scores yet.");
 
   let text = `🏆 ${title}\n\n`;
@@ -129,83 +126,30 @@ async function sendTopList(msg, binUrl, title, limit = 10) {
   bot.sendMessage(msg.chat.id, text);
 }
 
-// === Telegram commands ===
-bot.onText(/\/start/, (msg) => {
-  const user = msg.from.username ? `@${msg.from.username}` : msg.from.first_name || "player";
-  const text = [
-    `💛 Welcome, ${user}!`,
-    ``,
-    `This is the UnStableCoin *FUD Dodge* bot.`,
-    ``,
-    `🚀 Commands:`,
-    `/play – Launch the game`,
-    `/top10 – Main leaderboard`,
-    `/eventtop – Event leaderboard (Top 10)`,
-    `/eventtop50 – Event leaderboard (Top 50)`,
-    `/resetevent – (Admins only) Reset event leaderboard`,
-    `/rules – How to play`,
-    `/help – Show this list again`
-  ].join("\n");
-
-  bot.sendMessage(msg.chat.id, text);
-});
-
-bot.onText(/\/help/, (msg) => {
-  bot.sendMessage(msg.chat.id, [
-    `🧭 Available commands:`,
-    `/play – Launch the game`,
-    `/top10 – Main leaderboard`,
-    `/eventtop – Event leaderboard (Top 10)`,
-    `/eventtop50 – Event leaderboard (Top 50)`,
-    `/rules – How to play`
-  ].join("\n"));
-});
-
-bot.onText(/\/rules/, (msg) => {
-  bot.sendMessage(msg.chat.id, [
-    `🎮 How to Play`,
-    `Dodge FUD and scams.`,
-    `Collect coins, memes and green candles.`,
-    `Avoid rugs and skulls.`,
-    ``,
-    `Scoring:`,
-    `🪙 Coin +200`,
-    `⚡ Lightning +500 (clears screen)`,
-    `📈 Candle +200 + Shield`,
-    `💀 Skull = Game Over`,
-    ``,
-    `Stay unstable. 💛⚡`
-  ].join("\n"));
-});
-
-// === Leaderboard commands ===
-bot.onText(/\/top10/, (msg) => sendTopList(msg, MAIN_BIN_URL, "Top 10 FUD Dodgers", 10));
-bot.onText(/\/eventtop$/, (msg) => sendTopList(msg, EVENT_BIN_URL, "Event Leaderboard (Top 10)", 10));
+// === Commands ===
+bot.onText(/\/top10/, (msg) => sendTopList(msg, MAIN_BIN_URL, "Main Leaderboard", 10));
+bot.onText(/\/eventtop$/, (msg) => sendTopList(msg, EVENT_BIN_URL, "Event Leaderboard", 10));
 bot.onText(/\/eventtop50$/, (msg) => sendTopList(msg, EVENT_BIN_URL, "Event Leaderboard (Top 50)", 50));
 
-// === Reset command (admin only) ===
 bot.onText(/\/resetevent/, async (msg) => {
-  const user = msg.from.username?.toLowerCase() || "";
+  const user = (msg.from.username || "").toLowerCase();
   if (!ADMIN_USERS.includes(user)) {
     return bot.sendMessage(msg.chat.id, "⛔ You’re not authorized to reset the leaderboard.");
   }
 
-  bot.sendMessage(msg.chat.id, "⚠️ Are you sure you want to reset the Event Leaderboard?\nReply with YES RESET to confirm.");
+  bot.sendMessage(msg.chat.id, "⚠️ Confirm reset? Type YES RESET to continue.");
 
   bot.once("message", async (response) => {
     if (response.text.trim().toUpperCase() === "YES RESET") {
       await saveScores(EVENT_BIN_URL, {});
-      bot.sendMessage(msg.chat.id, "🧹 Event leaderboard has been reset successfully!");
+      bot.sendMessage(msg.chat.id, "🧹 Event leaderboard has been reset!");
     } else {
       bot.sendMessage(msg.chat.id, "❎ Reset cancelled.");
     }
   });
 });
 
-// === Play game ===
 bot.onText(/\/play/, (msg) => bot.sendGame(msg.chat.id, "US_FUD_Dodge"));
-
-// === Inline game callback ===
 bot.on("callback_query", (query) => {
   if (query.game_short_name === "US_FUD_Dodge") {
     bot.answerCallbackQuery({
@@ -215,22 +159,16 @@ bot.on("callback_query", (query) => {
   }
 });
 
-// === Root info page ===
+// === Root page ===
 app.get("/", (req, res) => {
   res.send(`
-    <h1>🎮 UnStableCoin FUD Dodge - Leaderboard Bot</h1>
-    <p>Bot is running and connected to JSONBin storage.</p>
-    <ul>
-      <li>GET /leaderboard - Main leaderboard</li>
-      <li>GET /eventtop - Event leaderboard</li>
-      <li>POST /submit - Submit score</li>
-      <li>POST /resetevent?key=RESET_KEY - Reset event leaderboard</li>
-    </ul>
+    <h1>🎮 UnStableCoin FUD Dodge Bot</h1>
+    <p>Bot is online and connected to JSONBin.</p>
   `);
 });
 
 // === Start server ===
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 UnStableCoinBot running on port ${PORT}`);
 });
