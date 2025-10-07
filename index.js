@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Full production + smart event reader + admin reset
+// ⚡ Version: HTML-safe, cleaned event leaderboard (_reset fix)
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -65,21 +65,15 @@ async function getLeaderboard() {
   }
 }
 
-// === SMART EVENT DATA FETCH ===
+// ✅ FIXED: Handles both flat and nested event structures
 async function getEventData() {
   try {
     const res = await axios.get(EVENT_BIN_URL, {
       headers: { "X-Master-Key": JSONBIN_KEY },
     });
-
     const data = res.data.record || {};
-
-    // 🧠 Anpassa för både {scores:{}} och platt struktur
-    if (data.scores) return data;          // Nyare format
-    if (typeof data === "object") {        // Äldre platt format
-      return { scores: data };
-    }
-
+    if (data.scores) return data;
+    if (typeof data === "object") return { scores: data };
     return { scores: {} };
   } catch (err) {
     console.error("❌ Error fetching event data:", err.message);
@@ -89,7 +83,7 @@ async function getEventData() {
 
 // === TELEGRAM COMMANDS ===
 
-// START (same as /play)
+// START
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
   const text = `
@@ -170,12 +164,16 @@ bot.onText(/\/top50/, async (msg) => {
   await sendSafeMessage(chatId, message);
 });
 
-// EVENTTOP10 / EVENTTOP50
+// EVENTTOP10 / EVENTTOP50 (✅ _reset filtered)
 bot.onText(/\/eventtop10/, async (msg) => {
   const chatId = msg.chat.id;
   const eventData = await getEventData();
   const scores = eventData.scores || {};
-  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+
+  const sorted = Object.entries(scores)
+    .filter(([user]) => !user.startsWith("_"))
+    .sort((a, b) => b[1] - a[1]);
+
   if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
   let message = "<b>🥇 Event Top 10</b>\n\n";
@@ -189,7 +187,11 @@ bot.onText(/\/eventtop50/, async (msg) => {
   const chatId = msg.chat.id;
   const eventData = await getEventData();
   const scores = eventData.scores || {};
-  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+
+  const sorted = Object.entries(scores)
+    .filter(([user]) => !user.startsWith("_"))
+    .sort((a, b) => b[1] - a[1]);
+
   if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
   let message = "<b>⚡ Those still dodging FUD like it’s 2023 – Event Top 50</b>\n\n";
@@ -199,7 +201,7 @@ bot.onText(/\/eventtop50/, async (msg) => {
   await sendSafeMessage(chatId, message);
 });
 
-// ADMIN: RESETEVENT (with confirmation)
+// ADMIN: RESETEVENT
 bot.onText(/\/resetevent/, async (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username?.toLowerCase() || "";
@@ -242,7 +244,6 @@ bot.onText(/\/resetevent/, async (msg) => {
 });
 
 // === GAME API ENDPOINTS ===
-
 app.get("/leaderboard", async (req, res) => {
   try {
     const data = await getLeaderboard();
@@ -258,6 +259,7 @@ app.get("/eventtop10", async (req, res) => {
     const eventData = await getEventData();
     const scores = eventData.scores || {};
     const formatted = Object.entries(scores)
+      .filter(([user]) => !user.startsWith("_"))
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([username, score]) => ({ username, score }));
@@ -272,54 +274,13 @@ app.get("/eventtop50", async (req, res) => {
     const eventData = await getEventData();
     const scores = eventData.scores || {};
     const formatted = Object.entries(scores)
+      .filter(([user]) => !user.startsWith("_"))
       .sort((a, b) => b[1] - a[1])
       .slice(0, 50)
       .map(([username, score]) => ({ username, score }));
     res.json(formatted);
   } catch (err) {
     res.status(500).json({ error: "Failed to load event top50" });
-  }
-});
-
-// === SUBMIT SCORE (Main + Event) ===
-app.post("/submit", async (req, res) => {
-  try {
-    const { username, score } = req.body;
-    if (!username || typeof score !== "number") {
-      return res.status(400).json({ error: "Invalid data" });
-    }
-
-    // === MAIN LEADERBOARD ===
-    const mainRes = await axios.get(MAIN_BIN_URL, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
-    });
-    const mainData = mainRes.data.record || {};
-    const prevMain = mainData[username] || 0;
-    if (score > prevMain) mainData[username] = score;
-
-    await axios.put(MAIN_BIN_URL, mainData, {
-      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
-    });
-
-    // === EVENT LEADERBOARD ===
-    const eventRes = await axios.get(EVENT_BIN_URL, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
-    });
-    let eventData = eventRes.data.record || {};
-    if (!eventData.scores) eventData.scores = {};
-
-    const prevEvent = eventData.scores[username] || 0;
-    if (score > prevEvent) eventData.scores[username] = score;
-
-    await axios.put(EVENT_BIN_URL, eventData, {
-      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
-    });
-
-    console.log(`💾 Score saved: ${username} = ${score}`);
-    res.json({ success: true, message: "Score saved in both leaderboards" });
-  } catch (err) {
-    console.error("❌ Error saving score:", err.message);
-    res.status(500).json({ error: "Failed to save score" });
   }
 });
 
