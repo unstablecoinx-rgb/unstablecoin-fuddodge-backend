@@ -1,5 +1,5 @@
 // === UnStableCoin Leaderboard Bot ===
-// ⚡ Version: Production Ready (Render + Telegram + JSONBin)
+// ⚡ Version: MarkdownV2 fix + Production Ready
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -10,7 +10,7 @@ const cors = require("cors");
 const axios = require("axios");
 require("dotenv").config();
 
-// === ENVIRONMENT SETUP ===
+// === ENVIRONMENT VARIABLES ===
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const JSONBIN_ID = process.env.JSONBIN_ID;
 const EVENT_JSONBIN_ID = process.env.EVENT_JSONBIN_ID;
@@ -22,10 +22,8 @@ if (!token || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY) {
   process.exit(1);
 }
 
-// Authorized Telegram usernames (lowercase, no @)
-const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot"];
-
-// === EXPRESS CONFIG ===
+// === SETTINGS ===
+const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot"]; // lowercase usernames
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json());
@@ -34,7 +32,7 @@ app.use(bodyParser.json());
 const MAIN_BIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 const EVENT_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;
 
-// === JSONBin Helper Functions ===
+// === JSONBin Helpers ===
 async function getScores(binUrl) {
   try {
     const res = await axios.get(`${binUrl}/latest`, {
@@ -87,7 +85,7 @@ app.post("/submit", async (req, res) => {
     return res.status(400).json({ error: "Missing username or score" });
   }
 
-  username = "@" + username.replace(/^@+/, ""); // normalize @
+  username = "@" + username.replace(/^@+/, "");
 
   const mainScores = await getScores(MAIN_BIN_URL);
   const eventScores = await getScores(EVENT_BIN_URL);
@@ -123,21 +121,23 @@ app.post("/resetevent", async (req, res) => {
   }
 });
 
-// === TELEGRAM BOT SETUP ===
+// === TELEGRAM BOT ===
 const bot = new TelegramBot(token, { webHook: true });
-
-// ✅ Explicit webhook URL (Render sometimes omits hostname)
 const url = "https://unstablecoin-fuddodge-backend.onrender.com";
+
 bot.setWebHook(`${url}/bot${token}`);
 console.log(`✅ Webhook set to: ${url}/bot${token}`);
 
-// === Webhook handler ===
 app.post(`/bot${token}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
 // === TELEGRAM COMMAND HELPERS ===
+function escapeMarkdownV2(text) {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+}
+
 async function sendTopList(msg, binUrl, title, limit = 10) {
   const scores = await getScores(binUrl);
   const sorted = Object.entries(scores)
@@ -146,17 +146,18 @@ async function sendTopList(msg, binUrl, title, limit = 10) {
     .slice(0, limit);
 
   if (!sorted.length)
-    return bot.sendMessage(msg.chat.id, "No scores yet. Play the game to appear here!");
+    return bot.sendMessage(msg.chat.id, "No scores yet. Play to appear here!");
 
-  let text = `🏆 *${title}*\n\n`;
+  let text = `🏆 *${escapeMarkdownV2(title)}*\n\n`;
   sorted.forEach(([user, score], i) => {
     const rank = i + 1;
     const medal =
       rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
-    text += `${medal} ${user} — ${score}\n`;
+    const safeUser = escapeMarkdownV2(user);
+    text += `${medal} ${safeUser} — ${score}\n`;
   });
 
-  bot.sendMessage(msg.chat.id, text, { parse_mode: "Markdown" });
+  bot.sendMessage(msg.chat.id, text, { parse_mode: "MarkdownV2" });
 }
 
 // === TELEGRAM COMMANDS ===
@@ -169,16 +170,16 @@ bot.onText(/\/start/, (msg) => {
 /top10 – Main leaderboard
 /eventtop – Event leaderboard (Top 10)
 /eventtop50 – Event leaderboard (Top 50)
-/resetevent – Admin only (reset event list)
+/resetevent – Admin only
 /help – Show this menu
   `;
-  bot.sendMessage(msg.chat.id, text, { parse_mode: "Markdown" });
+  bot.sendMessage(msg.chat.id, text, { parse_mode: "MarkdownV2" });
 });
 
 bot.onText(/\/help/, (msg) => {
   bot.sendMessage(
     msg.chat.id,
-    "🧭 Available commands:\n/play\n/top10\n/eventtop\n/eventtop50\n/resetevent (admin only)"
+    "🧭 Commands:\n/play\n/top10\n/eventtop\n/eventtop50\n/resetevent (admin only)"
   );
 });
 
@@ -192,7 +193,6 @@ bot.onText(/\/eventtop50$/, (msg) =>
   sendTopList(msg, EVENT_BIN_URL, "Event Leaderboard (Top 50)", 50)
 );
 
-// === RESET EVENT VIA TELEGRAM ===
 bot.onText(/\/resetevent$/, async (msg) => {
   const user = (msg.from.username || "").toLowerCase();
   if (!ADMIN_USERS.includes(user)) {
@@ -200,7 +200,7 @@ bot.onText(/\/resetevent$/, async (msg) => {
   }
 
   bot.sendMessage(msg.chat.id, "⚠️ Confirm reset? Type *YES RESET* to continue.", {
-    parse_mode: "Markdown",
+    parse_mode: "MarkdownV2",
   });
 
   bot.once("message", async (response) => {
@@ -217,8 +217,7 @@ bot.onText(/\/resetevent$/, async (msg) => {
 bot.onText(/\/play/, (msg) => bot.sendGame(msg.chat.id, "US_FUD_Dodge"));
 bot.on("callback_query", (query) => {
   if (query.game_short_name === "US_FUD_Dodge") {
-    bot.answerCallbackQuery({
-      callback_query_id: query.id,
+    bot.answerCallbackQuery(query.id, {
       url: "https://theunstable.io/fuddodge",
     });
   }
@@ -229,14 +228,20 @@ app.get("/", (req, res) => {
   res.send(`
     <h1>🎮 UnStableCoin FUD Dodge Bot</h1>
     <p>Status: Online ✅</p>
-    <p>Connected to JSONBin and Telegram webhook.</p>
+    <p>Connected to JSONBin + Telegram Webhook</p>
     <ul>
       <li>GET /leaderboard</li>
       <li>GET /eventtop</li>
       <li>POST /submit</li>
       <li>POST /resetevent?key=RESET_KEY</li>
+      <li>GET /ping</li>
     </ul>
   `);
+});
+
+// === KEEP-ALIVE / PING ===
+app.get("/ping", (req, res) => {
+  res.status(200).send("pong 💛⚡ UnStableCoin backend active");
 });
 
 // === START SERVER ===
