@@ -92,13 +92,25 @@ app.post("/submit", async (req, res) => {
   res.json({ success: true, message: "Score saved", username, score });
 });
 
+// === Reset Event leaderboard (protected) ===
 app.post("/resetevent", async (req, res) => {
   const key = req.query.key || req.body.key;
-  if (key !== RESET_KEY) return res.status(403).json({ error: "Invalid RESET_KEY" });
+  const user = req.body.username || "unknown";
 
-  await saveScores(EVENT_BIN_URL, {});
-  console.log("🧹 Event leaderboard reset!");
-  res.json({ success: true, message: "Event leaderboard reset" });
+  if (key !== RESET_KEY) {
+    console.warn(`🚫 Unauthorized reset attempt by ${user}`);
+    return res.status(403).json({ error: "Invalid or missing RESET_KEY" });
+  }
+
+  try {
+    // Write a clean, empty object to JSONBin
+    await saveScores(EVENT_BIN_URL, {});
+    console.log("🧹 Event leaderboard reset successfully!");
+    res.json({ success: true, message: "Event leaderboard has been reset" });
+  } catch (err) {
+    console.error("⚠️ Failed to reset leaderboard:", err.message);
+    res.status(500).json({ error: "Failed to reset leaderboard" });
+  }
 });
 
 // === Telegram Setup ===
