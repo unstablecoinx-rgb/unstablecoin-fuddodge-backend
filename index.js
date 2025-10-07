@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Native game start with inline button
+// ⚡ Version: Mini App–compatible (web_app buttons for /start & /play)
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -80,16 +80,24 @@ async function getEventData() {
 
 // === TELEGRAM COMMANDS ===
 
-// ✅ START (native inline Play button)
-bot.onText(/\/start/, async (msg) => {
+// ✅ START & PLAY (Mini App launch)
+bot.onText(/\/start|\/play/, async (msg) => {
   try {
-    await bot.sendGame(msg.chat.id, "US_FUD_Dodge", {
+    await bot.sendMessage(msg.chat.id, "🎮 <b>Play FUD Dodge</b>", {
+      parse_mode: "HTML",
       reply_markup: {
-        inline_keyboard: [[{ text: "🎮 Play Now", callback_game: {} }]],
+        inline_keyboard: [
+          [
+            {
+              text: "⚡ Open Game",
+              web_app: { url: "https://theunstable.io/fuddodge" },
+            },
+          ],
+        ],
       },
     });
   } catch (err) {
-    console.error("❌ Failed to send start game:", err.message);
+    console.error("❌ Failed to send play link:", err.message);
     await sendSafeMessage(
       msg.chat.id,
       `🎮 <b>Play FUD Dodge</b>\nIf the button doesn’t work, open manually:\n👉 <a href="https://theunstable.io/fuddodge">theunstable.io/fuddodge</a>`
@@ -112,19 +120,6 @@ Available commands:
 ℹ️ <b>/about</b> – Learn more
 `;
   await sendSafeMessage(chatId, text);
-});
-
-// PLAY
-bot.onText(/\/play/, async (msg) => {
-  try {
-    await bot.sendGame(msg.chat.id, "US_FUD_Dodge");
-  } catch (err) {
-    console.error("❌ Failed to open game:", err.message);
-    await sendSafeMessage(
-      msg.chat.id,
-      `🎮 <b>Play FUD Dodge</b>\nIf the button doesn’t work, open manually:\n👉 <a href="https://theunstable.io/fuddodge">theunstable.io/fuddodge</a>`
-    );
-  }
 });
 
 // ABOUT
