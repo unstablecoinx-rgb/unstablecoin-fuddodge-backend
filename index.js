@@ -135,7 +135,10 @@ app.post(`/bot${token}`, (req, res) => {
 
 // === TELEGRAM COMMAND HELPERS ===
 function escapeMarkdownV2(text) {
-  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+  return text
+    .replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1") // escape markdown symbols
+    .replace(/\./g, "\\.") // escape dots
+    .replace(/,/g, "\\,");  // escape commas if present
 }
 
 async function sendTopList(msg, binUrl, title, limit = 10) {
