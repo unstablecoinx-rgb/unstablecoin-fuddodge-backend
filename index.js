@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: HTML-safe, streamlined command set
+// ⚡ Version: HTML-safe, streamlined + admin confirm reset
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -22,7 +22,7 @@ if (!token || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY) {
 }
 
 // === SETTINGS ===
-const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot"];
+const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot", "pachenko_14"];
 const app = express();
 app.use(cors({ origin: "https://theunstable.io" }));
 app.use(bodyParser.json());
@@ -77,13 +77,24 @@ async function getEventData() {
 
 // === TELEGRAM COMMANDS ===
 
-// START / HELP
-bot.onText(/\/start|\/help/, async (msg) => {
+// START (same as /play)
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id;
+  const text = `
+🎮 <b>Play FUD Dodge</b>  
+Tap below to launch inside Telegram:  
+👉 <a href="https://t.me/UnStableCoinBot?game=US_FUD_Dodge">Play Now</a>
+`;
+  await sendSafeMessage(chatId, text);
+});
+
+// HELP
+bot.onText(/\/help/, async (msg) => {
   const chatId = msg.chat.id;
   const text = `
 <b>💛 Welcome to the UnStableCoin Game Bot</b>
 
-Use the commands below:
+Available commands:
 🎮 <b>/play</b> – Start the game  
 🏆 <b>/top10</b> – View top 10  
 📈 <b>/top50</b> – View top 50  
@@ -99,8 +110,8 @@ bot.onText(/\/play/, async (msg) => {
   const chatId = msg.chat.id;
   const text = `
 🎮 <b>Play FUD Dodge</b>  
-Tap below to launch the game:  
-👉 <a href="https://theunstable.io/fuddodge">theunstable.io/fuddodge</a>
+Tap below to launch inside Telegram:  
+👉 <a href="https://t.me/UnStableCoinBot?game=US_FUD_Dodge">Play Now</a>
 `;
   await sendSafeMessage(chatId, text);
 });
@@ -140,7 +151,7 @@ bot.onText(/\/top50/, async (msg) => {
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
   if (!sorted.length) return sendSafeMessage(chatId, "No scores yet.");
 
-  let message = "<b>🏅 Top 50 Players</b>\n\n";
+  let message = "<b>🏅 Legends, try-harders & those who get scammed too often – Top 50</b>\n\n";
   sorted.slice(0, 50).forEach(([user, score], i) => {
     message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
   });
@@ -169,16 +180,57 @@ bot.onText(/\/eventtop50/, async (msg) => {
   const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
   if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
-  let message = "<b>🥇 Event Top 50</b>\n\n";
+  let message = "<b>⚡ Those still dodging FUD like it’s 2023 – Event Top 50</b>\n\n";
   sorted.slice(0, 50).forEach(([user, score], i) => {
     message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
   });
   await sendSafeMessage(chatId, message);
 });
 
+// ADMIN: RESETEVENT (with confirmation)
+bot.onText(/\/resetevent/, async (msg) => {
+  const chatId = msg.chat.id;
+  const username = msg.from.username?.toLowerCase() || "";
+
+  if (!ADMIN_USERS.includes(username)) {
+    return sendSafeMessage(chatId, "🚫 You are not authorized to use this command.");
+  }
+
+  await sendSafeMessage(chatId, "⚠️ Confirm reset? Reply <b>YES</b> within 30 seconds to proceed.");
+
+  const confirmationListener = async (replyMsg) => {
+    if (replyMsg.chat.id !== chatId) return;
+    const replyUser = replyMsg.from.username?.toLowerCase() || "";
+    if (replyUser !== username) return;
+
+    if (replyMsg.text.trim().toUpperCase() === "YES") {
+      try {
+        const eventData = await getEventData();
+        const updated = { ...eventData, scores: {} };
+
+        await axios.put(EVENT_BIN_URL, updated, {
+          headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
+        });
+
+        console.log(`⚡ Event leaderboard reset by ${username}`);
+        await sendSafeMessage(chatId, "✅ Event leaderboard has been cleared. All scores reset.");
+      } catch (err) {
+        console.error("❌ Error resetting event leaderboard:", err.message);
+        await sendSafeMessage(chatId, "⚠️ Failed to reset event leaderboard.");
+      }
+    } else {
+      await sendSafeMessage(chatId, "❌ Reset cancelled.");
+    }
+
+    bot.removeListener("message", confirmationListener);
+  };
+
+  bot.on("message", confirmationListener);
+  setTimeout(() => bot.removeListener("message", confirmationListener), 30000);
+});
+
 // === GAME API ENDPOINTS ===
 
-// Leaderboard for frontend
 app.get("/leaderboard", async (req, res) => {
   try {
     const data = await getLeaderboard();
@@ -189,7 +241,6 @@ app.get("/leaderboard", async (req, res) => {
   }
 });
 
-// Event top10 and top50 for frontend
 app.get("/eventtop10", async (req, res) => {
   try {
     const eventData = await getEventData();
