@@ -124,7 +124,6 @@ app.post("/resetevent", async (req, res) => {
 // === TELEGRAM BOT ===
 const bot = new TelegramBot(token, { webHook: true });
 const url = "https://unstablecoin-fuddodge-backend.onrender.com";
-
 bot.setWebHook(`${url}/bot${token}`);
 console.log(`✅ Webhook set to: ${url}/bot${token}`);
 
@@ -133,14 +132,27 @@ app.post(`/bot${token}`, (req, res) => {
   res.sendStatus(200);
 });
 
-// === TELEGRAM COMMAND HELPERS ===
+// === MarkdownV2 ESCAPE ===
 function escapeMarkdownV2(text) {
+  if (!text) return "";
   return text
-    .replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1") // escape markdown symbols
-    .replace(/\./g, "\\.") // escape dots
-    .replace(/,/g, "\\,");  // escape commas if present
+    .replace(/([_*\[\]()~`>#+\-=|{}.!\\<>])/g, "\\$1")
+    .replace(/\./g, "\\.")
+    .replace(/,/g, "\\,")
+    .replace(/@/g, "\\@")
+    .replace(/:/g, "\\:");
 }
 
+// === SAFE SEND WRAPPER ===
+async function safeSend(chatId, text, options = {}) {
+  try {
+    await bot.sendMessage(chatId, text, options);
+  } catch (err) {
+    console.error("❌ Telegram send failed:", err.message);
+  }
+}
+
+// === TELEGRAM COMMAND HELPERS ===
 async function sendTopList(msg, binUrl, title, limit = 10) {
   const scores = await getScores(binUrl);
   const sorted = Object.entries(scores)
@@ -149,18 +161,19 @@ async function sendTopList(msg, binUrl, title, limit = 10) {
     .slice(0, limit);
 
   if (!sorted.length)
-    return bot.sendMessage(msg.chat.id, "No scores yet. Play to appear here!");
+    return safeSend(msg.chat.id, "No scores yet. Play to appear here!");
 
   let text = `🏆 *${escapeMarkdownV2(title)}*\n\n`;
   sorted.forEach(([user, score], i) => {
     const rank = i + 1;
     const medal =
       rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
-    const safeUser = escapeMarkdownV2(user);
-    text += `${medal} ${safeUser} — ${score}\n`;
+    text += `${escapeMarkdownV2(medal)} ${escapeMarkdownV2(user)} — ${escapeMarkdownV2(
+      score.toString()
+    )}\n`;
   });
 
-  bot.sendMessage(msg.chat.id, text, { parse_mode: "MarkdownV2" });
+  await safeSend(msg.chat.id, text, { parse_mode: "MarkdownV2" });
 }
 
 // === TELEGRAM COMMANDS ===
@@ -176,11 +189,11 @@ bot.onText(/\/start/, (msg) => {
 /resetevent – Admin only
 /help – Show this menu
   `;
-  bot.sendMessage(msg.chat.id, text, { parse_mode: "MarkdownV2" });
+  safeSend(msg.chat.id, text, { parse_mode: "MarkdownV2" });
 });
 
 bot.onText(/\/help/, (msg) => {
-  bot.sendMessage(
+  safeSend(
     msg.chat.id,
     "🧭 Commands:\n/play\n/top10\n/eventtop\n/eventtop50\n/resetevent (admin only)"
   );
@@ -199,19 +212,19 @@ bot.onText(/\/eventtop50$/, (msg) =>
 bot.onText(/\/resetevent$/, async (msg) => {
   const user = (msg.from.username || "").toLowerCase();
   if (!ADMIN_USERS.includes(user)) {
-    return bot.sendMessage(msg.chat.id, "⛔ You’re not authorized to reset the leaderboard.");
+    return safeSend(msg.chat.id, "⛔ You’re not authorized to reset the leaderboard.");
   }
 
-  bot.sendMessage(msg.chat.id, "⚠️ Confirm reset? Type *YES RESET* to continue.", {
+  safeSend(msg.chat.id, "⚠️ Confirm reset? Type *YES RESET* to continue.", {
     parse_mode: "MarkdownV2",
   });
 
   bot.once("message", async (response) => {
     if (response.text.trim().toUpperCase() === "YES RESET") {
       await saveScores(EVENT_BIN_URL, {});
-      bot.sendMessage(msg.chat.id, "🧹 Event leaderboard has been reset!");
+      safeSend(msg.chat.id, "🧹 Event leaderboard has been reset!");
     } else {
-      bot.sendMessage(msg.chat.id, "❎ Reset cancelled.");
+      safeSend(msg.chat.id, "❎ Reset cancelled.");
     }
   });
 });
