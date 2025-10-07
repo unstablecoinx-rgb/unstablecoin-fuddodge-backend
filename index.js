@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Full production + event saving + admin reset
+// ⚡ Version: Full production + smart event reader + admin reset
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -65,13 +65,25 @@ async function getLeaderboard() {
   }
 }
 
+// === SMART EVENT DATA FETCH ===
 async function getEventData() {
   try {
-    const res = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    return res.data.record || {};
+    const res = await axios.get(EVENT_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+
+    const data = res.data.record || {};
+
+    // 🧠 Anpassa för både {scores:{}} och platt struktur
+    if (data.scores) return data;          // Nyare format
+    if (typeof data === "object") {        // Äldre platt format
+      return { scores: data };
+    }
+
+    return { scores: {} };
   } catch (err) {
     console.error("❌ Error fetching event data:", err.message);
-    return {};
+    return { scores: {} };
   }
 }
 
