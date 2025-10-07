@@ -1,5 +1,5 @@
 // === UnStableCoin Leaderboard Bot ===
-// ⚡ Version: MarkdownV2 fix + Production Ready
+// ⚡ Version: HTML-safe + Production Ready
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -32,236 +32,131 @@ app.use(bodyParser.json());
 const MAIN_BIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 const EVENT_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;
 
-// === JSONBin Helpers ===
-async function getScores(binUrl) {
-  try {
-    const res = await axios.get(`${binUrl}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
-    });
-    return res.data.record || {};
-  } catch (err) {
-    console.error("⚠️ Failed to fetch scores:", err.response?.data || err.message);
-    return {};
-  }
-}
-
-async function saveScores(binUrl, scores) {
-  try {
-    const safeData = Object.keys(scores).length ? scores : { _reset: true };
-    await axios.put(binUrl, safeData, {
-      headers: {
-        "Content-Type": "application/json",
-        "X-Master-Key": JSONBIN_KEY,
-      },
-    });
-  } catch (err) {
-    console.error("⚠️ Failed to save scores:", err.response?.data || err.message);
-  }
-}
-
-// === REST ENDPOINTS ===
-app.get("/leaderboard", async (req, res) => {
-  const scores = await getScores(MAIN_BIN_URL);
-  const sorted = Object.entries(scores)
-    .filter(([u, s]) => typeof s === "number" && !u.startsWith("_"))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
-  res.json(sorted.map(([username, score]) => ({ username, score })));
-});
-
-app.get("/eventtop", async (req, res) => {
-  const limit = parseInt(req.query.limit) || 10;
-  const scores = await getScores(EVENT_BIN_URL);
-  const sorted = Object.entries(scores)
-    .filter(([u, s]) => typeof s === "number" && !u.startsWith("_"))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit);
-  res.json(sorted.map(([username, score]) => ({ username, score })));
-});
-
-app.post("/submit", async (req, res) => {
-  let { username, score } = req.body;
-  if (!username || typeof score !== "number") {
-    return res.status(400).json({ error: "Missing username or score" });
-  }
-
-  username = "@" + username.replace(/^@+/, "");
-
-  const mainScores = await getScores(MAIN_BIN_URL);
-  const eventScores = await getScores(EVENT_BIN_URL);
-
-  if (!mainScores[username] || score > mainScores[username])
-    mainScores[username] = score;
-  if (!eventScores[username] || score > eventScores[username])
-    eventScores[username] = score;
-
-  await saveScores(MAIN_BIN_URL, mainScores);
-  await saveScores(EVENT_BIN_URL, eventScores);
-
-  res.json({ success: true, message: "Score saved", username, score });
-});
-
-// === RESET EVENT LEADERBOARD ===
-app.post("/resetevent", async (req, res) => {
-  const key = req.query.key || req.body.key;
-  const user = req.body.username || "unknown";
-
-  if (key !== RESET_KEY) {
-    console.warn(`🚫 Unauthorized reset attempt by ${user}`);
-    return res.status(403).json({ error: "Invalid or missing RESET_KEY" });
-  }
-
-  try {
-    await saveScores(EVENT_BIN_URL, {});
-    console.log("🧹 Event leaderboard reset successfully!");
-    res.json({ success: true, message: "Event leaderboard has been reset" });
-  } catch (err) {
-    console.error("⚠️ Failed to reset leaderboard:", err.message);
-    res.status(500).json({ error: "Failed to reset leaderboard" });
-  }
-});
-
 // === TELEGRAM BOT ===
-const bot = new TelegramBot(token, { webHook: true });
-const url = "https://unstablecoin-fuddodge-backend.onrender.com";
-bot.setWebHook(`${url}/bot${token}`);
-console.log(`✅ Webhook set to: ${url}/bot${token}`);
+const bot = new TelegramBot(token);
+bot.setWebHook(`https://unstablecoin-fuddodge-backend.onrender.com/bot${token}`);
+console.log(`✅ Webhook set to: https://unstablecoin-fuddodge-backend.onrender.com/bot${token}`);
 
+// === EXPRESS ENDPOINTS ===
 app.post(`/bot${token}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-// === MarkdownV2 ESCAPE ===
-function escapeMarkdownV2(text) {
-  if (!text) return "";
-  return text
-    .replace(/([_*\[\]()~`>#+\-=|{}.!\\<>])/g, "\\$1")
-    .replace(/\./g, "\\.")
-    .replace(/,/g, "\\,")
-    .replace(/@/g, "\\@")
-    .replace(/:/g, "\\:");
-}
+app.get("/", (req, res) => {
+  res.send("💛 UnStableCoinBot is online and unstable as ever.");
+});
 
-// === SAFE SEND WRAPPER ===
-async function safeSend(chatId, text, options = {}) {
+// === HELPER FUNCTIONS ===
+
+// Use HTML-safe mode (no Markdown escaping needed)
+async function sendSafeMessage(chatId, message) {
   try {
-    await bot.sendMessage(chatId, text, options);
+    await bot.sendMessage(chatId, message, { parse_mode: "HTML" });
   } catch (err) {
     console.error("❌ Telegram send failed:", err.message);
   }
 }
 
-// === TELEGRAM COMMAND HELPERS ===
-async function sendTopList(msg, binUrl, title, limit = 10) {
-  const scores = await getScores(binUrl);
-  const sorted = Object.entries(scores)
-    .filter(([u, s]) => typeof s === "number" && !u.startsWith("_"))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit);
+// Load leaderboard data
+async function getLeaderboard() {
+  try {
+    const response = await axios.get(MAIN_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+    return response.data.record || {};
+  } catch (err) {
+    console.error("❌ Error loading leaderboard:", err.message);
+    return {};
+  }
+}
 
-  if (!sorted.length)
-    return safeSend(msg.chat.id, "No scores yet. Play to appear here!");
-
-  let text = `🏆 *${escapeMarkdownV2(title)}*\n\n`;
-  sorted.forEach(([user, score], i) => {
-    const rank = i + 1;
-    const medal =
-      rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
-    text += `${escapeMarkdownV2(medal)} ${escapeMarkdownV2(user)} — ${escapeMarkdownV2(
-      score.toString()
-    )}\n`;
-  });
-
-  await safeSend(msg.chat.id, text, { parse_mode: "MarkdownV2" });
+// Update leaderboard entry
+async function updateLeaderboard(username, score) {
+  try {
+    const data = await getLeaderboard();
+    data[username] = score;
+    await axios.put(
+      MAIN_BIN_URL,
+      { ...data },
+      { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } }
+    );
+    console.log(`✅ Updated score for ${username}: ${score}`);
+  } catch (err) {
+    console.error("❌ Error updating leaderboard:", err.message);
+  }
 }
 
 // === TELEGRAM COMMANDS ===
-bot.onText(/\/start/, (msg) => {
-  const text = `
-💛 *Welcome to UnStableCoin FUD Dodge!*
 
-🚀 Commands:
-/play – Launch the FUD Dodge mini-game
-/top10 – Main leaderboard
-/eventtop – Event leaderboard (Top 10)
-/eventtop50 – Event leaderboard (Top 50)
-/resetevent – Admin only
-/help – Show this menu
-  `;
-  safeSend(msg.chat.id, text, { parse_mode: "MarkdownV2" });
+bot.onText(/\/start/, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = msg.from.username || msg.from.first_name || "anonymous";
+  const welcome = `
+💛 <b>Welcome to the UnStableCoin Leaderboard Bot</b>  
+You can check your rank, submit scores, and see event updates.
+
+Commands:
+• /rank – Show leaderboard
+• /event – Current community challenge
+• /submit [score] – Submit your latest score
+• /about – Learn what this chaos is about
+`;
+  await sendSafeMessage(chatId, welcome);
 });
 
-bot.onText(/\/help/, (msg) => {
-  safeSend(
-    msg.chat.id,
-    "🧭 Commands:\n/play\n/top10\n/eventtop\n/eventtop50\n/resetevent (admin only)"
-  );
+bot.onText(/\/about/, async (msg) => {
+  const chatId = msg.chat.id;
+  const about = `
+<b>UnStableCoin ($US)</b>  
+A cultural experiment on Solana.  
+Born without presale. Built by chaos, memes, and belief.  
+
+Learn more:  
+🌐 <a href="https://theunstable.io">theunstable.io</a>  
+🐦 <a href="https://x.com/UnStableCoinX">@UnStableCoinX</a>  
+💬 <a href="https://t.me/UnStableCoin_US">Telegram Community</a>  
+`;
+  await sendSafeMessage(chatId, about);
 });
 
-bot.onText(/\/top10$/, (msg) =>
-  sendTopList(msg, MAIN_BIN_URL, "Main Leaderboard", 10)
-);
-bot.onText(/\/eventtop$/, (msg) =>
-  sendTopList(msg, EVENT_BIN_URL, "Event Leaderboard", 10)
-);
-bot.onText(/\/eventtop50$/, (msg) =>
-  sendTopList(msg, EVENT_BIN_URL, "Event Leaderboard (Top 50)", 50)
-);
+bot.onText(/\/rank/, async (msg) => {
+  const chatId = msg.chat.id;
+  const data = await getLeaderboard();
+  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  let message = "<b>🏆 Current Leaderboard</b>\n\n";
+  sorted.slice(0, 10).forEach(([user, score], i) => {
+    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
+  });
+  await sendSafeMessage(chatId, message);
+});
 
-bot.onText(/\/resetevent$/, async (msg) => {
-  const user = (msg.from.username || "").toLowerCase();
-  if (!ADMIN_USERS.includes(user)) {
-    return safeSend(msg.chat.id, "⛔ You’re not authorized to reset the leaderboard.");
+bot.onText(/\/submit (.+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const user = msg.from.username?.toLowerCase() || msg.from.first_name || "anonymous";
+  const score = parseInt(match[1]);
+  if (isNaN(score)) {
+    return sendSafeMessage(chatId, "❌ Please submit a valid score, e.g. /submit 42");
   }
-
-  safeSend(msg.chat.id, "⚠️ Confirm reset? Type *YES RESET* to continue.", {
-    parse_mode: "MarkdownV2",
-  });
-
-  bot.once("message", async (response) => {
-    if (response.text.trim().toUpperCase() === "YES RESET") {
-      await saveScores(EVENT_BIN_URL, {});
-      safeSend(msg.chat.id, "🧹 Event leaderboard has been reset!");
-    } else {
-      safeSend(msg.chat.id, "❎ Reset cancelled.");
-    }
-  });
+  await updateLeaderboard(user, score);
+  await sendSafeMessage(chatId, `✅ Score updated for <b>${user}</b>: ${score} pts`);
 });
 
-// === TELEGRAM GAME CALLBACK ===
-bot.onText(/\/play/, (msg) => bot.sendGame(msg.chat.id, "US_FUD_Dodge"));
-bot.on("callback_query", (query) => {
-  if (query.game_short_name === "US_FUD_Dodge") {
-    bot.answerCallbackQuery(query.id, {
-      url: "https://theunstable.io/fuddodge",
+bot.onText(/\/event/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const response = await axios.get(EVENT_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
     });
+    const event = response.data.record?.event || "No active event right now.";
+    await sendSafeMessage(chatId, `<b>🎯 Current Event</b>\n\n${event}`);
+  } catch (err) {
+    await sendSafeMessage(chatId, "⚠️ Could not fetch current event info.");
   }
 });
 
-// === ROOT PAGE ===
-app.get("/", (req, res) => {
-  res.send(`
-    <h1>🎮 UnStableCoin FUD Dodge Bot</h1>
-    <p>Status: Online ✅</p>
-    <p>Connected to JSONBin + Telegram Webhook</p>
-    <ul>
-      <li>GET /leaderboard</li>
-      <li>GET /eventtop</li>
-      <li>POST /submit</li>
-      <li>POST /resetevent?key=RESET_KEY</li>
-      <li>GET /ping</li>
-    </ul>
-  `);
-});
-
-// === KEEP-ALIVE / PING ===
-app.get("/ping", (req, res) => {
-  res.status(200).send("pong 💛⚡ UnStableCoin backend active");
-});
-
-// === START SERVER ===
+// === SERVER START ===
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, () => {
   console.log(`🚀 UnStableCoinBot running on port ${PORT}`);
 });
