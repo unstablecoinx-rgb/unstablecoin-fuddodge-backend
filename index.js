@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: HTML-safe, streamlined + admin confirm reset
+// ⚡ Version: Full production + event saving + admin reset
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -266,6 +266,48 @@ app.get("/eventtop50", async (req, res) => {
     res.json(formatted);
   } catch (err) {
     res.status(500).json({ error: "Failed to load event top50" });
+  }
+});
+
+// === SUBMIT SCORE (Main + Event) ===
+app.post("/submit", async (req, res) => {
+  try {
+    const { username, score } = req.body;
+    if (!username || typeof score !== "number") {
+      return res.status(400).json({ error: "Invalid data" });
+    }
+
+    // === MAIN LEADERBOARD ===
+    const mainRes = await axios.get(MAIN_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+    const mainData = mainRes.data.record || {};
+    const prevMain = mainData[username] || 0;
+    if (score > prevMain) mainData[username] = score;
+
+    await axios.put(MAIN_BIN_URL, mainData, {
+      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
+    });
+
+    // === EVENT LEADERBOARD ===
+    const eventRes = await axios.get(EVENT_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+    let eventData = eventRes.data.record || {};
+    if (!eventData.scores) eventData.scores = {};
+
+    const prevEvent = eventData.scores[username] || 0;
+    if (score > prevEvent) eventData.scores[username] = score;
+
+    await axios.put(EVENT_BIN_URL, eventData, {
+      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
+    });
+
+    console.log(`💾 Score saved: ${username} = ${score}`);
+    res.json({ success: true, message: "Score saved in both leaderboards" });
+  } catch (err) {
+    console.error("❌ Error saving score:", err.message);
+    res.status(500).json({ error: "Failed to save score" });
   }
 });
 
