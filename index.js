@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: HTML-safe, cleaned event leaderboard (_reset fix)
+// ⚡ Version: HTML-safe, cleaned event leaderboard (_reset fix) + fixed /play
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -65,7 +65,7 @@ async function getLeaderboard() {
   }
 }
 
-// ✅ FIXED: Handles both flat and nested event structures
+// ✅ Handles both flat and nested event structures
 async function getEventData() {
   try {
     const res = await axios.get(EVENT_BIN_URL, {
@@ -111,15 +111,17 @@ Available commands:
   await sendSafeMessage(chatId, text);
 });
 
-// PLAY
+// ✅ FIXED PLAY (Telegram-native launch)
 bot.onText(/\/play/, async (msg) => {
-  const chatId = msg.chat.id;
-  const text = `
-🎮 <b>Play FUD Dodge</b>  
-Tap below to launch inside Telegram:  
-👉 <a href="https://t.me/UnStableCoinBot?game=US_FUD_Dodge">Play Now</a>
-`;
-  await sendSafeMessage(chatId, text);
+  try {
+    await bot.sendGame(msg.chat.id, "US_FUD_Dodge");
+  } catch (err) {
+    console.error("❌ Failed to open game:", err.message);
+    await sendSafeMessage(
+      msg.chat.id,
+      `🎮 <b>Play FUD Dodge</b>\nIf the button doesn’t work, open manually:\n👉 <a href="https://theunstable.io/fuddodge">theunstable.io/fuddodge</a>`
+    );
+  }
 });
 
 // ABOUT
@@ -164,7 +166,7 @@ bot.onText(/\/top50/, async (msg) => {
   await sendSafeMessage(chatId, message);
 });
 
-// EVENTTOP10 / EVENTTOP50 (✅ _reset filtered)
+// EVENTTOP10 / EVENTTOP50
 bot.onText(/\/eventtop10/, async (msg) => {
   const chatId = msg.chat.id;
   const eventData = await getEventData();
