@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: HTML-safe + All Commands Restored
+// ⚡ Version: HTML-safe, streamlined command set
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -15,7 +15,6 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const JSONBIN_ID = process.env.JSONBIN_ID;
 const EVENT_JSONBIN_ID = process.env.EVENT_JSONBIN_ID;
 const JSONBIN_KEY = process.env.JSONBIN_KEY;
-const RESET_KEY = process.env.RESET_KEY;
 
 if (!token || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY) {
   console.error("❌ Missing environment variables!");
@@ -25,7 +24,7 @@ if (!token || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY) {
 // === SETTINGS ===
 const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot"];
 const app = express();
-app.use(cors({ origin: "*" }));
+app.use(cors({ origin: "https://theunstable.io" }));
 app.use(bodyParser.json());
 
 // === JSONBin URLs ===
@@ -66,19 +65,6 @@ async function getLeaderboard() {
   }
 }
 
-async function updateLeaderboard(username, score) {
-  try {
-    const data = await getLeaderboard();
-    data[username] = score;
-    await axios.put(MAIN_BIN_URL, data, {
-      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
-    });
-    console.log(`✅ Updated score for ${username}: ${score}`);
-  } catch (err) {
-    console.error("❌ Error updating leaderboard:", err.message);
-  }
-}
-
 async function getEventData() {
   try {
     const res = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
@@ -89,7 +75,7 @@ async function getEventData() {
   }
 }
 
-// === COMMANDS ===
+// === TELEGRAM COMMANDS ===
 
 // START / HELP
 bot.onText(/\/start|\/help/, async (msg) => {
@@ -97,13 +83,12 @@ bot.onText(/\/start|\/help/, async (msg) => {
   const text = `
 <b>💛 Welcome to the UnStableCoin Game Bot</b>
 
-Use the commands below to explore:
-🎮 <b>/play</b> – Start the game
-🏆 <b>/rank</b> or <b>/top10</b> – View leaderboard
-📈 <b>/top50</b> – View top 50 players
-🎯 <b>/event</b> – Check current event
-🥇 <b>/eventtop</b> or <b>/eventtop50</b> – Event rankings
-🧩 <b>/submit [score]</b> – Submit your score
+Use the commands below:
+🎮 <b>/play</b> – Start the game  
+🏆 <b>/top10</b> – View top 10  
+📈 <b>/top50</b> – View top 50  
+⚡ <b>/eventtop10</b> – Event top 10  
+🥇 <b>/eventtop50</b> – Event top 50  
 ℹ️ <b>/about</b> – Learn more
 `;
   await sendSafeMessage(chatId, text);
@@ -135,12 +120,12 @@ Born without presale. Built by chaos, memes, and belief.
   await sendSafeMessage(chatId, text);
 });
 
-// LEADERBOARD
-bot.onText(/\/rank|\/top10/, async (msg) => {
+// TOP10 / TOP50
+bot.onText(/\/top10/, async (msg) => {
   const chatId = msg.chat.id;
   const data = await getLeaderboard();
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
-  if (sorted.length === 0) return sendSafeMessage(chatId, "No scores yet. Be the first to play!");
+  if (!sorted.length) return sendSafeMessage(chatId, "No scores yet. Be the first to play!");
 
   let message = "<b>🏆 Top 10 Players</b>\n\n";
   sorted.slice(0, 10).forEach(([user, score], i) => {
@@ -153,7 +138,7 @@ bot.onText(/\/top50/, async (msg) => {
   const chatId = msg.chat.id;
   const data = await getLeaderboard();
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
-  if (sorted.length === 0) return sendSafeMessage(chatId, "No scores yet.");
+  if (!sorted.length) return sendSafeMessage(chatId, "No scores yet.");
 
   let message = "<b>🏅 Top 50 Players</b>\n\n";
   sorted.slice(0, 50).forEach(([user, score], i) => {
@@ -162,34 +147,13 @@ bot.onText(/\/top50/, async (msg) => {
   await sendSafeMessage(chatId, message);
 });
 
-// SUBMIT SCORE
-bot.onText(/\/submit (.+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const user = msg.from.username?.toLowerCase() || msg.from.first_name || "anonymous";
-  const score = parseInt(match[1]);
-  if (isNaN(score)) return sendSafeMessage(chatId, "❌ Please use: /submit 42");
-
-  await updateLeaderboard(user, score);
-  await sendSafeMessage(chatId, `✅ <b>${user}</b>'s score updated: ${score} pts`);
-});
-
-// EVENT
-bot.onText(/\/event/, async (msg) => {
-  const chatId = msg.chat.id;
-  const eventData = await getEventData();
-  const text = eventData.event
-    ? `<b>🎯 Current Event</b>\n\n${eventData.event}`
-    : "🎯 No active event right now.\nStay tuned for the next drop. ⚡";
-  await sendSafeMessage(chatId, text);
-});
-
-// EVENT LEADERBOARDS
-bot.onText(/\/eventtop/, async (msg) => {
+// EVENTTOP10 / EVENTTOP50
+bot.onText(/\/eventtop10/, async (msg) => {
   const chatId = msg.chat.id;
   const eventData = await getEventData();
   const scores = eventData.scores || {};
   const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-  if (sorted.length === 0) return sendSafeMessage(chatId, "No event scores yet.");
+  if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
   let message = "<b>🥇 Event Top 10</b>\n\n";
   sorted.slice(0, 10).forEach(([user, score], i) => {
@@ -203,13 +167,55 @@ bot.onText(/\/eventtop50/, async (msg) => {
   const eventData = await getEventData();
   const scores = eventData.scores || {};
   const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-  if (sorted.length === 0) return sendSafeMessage(chatId, "No event scores yet.");
+  if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
   let message = "<b>🥇 Event Top 50</b>\n\n";
   sorted.slice(0, 50).forEach(([user, score], i) => {
     message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
   });
   await sendSafeMessage(chatId, message);
+});
+
+// === GAME API ENDPOINTS ===
+
+// Leaderboard for frontend
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const data = await getLeaderboard();
+    const formatted = Object.entries(data).map(([username, score]) => ({ username, score }));
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load leaderboard" });
+  }
+});
+
+// Event top10 and top50 for frontend
+app.get("/eventtop10", async (req, res) => {
+  try {
+    const eventData = await getEventData();
+    const scores = eventData.scores || {};
+    const formatted = Object.entries(scores)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([username, score]) => ({ username, score }));
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load event top10" });
+  }
+});
+
+app.get("/eventtop50", async (req, res) => {
+  try {
+    const eventData = await getEventData();
+    const scores = eventData.scores || {};
+    const formatted = Object.entries(scores)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 50)
+      .map(([username, score]) => ({ username, score }));
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load event top50" });
+  }
 });
 
 // === SERVER START ===
