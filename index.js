@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Native game start + event mirror + event meta + admin submit + leaderboard fix
+// ⚡ Version: Stable Universal Leaderboard Fix + EventTop + Admin + Game Start
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -71,12 +71,24 @@ async function getLeaderboard() {
   }
 }
 
+// === FIXED getEventData() ===
 async function getEventData() {
   try {
     const res = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    const data = res.data.record || {};
-    if (data.scores) return data;
-    if (typeof data === "object") return { scores: data };
+    let data = res.data.record || {};
+
+    // Normalize structure
+    if (data.scores && typeof data.scores === "object") {
+      if (data.scores.scores && typeof data.scores.scores === "object") {
+        return { scores: data.scores.scores }; // nested legacy
+      }
+      return { scores: data.scores };
+    }
+
+    if (typeof data === "object" && Object.keys(data).length > 0) {
+      return { scores: data };
+    }
+
     return { scores: {} };
   } catch (err) {
     console.error("❌ Error fetching event data:", err.message);
@@ -86,7 +98,7 @@ async function getEventData() {
 
 // === TELEGRAM COMMANDS ===
 
-// ✅ START
+// /START
 bot.onText(/\/start/, async (msg) => {
   try {
     await bot.sendGame(msg.chat.id, "US_FUD_Dodge", {
@@ -101,7 +113,7 @@ bot.onText(/\/start/, async (msg) => {
   }
 });
 
-// HELP
+// /HELP
 bot.onText(/\/help/, async (msg) => {
   const chatId = msg.chat.id;
   const text = `
@@ -120,7 +132,7 @@ Available commands:
   await sendSafeMessage(chatId, text);
 });
 
-// PLAY
+// /PLAY
 bot.onText(/\/play/, async (msg) => {
   const chatId = msg.chat.id;
   const isPrivate = msg.chat.type === "private";
@@ -137,7 +149,7 @@ bot.onText(/\/play/, async (msg) => {
   }
 });
 
-// ABOUT
+// /ABOUT
 bot.onText(/\/about/, async (msg) => {
   const chatId = msg.chat.id;
   const text = `
@@ -151,7 +163,7 @@ Born without presale. Built by chaos, memes and belief.
   await sendSafeMessage(chatId, text);
 });
 
-// INFO
+// /INFO
 bot.onText(/\/info|\/howtoplay/, async (msg) => {
   const chatId = msg.chat.id;
   const text = `
@@ -166,7 +178,7 @@ Stay unstable. 💛⚡`;
   await sendSafeMessage(chatId, text);
 });
 
-// 🆕 EVENT INFO
+// /EVENT INFO
 bot.onText(/\/event$/, async (msg) => {
   try {
     const res = await axios.get(META_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
@@ -182,7 +194,7 @@ bot.onText(/\/event$/, async (msg) => {
   }
 });
 
-// 🆕 SETEVENT
+// /SETEVENT (Admin)
 bot.onText(/\/setevent(.*)/, async (msg, match) => {
   const username = msg.from.username?.toLowerCase() || "";
   if (!ADMIN_USERS.includes(username)) return sendSafeMessage(msg.chat.id, "🚫 You are not authorized to set events.");
@@ -201,7 +213,7 @@ bot.onText(/\/setevent(.*)/, async (msg, match) => {
   }
 });
 
-// /RESETEVENT
+// /RESETEVENT (Admin)
 bot.onText(/\/resetevent/, async (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username?.toLowerCase() || "";
@@ -294,7 +306,25 @@ app.get("/eventtop50", async (req, res) => {
   }
 });
 
-// === SUBMIT ENDPOINT (admin + player) ===
+// === UNIVERSAL ENDPOINT ===
+app.get("/eventtop", async (req, res) => {
+  const limit = parseInt(req.query.limit || "10");
+  try {
+    const eventData = await getEventData();
+    const scores = eventData.scores || {};
+    const formatted = Object.entries(scores)
+      .filter(([user]) => !user.startsWith("_"))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([username, score]) => ({ username, score }));
+    res.json(formatted);
+  } catch (err) {
+    console.error("❌ Failed /eventtop:", err.message);
+    res.status(500).json({ error: "Failed to load event top list" });
+  }
+});
+
+// === SUBMIT ===
 app.post("/submit", async (req, res) => {
   try {
     const { username, score, target } = req.body;
