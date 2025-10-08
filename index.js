@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Full Stable + Logging + Event Meta + Submit + ResetEvent
+// ⚡ Version: Native game start + event mirror + event meta + admin submit
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -14,10 +14,11 @@ require("dotenv").config();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const JSONBIN_ID = process.env.JSONBIN_ID;
 const EVENT_JSONBIN_ID = process.env.EVENT_JSONBIN_ID;
-const EVENT_META_JSONBIN_ID = process.env.EVENT_META_JSONBIN_ID;
 const JSONBIN_KEY = process.env.JSONBIN_KEY;
+const EVENT_META_JSONBIN_ID = process.env.EVENT_META_JSONBIN_ID;
+const RESET_KEY = process.env.RESET_KEY;
 
-if (!token || !JSONBIN_ID || !EVENT_JSONBIN_ID || !EVENT_META_JSONBIN_ID || !JSONBIN_KEY) {
+if (!token || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY || !EVENT_META_JSONBIN_ID || !RESET_KEY) {
   console.error("❌ Missing environment variables!");
   process.exit(1);
 }
@@ -49,9 +50,12 @@ app.get("/", (req, res) => {
 });
 
 // === HELPERS ===
-async function sendSafeMessage(chatId, text) {
+async function sendSafeMessage(chatId, message) {
   try {
-    await bot.sendMessage(chatId, text, { parse_mode: "HTML", disable_web_page_preview: true });
+    await bot.sendMessage(chatId, message, {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
   } catch (err) {
     console.error("❌ Telegram send failed:", err.message);
   }
@@ -59,7 +63,9 @@ async function sendSafeMessage(chatId, text) {
 
 async function getLeaderboard() {
   try {
-    const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    const res = await axios.get(MAIN_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
     return res.data.record || {};
   } catch (err) {
     console.error("❌ Error loading leaderboard:", err.message);
@@ -69,9 +75,13 @@ async function getLeaderboard() {
 
 async function getEventData() {
   try {
-    const res = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    const res = await axios.get(EVENT_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
     const data = res.data.record || {};
-    return data.scores ? data : { scores: data };
+    if (data.scores) return data;
+    if (typeof data === "object") return { scores: data };
+    return { scores: {} };
   } catch (err) {
     console.error("❌ Error fetching event data:", err.message);
     return { scores: {} };
@@ -97,6 +107,7 @@ bot.onText(/\/start/, async (msg) => {
 
 // HELP
 bot.onText(/\/help/, async (msg) => {
+  const chatId = msg.chat.id;
   const text = `
 <b>💛 Welcome to the UnStableCoin Game Bot</b>
 
@@ -107,8 +118,10 @@ Available commands:
 ⚡ <b>/eventtop10</b> – Event top 10  
 🥇 <b>/eventtop50</b> – Event top 50  
 📢 <b>/event</b> – View current event  
-🧠 <b>/info</b> – Game rules`;
-  await sendSafeMessage(msg.chat.id, text);
+🧠 <b>/info</b> – Game rules  
+🔧 <b>/resetevent</b> – Admin only  
+🚀 <b>/setevent</b> – Admin only`;
+  await sendSafeMessage(chatId, text);
 });
 
 // PLAY
@@ -120,7 +133,9 @@ bot.onText(/\/play/, async (msg) => {
     await bot.sendMessage(chatId, "🎮 <b>Play FUD Dodge</b>", {
       parse_mode: "HTML",
       reply_markup: {
-        inline_keyboard: [[{ text: "⚡ Open Game", web_app: { url: "https://theunstable.io/fuddodge" } }]],
+        inline_keyboard: [
+          [{ text: "⚡ Open Game", web_app: { url: "https://theunstable.io/fuddodge" } }],
+        ],
       },
     });
   } else {
@@ -129,7 +144,11 @@ bot.onText(/\/play/, async (msg) => {
       `💨 FUD levels too high here 😅\nPlay safely in DM 👇`,
       {
         parse_mode: "HTML",
-        reply_markup: [[{ text: "⚡ Open DM to Play", url: "https://t.me/UnStableCoinBot?start=play" }]],
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "⚡ Open DM to Play", url: "https://t.me/UnStableCoinBot?start=play" }],
+          ],
+        },
       }
     );
   }
@@ -137,6 +156,7 @@ bot.onText(/\/play/, async (msg) => {
 
 // ABOUT
 bot.onText(/\/about/, async (msg) => {
+  const chatId = msg.chat.id;
   const text = `
 <b>UnStableCoin ($US)</b>  
 A cultural experiment on Solana.  
@@ -145,11 +165,12 @@ Born without presale. Built by chaos, memes and belief.
 🌐 <a href="https://theunstable.io">Website</a>  
 🐦 <a href="https://x.com/UnStableCoinX">X</a>  
 💬 <a href="https://t.me/UnStableCoin_US">Telegram</a>`;
-  await sendSafeMessage(msg.chat.id, text);
+  await sendSafeMessage(chatId, text);
 });
 
-// INFO / HOWTOPLAY
+// INFO
 bot.onText(/\/info|\/howtoplay/, async (msg) => {
+  const chatId = msg.chat.id;
   const text = `
 🎮 <b>How to Play FUD Dodge</b>
 
@@ -159,7 +180,7 @@ bot.onText(/\/info|\/howtoplay/, async (msg) => {
 📊 <b>Compete:</b> /top10  / /eventtop10  
 
 Stay unstable. 💛⚡`;
-  await sendSafeMessage(msg.chat.id, text);
+  await sendSafeMessage(chatId, text);
 });
 
 // 🆕 EVENT INFO
@@ -186,16 +207,17 @@ bot.onText(/\/event$/, async (msg) => {
   }
 });
 
-// 🆕 SETEVENT (admins)
+// 🆕 SETEVENT (admins only)
 bot.onText(/\/setevent(.*)/, async (msg, match) => {
   const username = msg.from.username?.toLowerCase() || "";
-  if (!ADMIN_USERS.includes(username)) return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
+  if (!ADMIN_USERS.includes(username))
+    return sendSafeMessage(msg.chat.id, "🚫 You are not authorized to set events.");
 
   const args = match[1]?.trim();
   if (!args) {
     return sendSafeMessage(
       msg.chat.id,
-      "📝 To set an event, use:\n<code>/setevent Title | Description</code>\n\nExample:\n<code>/setevent 🚀 Moon Run | Survive the FUD and double your MCap!</code>"
+      "📝 To set an event, use:\n<code>/setevent Title | Description</code>\n\nExample:\n<code>/setevent 🚀 Moon Run | Survive the FUD and double your MCap!</code>",
     );
   }
 
@@ -210,99 +232,141 @@ bot.onText(/\/setevent(.*)/, async (msg, match) => {
     await axios.put(META_BIN_URL, newData, {
       headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
     });
-    await sendSafeMessage(msg.chat.id, `✅ Event updated:\n<b>${newData.title}</b>\n${newData.info}`);
+    await sendSafeMessage(
+      msg.chat.id,
+      `✅ Event updated:\n<b>${newData.title}</b>\n${newData.info}`
+    );
   } catch (err) {
     console.error("❌ SetEvent failed:", err.message);
     await sendSafeMessage(msg.chat.id, "⚠️ Failed to update event.");
   }
 });
 
-// === SUBMIT SCORE ===
-app.post("/submit", async (req, res) => {
-  try {
-    const { username, score } = req.body;
-    if (!username || typeof score !== "number") {
-      console.warn("⚠️ Invalid submit:", req.body);
-      return res.status(400).json({ error: "Invalid data" });
-    }
-
-    console.log(`🏁 ${username} submitted ${score} points`);
-
-    // MAIN
-    const mainRes = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    const mainData = mainRes.data.record || {};
-    const prev = mainData[username] || 0;
-
-    if (score > prev) {
-      mainData[username] = score;
-      await axios.put(MAIN_BIN_URL, mainData, {
-        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
-      });
-      console.log(`🔥 Main updated for ${username}: ${score}`);
-    } else {
-      console.log(`ℹ️ Lower score ignored for ${username}`);
-    }
-
-    // EVENT mirror
-    try {
-      const eventRes = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-      const eventData = eventRes.data.record || {};
-      const scores = eventData.scores || {};
-      const current = scores[username] || 0;
-
-      if (score > current) {
-        scores[username] = score;
-        await axios.put(EVENT_BIN_URL, { ...eventData, scores }, {
-          headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
-        });
-        console.log(`⚡ Event updated for ${username}: ${score}`);
-      }
-    } catch (err) {
-      console.error("❌ Event mirror failed:", err.message);
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("❌ Submit failed:", err.message);
-    res.status(500).json({ error: "Failed to submit score" });
-  }
-});
-
-// === RESET EVENT (admins) ===
+// /RESETEVENT (admins)
 bot.onText(/\/resetevent/, async (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username?.toLowerCase() || "";
-  if (!ADMIN_USERS.includes(username)) return sendSafeMessage(chatId, "🚫 You are not authorized.");
+  if (!ADMIN_USERS.includes(username))
+    return sendSafeMessage(chatId, "🚫 You are not authorized to use this command.");
 
-  await sendSafeMessage(chatId, "⚠️ Confirm reset? Type <b>YES</b> within 30 seconds.");
+  await sendSafeMessage(chatId, "⚠️ Confirm reset? Reply <b>YES</b> within 30 seconds to proceed.");
 
-  const listener = async (reply) => {
-    if (reply.chat.id !== chatId) return;
-    const user = reply.from.username?.toLowerCase() || "";
-    if (user !== username) return;
+  const confirmationListener = async (replyMsg) => {
+    if (replyMsg.chat.id !== chatId) return;
+    const replyUser = replyMsg.from.username?.toLowerCase() || "";
+    if (replyUser !== username) return;
 
-    if (reply.text.trim().toUpperCase() === "YES") {
+    if (replyMsg.text.trim().toUpperCase() === "YES") {
       try {
         const eventData = await getEventData();
         const updated = { ...eventData, scores: {} };
         await axios.put(EVENT_BIN_URL, updated, {
           headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
         });
-        console.log(`⚡ Event reset by ${username}`);
-        await sendSafeMessage(chatId, "✅ Event leaderboard cleared.");
+        console.log(`⚡ Event leaderboard reset by ${username}`);
+        await sendSafeMessage(chatId, "✅ Event leaderboard has been cleared.");
       } catch (err) {
         console.error("❌ Reset failed:", err.message);
-        await sendSafeMessage(chatId, "⚠️ Failed to reset event.");
+        await sendSafeMessage(chatId, "⚠️ Failed to reset event leaderboard.");
       }
     } else {
       await sendSafeMessage(chatId, "❌ Reset cancelled.");
     }
-
-    bot.removeListener("message", listener);
+    bot.removeListener("message", confirmationListener);
   };
+  bot.on("message", confirmationListener);
+  setTimeout(() => bot.removeListener("message", confirmationListener), 30000);
+});
 
-  bot.on("message", listener);
-  setTimeout(() => bot.removeListener("message", listener), 30000);
+// === LEADERBOARD COMMANDS ===
+bot.onText(/\/top10/, async (msg) => {
+  const chatId = msg.chat.id;
+  const data = await getLeaderboard();
+  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return sendSafeMessage(chatId, "No scores yet. Be the first to play!");
+  let message = "<b>🏆 Top 10 Players</b>\n\n";
+  sorted.slice(0, 10).forEach(([user, score], i) => { message += `${i + 1}. <b>${user}</b> – ${score} pts\n`; });
+  await sendSafeMessage(chatId, message);
+});
+
+bot.onText(/\/top50/, async (msg) => {
+  const chatId = msg.chat.id;
+  const data = await getLeaderboard();
+  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return sendSafeMessage(chatId, "No scores yet.");
+  let message = "<b>🏅 Legends & survivors – Top 50</b>\n\n";
+  sorted.slice(0, 50).forEach(([user, score], i) => { message += `${i + 1}. <b>${user}</b> – ${score} pts\n`; });
+  await sendSafeMessage(chatId, message);
+});
+
+bot.onText(/\/eventtop10/, async (msg) => {
+  const chatId = msg.chat.id;
+  const eventData = await getEventData();
+  const scores = eventData.scores || {};
+  const sorted = Object.entries(scores).filter(([user]) => !user.startsWith("_")).sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
+  let message = "<b>🥇 Event Top 10</b>\n\n";
+  sorted.slice(0, 10).forEach(([user, score], i) => { message += `${i + 1}. <b>${user}</b> – ${score} pts\n`; });
+  await sendSafeMessage(chatId, message);
+});
+
+bot.onText(/\/eventtop50/, async (msg) => {
+  const chatId = msg.chat.id;
+  const eventData = await getEventData();
+  const scores = eventData.scores || {};
+  const sorted = Object.entries(scores).filter(([user]) => !user.startsWith("_")).sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
+  let message = "<b>⚡ Event Top 50</b>\n\n";
+  sorted.slice(0, 50).forEach(([user, score], i) => { message += `${i + 1}. <b>${user}</b> – ${score} pts\n`; });
+  await sendSafeMessage(chatId, message);
+});
+
+// === GAME API ENDPOINTS ===
+app.post("/submit", async (req, res) => {
+  try {
+    const { username, score, target } = req.body;
+    const adminKey = req.headers["x-admin-key"];
+    const isAdmin = adminKey && adminKey === RESET_KEY;
+
+    if (!username || typeof score !== "number")
+      return res.status(400).json({ error: "Invalid data" });
+
+    console.log(`📥 Submit received: ${username} → ${score} (${target || "both"})`);
+
+    // MAIN leaderboard update
+    if (target !== "event") {
+      const mainRes = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+      const mainData = mainRes.data.record || {};
+      const prev = mainData[username] || 0;
+      if (score > prev || isAdmin) {
+        mainData[username] = score;
+        await axios.put(MAIN_BIN_URL, mainData, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
+        console.log(`🔥 Updated main score for ${username}: ${score}`);
+      }
+    }
+
+    // EVENT leaderboard update
+    if (target !== "main") {
+      try {
+        const eventRes = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+        const eventData = eventRes.data.record || {};
+        const scores = eventData.scores || {};
+        const current = scores[username] || 0;
+        if (score > current || isAdmin) {
+          scores[username] = score;
+          await axios.put(EVENT_BIN_URL, { ...eventData, scores }, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
+          console.log(`⚡ Updated event score for ${username}: ${score}`);
+        }
+      } catch (err) {
+        console.error("❌ Event mirror failed:", err.message);
+      }
+    }
+
+    res.json({ success: true, updated: true });
+  } catch (err) {
+    console.error("❌ Submit failed:", err.message);
+    res.status(500).json({ error: "Failed to submit score" });
+  }
 });
 
 // === CALLBACK FIX ===
