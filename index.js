@@ -314,6 +314,50 @@ bot.onText(/\/eventtop50/, async (msg) => {
   await sendSafeMessage(chatId, message);
 });
 
+// === GAME API ENDPOINTS ===
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const data = await getLeaderboard();
+    const formatted = Object.entries(data).map(([username, score]) => ({ username, score }));
+    res.json(formatted);
+  } catch (err) {
+    console.error("❌ Failed /leaderboard:", err.message);
+    res.status(500).json({ error: "Failed to load leaderboard" });
+  }
+});
+
+app.get("/eventtop10", async (req, res) => {
+  try {
+    const eventData = await getEventData();
+    const scores = eventData.scores || {};
+    const formatted = Object.entries(scores)
+      .filter(([user]) => !user.startsWith("_"))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([username, score]) => ({ username, score }));
+    res.json(formatted);
+  } catch (err) {
+    console.error("❌ Failed /eventtop10:", err.message);
+    res.status(500).json({ error: "Failed to load event top10" });
+  }
+});
+
+app.get("/eventtop50", async (req, res) => {
+  try {
+    const eventData = await getEventData();
+    const scores = eventData.scores || {};
+    const formatted = Object.entries(scores)
+      .filter(([user]) => !user.startsWith("_"))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 50)
+      .map(([username, score]) => ({ username, score }));
+    res.json(formatted);
+  } catch (err) {
+    console.error("❌ Failed /eventtop50:", err.message);
+    res.status(500).json({ error: "Failed to load event top50" });
+  }
+});
+
 // === CALLBACK FIX ===
 bot.on("callback_query", async (query) => {
   try {
