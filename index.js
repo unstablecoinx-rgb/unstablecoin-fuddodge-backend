@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Native game start + event mirror fix + callback fix
+// ⚡ Version: Full Stable Build (callback + leaderboards + info + fixes)
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -190,6 +190,70 @@ Keep dodging. Keep growing.
 Stay unstable. 💛⚡
 `;
   await sendSafeMessage(chatId, text);
+});
+
+// === LEADERBOARD COMMANDS ===
+bot.onText(/\/top10/, async (msg) => {
+  const chatId = msg.chat.id;
+  const data = await getLeaderboard();
+  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return sendSafeMessage(chatId, "No scores yet. Be the first to play!");
+
+  let message = "<b>🏆 Top 10 Players</b>\n\n";
+  sorted.slice(0, 10).forEach(([user, score], i) => {
+    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
+  });
+  await sendSafeMessage(chatId, message);
+});
+
+bot.onText(/\/top50/, async (msg) => {
+  const chatId = msg.chat.id;
+  const data = await getLeaderboard();
+  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return sendSafeMessage(chatId, "No scores yet.");
+
+  let message =
+    "<b>🏅 Legends, try-harders & those who get scammed too often – Top 50</b>\n\n";
+  sorted.slice(0, 50).forEach(([user, score], i) => {
+    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
+  });
+  await sendSafeMessage(chatId, message);
+});
+
+bot.onText(/\/eventtop10/, async (msg) => {
+  const chatId = msg.chat.id;
+  const eventData = await getEventData();
+  const scores = eventData.scores || {};
+
+  const sorted = Object.entries(scores)
+    .filter(([user]) => !user.startsWith("_"))
+    .sort((a, b) => b[1] - a[1]);
+
+  if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
+
+  let message = "<b>🥇 Event Top 10</b>\n\n";
+  sorted.slice(0, 10).forEach(([user, score], i) => {
+    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
+  });
+  await sendSafeMessage(chatId, message);
+});
+
+bot.onText(/\/eventtop50/, async (msg) => {
+  const chatId = msg.chat.id;
+  const eventData = await getEventData();
+  const scores = eventData.scores || {};
+
+  const sorted = Object.entries(scores)
+    .filter(([user]) => !user.startsWith("_"))
+    .sort((a, b) => b[1] - a[1]);
+
+  if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
+
+  let message = "<b>⚡ Those still dodging FUD like it’s 2023 – Event Top 50</b>\n\n";
+  sorted.slice(0, 50).forEach(([user, score], i) => {
+    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
+  });
+  await sendSafeMessage(chatId, message);
 });
 
 // === CALLBACK FIX ===
