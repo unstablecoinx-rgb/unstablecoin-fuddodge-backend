@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Smart /play (DM or Group redirect)
+// ⚡ Version: Smart /play (DM or Group redirect) + eventtop10 fix
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -190,28 +190,39 @@ bot.onText(/\/top50/, async (msg) => {
   await sendSafeMessage(chatId, message);
 });
 
-// EVENTTOP10 / EVENTTOP50
+// ✅ FIXED EVENTTOP10
 bot.onText(/\/eventtop10/, async (msg) => {
   const chatId = msg.chat.id;
   const eventData = await getEventData();
-  const scores = eventData.s|| {};
-  const sorted = Object.entries(scores).filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]);
+  const scores = eventData.scores || {};
+
+  const sorted = Object.entries(scores)
+    .filter(([user]) => !user.startsWith("_"))
+    .sort((a, b) => b[1] - a[1]);
+
   if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
   let message = "<b>🥇 Event Top 10</b>\n\n";
-  sorted.slice(0, 10).forEach(([user, score], i) => { message += `${i + 1}. <b>${user}</b> – ${score} pts\n`; });
+  sorted.slice(0, 10).forEach(([user, score], i) => {
+    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
+  });
   await sendSafeMessage(chatId, message);
 });
 
+// EVENTTOP50
 bot.onText(/\/eventtop50/, async (msg) => {
   const chatId = msg.chat.id;
   const eventData = await getEventData();
   const scores = eventData.scores || {};
-  const sorted = Object.entries(scores).filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(scores)
+    .filter(([u]) => !u.startsWith("_"))
+    .sort((a, b) => b[1] - a[1]);
   if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
   let message = "<b>⚡ Those still dodging FUD like it’s 2023 – Event Top 50</b>\n\n";
-  sorted.slice(0, 50).forEach(([user, score], i) => { message += `${i + 1}. <b>${user}</b> – ${score} pts\n`; });
+  sorted.slice(0, 50).forEach(([user, score], i) => {
+    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
+  });
   await sendSafeMessage(chatId, message);
 });
 
@@ -258,7 +269,9 @@ app.get("/eventtop10", async (req, res) => {
   try {
     const eventData = await getEventData();
     const formatted = Object.entries(eventData.scores || {})
-      .filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]).slice(0, 10)
+      .filter(([u]) => !u.startsWith("_"))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
       .map(([username, score]) => ({ username, score }));
     res.json(formatted);
   } catch {
@@ -270,7 +283,9 @@ app.get("/eventtop50", async (req, res) => {
   try {
     const eventData = await getEventData();
     const formatted = Object.entries(eventData.scores || {})
-      .filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]).slice(0, 50)
+      .filter(([u]) => !u.startsWith("_"))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 50)
       .map(([username, score]) => ({ username, score }));
     res.json(formatted);
   } catch {
