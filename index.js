@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Mini App–compatible (web_app buttons for /start & /play)
+// ⚡ Version: Smart /play (DM or Group redirect)
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -80,28 +80,54 @@ async function getEventData() {
 
 // === TELEGRAM COMMANDS ===
 
-// ✅ START & PLAY (Mini App launch)
-bot.onText(/\/start|\/play/, async (msg) => {
+// ✅ START (Mini App button for DM)
+bot.onText(/\/start/, async (msg) => {
   try {
     await bot.sendMessage(msg.chat.id, "🎮 <b>Play FUD Dodge</b>", {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          [
-            {
-              text: "⚡ Open Game",
-              web_app: { url: "https://theunstable.io/fuddodge" },
-            },
-          ],
+          [{ text: "⚡ Open Game", web_app: { url: "https://theunstable.io/fuddodge" } }]
         ],
       },
     });
   } catch (err) {
-    console.error("❌ Failed to send play link:", err.message);
+    console.error("❌ Failed to send start link:", err.message);
     await sendSafeMessage(
       msg.chat.id,
       `🎮 <b>Play FUD Dodge</b>\nIf the button doesn’t work, open manually:\n👉 <a href="https://theunstable.io/fuddodge">theunstable.io/fuddodge</a>`
     );
+  }
+});
+
+// ✅ PLAY (Smart: DM or Group redirect)
+bot.onText(/\/play/, async (msg) => {
+  const chatId = msg.chat.id;
+  const isPrivate = msg.chat.type === "private";
+
+  if (isPrivate) {
+    // Direkt start i DM
+    await bot.sendMessage(chatId, "🎮 <b>Play FUD Dodge</b>", {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "⚡ Open Game", web_app: { url: "https://theunstable.io/fuddodge" } }]
+        ],
+      },
+    });
+  } else {
+    // Grupp – länka till DM
+    await bot.sendMessage(chatId, `
+FUD levels too high in here 😅  
+Play safely in a private chat 👇
+`, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "⚡ Open DM to Play", url: "https://t.me/UnStableCoinBot?start=play" }]
+        ],
+      },
+    });
   }
 });
 
@@ -168,18 +194,12 @@ bot.onText(/\/top50/, async (msg) => {
 bot.onText(/\/eventtop10/, async (msg) => {
   const chatId = msg.chat.id;
   const eventData = await getEventData();
-  const scores = eventData.scores || {};
-
-  const sorted = Object.entries(scores)
-    .filter(([user]) => !user.startsWith("_"))
-    .sort((a, b) => b[1] - a[1]);
-
+  const scores = eventData.s|| {};
+  const sorted = Object.entries(scores).filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]);
   if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
   let message = "<b>🥇 Event Top 10</b>\n\n";
-  sorted.slice(0, 10).forEach(([user, score], i) => {
-    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
-  });
+  sorted.slice(0, 10).forEach(([user, score], i) => { message += `${i + 1}. <b>${user}</b> – ${score} pts\n`; });
   await sendSafeMessage(chatId, message);
 });
 
@@ -187,17 +207,11 @@ bot.onText(/\/eventtop50/, async (msg) => {
   const chatId = msg.chat.id;
   const eventData = await getEventData();
   const scores = eventData.scores || {};
-
-  const sorted = Object.entries(scores)
-    .filter(([user]) => !user.startsWith("_"))
-    .sort((a, b) => b[1] - a[1]);
-
+  const sorted = Object.entries(scores).filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]);
   if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
 
   let message = "<b>⚡ Those still dodging FUD like it’s 2023 – Event Top 50</b>\n\n";
-  sorted.slice(0, 50).forEach(([user, score], i) => {
-    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
-  });
+  sorted.slice(0, 50).forEach(([user, score], i) => { message += `${i + 1}. <b>${user}</b> – ${score} pts\n`; });
   await sendSafeMessage(chatId, message);
 });
 
@@ -205,50 +219,36 @@ bot.onText(/\/eventtop50/, async (msg) => {
 bot.onText(/\/resetevent/, async (msg) => {
   const chatId = msg.chat.id;
   const username = msg.from.username?.toLowerCase() || "";
-
-  if (!ADMIN_USERS.includes(username)) {
-    return sendSafeMessage(chatId, "🚫 You are not authorized to use this command.");
-  }
+  if (!ADMIN_USERS.includes(username)) return sendSafeMessage(chatId, "🚫 You are not authorized to use this command.");
 
   await sendSafeMessage(chatId, "⚠️ Confirm reset? Reply <b>YES</b> within 30 seconds to proceed.");
-
-  const confirmationListener = async (replyMsg) => {
-    if (replyMsg.chat.id !== chatId) return;
-    const replyUser = replyMsg.from.username?.toLowerCase() || "";
+  const listener = async (reply) => {
+    if (reply.chat.id !== chatId) return;
+    const replyUser = reply.from.username?.toLowerCase() || "";
     if (replyUser !== username) return;
-
-    if (replyMsg.text.trim().toUpperCase() === "YES") {
+    if (reply.text.trim().toUpperCase() === "YES") {
       try {
         const eventData = await getEventData();
         const updated = { ...eventData, scores: {} };
-
-        await axios.put(EVENT_BIN_URL, updated, {
-          headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
-        });
-
+        await axios.put(EVENT_BIN_URL, updated, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
         console.log(`⚡ Event leaderboard reset by ${username}`);
-        await sendSafeMessage(chatId, "✅ Event leaderboard has been cleared. All scores reset.");
+        await sendSafeMessage(chatId, "✅ Event leaderboard cleared.");
       } catch (err) {
-        console.error("❌ Error resetting event leaderboard:", err.message);
+        console.error("❌ Error resetting:", err.message);
         await sendSafeMessage(chatId, "⚠️ Failed to reset event leaderboard.");
       }
-    } else {
-      await sendSafeMessage(chatId, "❌ Reset cancelled.");
-    }
-
-    bot.removeListener("message", confirmationListener);
+    } else await sendSafeMessage(chatId, "❌ Reset cancelled.");
+    bot.removeListener("message", listener);
   };
-
-  bot.on("message", confirmationListener);
-  setTimeout(() => bot.removeListener("message", confirmationListener), 30000);
+  bot.on("message", listener);
+  setTimeout(() => bot.removeListener("message", listener), 30000);
 });
 
 // === GAME API ENDPOINTS ===
 app.get("/leaderboard", async (req, res) => {
   try {
     const data = await getLeaderboard();
-    const formatted = Object.entries(data).map(([username, score]) => ({ username, score }));
-    res.json(formatted);
+    res.json(Object.entries(data).map(([username, score]) => ({ username, score })));
   } catch (err) {
     res.status(500).json({ error: "Failed to load leaderboard" });
   }
@@ -257,14 +257,11 @@ app.get("/leaderboard", async (req, res) => {
 app.get("/eventtop10", async (req, res) => {
   try {
     const eventData = await getEventData();
-    const scores = eventData.scores || {};
-    const formatted = Object.entries(scores)
-      .filter(([user]) => !user.startsWith("_"))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
+    const formatted = Object.entries(eventData.scores || {})
+      .filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]).slice(0, 10)
       .map(([username, score]) => ({ username, score }));
     res.json(formatted);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to load event top10" });
   }
 });
@@ -272,20 +269,15 @@ app.get("/eventtop10", async (req, res) => {
 app.get("/eventtop50", async (req, res) => {
   try {
     const eventData = await getEventData();
-    const scores = eventData.scores || {};
-    const formatted = Object.entries(scores)
-      .filter(([user]) => !user.startsWith("_"))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 50)
+    const formatted = Object.entries(eventData.scores || {})
+      .filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]).slice(0, 50)
       .map(([username, score]) => ({ username, score }));
     res.json(formatted);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to load event top50" });
   }
 });
 
 // === SERVER START ===
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 UnStableCoinBot running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 UnStableCoinBot running on port ${PORT}`));
