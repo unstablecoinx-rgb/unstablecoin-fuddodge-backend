@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Stable Leaderboard + EventFix + Admin Tools + Chunked Output
+// ⚡ Version: Stable Leaderboard + EventFix + Sorted Splash Endpoint + Admin Tools
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -198,7 +198,6 @@ bot.onText(/\/resetevent/, async (msg) => {
     if (reply.chat.id !== chatId) return;
     if (reply.from.username?.toLowerCase() !== username) return;
     if (reply.text.trim().toUpperCase() === "YES") {
-      const { scores } = await getEventData();
       await axios.put(EVENT_BIN_URL, { scores: {} }, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
       await sendSafeMessage(chatId, "✅ Event leaderboard cleared.");
     } else await sendSafeMessage(chatId, "❌ Cancelled.");
@@ -254,16 +253,38 @@ bot.onText(/\/eventtop50/, async (msg) => {
 });
 
 // === EXPRESS API ENDPOINTS ===
-app.get("/leaderboard", async (req, res) => res.json(Object.entries(await getLeaderboard()).map(([username, score]) => ({ username, score }))));
+// ✅ FIX: sorted output for splash leaderboard
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const data = await getLeaderboard();
+    const sorted = Object.entries(data)
+      .sort((a, b) => b[1] - a[1])
+      .map(([username, score]) => ({ username, score }));
+    res.json(sorted);
+  } catch (err) {
+    console.error("❌ Failed /leaderboard:", err.message);
+    res.status(500).json({ error: "Failed to load leaderboard" });
+  }
+});
 
 app.get("/eventtop10", async (req, res) => {
   const { scores } = await getEventData();
-  res.json(Object.entries(scores).filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([u, s]) => ({ username: u, score: s })));
+  const sorted = Object.entries(scores)
+    .filter(([u]) => !u.startsWith("_"))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([username, score]) => ({ username, score }));
+  res.json(sorted);
 });
 
 app.get("/eventtop50", async (req, res) => {
   const { scores } = await getEventData();
-  res.json(Object.entries(scores).filter(([u]) => !u.startsWith("_")).sort((a, b) => b[1] - a[1]).slice(0, 50).map(([u, s]) => ({ username: u, score: s })));
+  const sorted = Object.entries(scores)
+    .filter(([u]) => !u.startsWith("_"))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 50)
+    .map(([username, score]) => ({ username, score }));
+  res.json(sorted);
 });
 
 // === SUBMIT ===
