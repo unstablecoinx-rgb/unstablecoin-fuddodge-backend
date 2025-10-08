@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Native game start + event mirror fix
+// ⚡ Version: Native game start + event mirror fix + callback fix
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -109,7 +109,8 @@ Available commands:
 📈 <b>/top50</b> – View top 50  
 ⚡ <b>/eventtop10</b> – Event top 10  
 🥇 <b>/eventtop50</b> – Event top 50  
-ℹ️ <b>/about</b> – Learn more
+ℹ️ <b>/about</b> – Learn more  
+🕹️ <b>/info</b> or <b>/howtoplay</b> – Game rules
 `;
   await sendSafeMessage(chatId, text);
 });
@@ -131,7 +132,7 @@ bot.onText(/\/play/, async (msg) => {
   } else {
     await bot.sendMessage(
       chatId,
-      `FUD levels too high in here 😅  
+      `💨 FUD levels too high in here 😅  
 Play safely in a private chat 👇`,
       {
         parse_mode: "HTML",
@@ -178,7 +179,7 @@ Simple? Not really.
 
 💀 <b>Threats:</b>  
 • ☠️ FUD Skull – Game Over  
-• 🏴‍☠️ Ruggraph – The Scammer! -50% MCap.  
+• 🏴‍☠️ The Scammer! – -50% MCap  
 • 🔴 Red Candle – -500 MCap  
 
 📊 <b>Compete on:</b>  
@@ -191,199 +192,16 @@ Stay unstable. 💛⚡
   await sendSafeMessage(chatId, text);
 });
 
-// TOP10 / TOP50
-bot.onText(/\/top10/, async (msg) => {
-  const chatId = msg.chat.id;
-  const data = await getLeaderboard();
-  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
-  if (!sorted.length) return sendSafeMessage(chatId, "No scores yet. Be the first to play!");
-
-  let message = "<b>🏆 Top 10 Players</b>\n\n";
-  sorted.slice(0, 10).forEach(([user, score], i) => {
-    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
-  });
-  await sendSafeMessage(chatId, message);
-});
-
-bot.onText(/\/top50/, async (msg) => {
-  const chatId = msg.chat.id;
-  const data = await getLeaderboard();
-  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
-  if (!sorted.length) return sendSafeMessage(chatId, "No scores yet.");
-
-  let message =
-    "<b>🏅 Legends, try-harders & those who get scammed too often – Top 50</b>\n\n";
-  sorted.slice(0, 50).forEach(([user, score], i) => {
-    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
-  });
-  await sendSafeMessage(chatId, message);
-});
-
-// EVENTTOP10 / EVENTTOP50
-bot.onText(/\/eventtop10/, async (msg) => {
-  const chatId = msg.chat.id;
-  const eventData = await getEventData();
-  const scores = eventData.scores || {};
-
-  const sorted = Object.entries(scores)
-    .filter(([user]) => !user.startsWith("_"))
-    .sort((a, b) => b[1] - a[1]);
-
-  if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
-
-  let message = "<b>🥇 Event Top 10</b>\n\n";
-  sorted.slice(0, 10).forEach(([user, score], i) => {
-    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
-  });
-  await sendSafeMessage(chatId, message);
-});
-
-bot.onText(/\/eventtop50/, async (msg) => {
-  const chatId = msg.chat.id;
-  const eventData = await getEventData();
-  const scores = eventData.scores || {};
-
-  const sorted = Object.entries(scores)
-    .filter(([user]) => !user.startsWith("_"))
-    .sort((a, b) => b[1] - a[1]);
-
-  if (!sorted.length) return sendSafeMessage(chatId, "No event scores yet.");
-
-  let message = "<b>⚡ Those still dodging FUD like it’s 2023 – Event Top 50</b>\n\n";
-  sorted.slice(0, 50).forEach(([user, score], i) => {
-    message += `${i + 1}. <b>${user}</b> – ${score} pts\n`;
-  });
-  await sendSafeMessage(chatId, message);
-});
-
-// ADMIN: RESETEVENT
-bot.onText(/\/resetevent/, async (msg) => {
-  const chatId = msg.chat.id;
-  const username = msg.from.username?.toLowerCase() || "";
-
-  if (!ADMIN_USERS.includes(username)) {
-    return sendSafeMessage(chatId, "🚫 You are not authorized to use this command.");
-  }
-
-  await sendSafeMessage(chatId, "⚠️ Confirm reset? Reply <b>YES</b> within 30 seconds to proceed.");
-
-  const confirmationListener = async (replyMsg) => {
-    if (replyMsg.chat.id !== chatId) return;
-    const replyUser = replyMsg.from.username?.toLowerCase() || "";
-    if (replyUser !== username) return;
-
-    if (replyMsg.text.trim().toUpperCase() === "YES") {
-      try {
-        const eventData = await getEventData();
-        const updated = { ...eventData, scores: {} };
-
-        await axios.put(EVENT_BIN_URL, updated, {
-          headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
-        });
-
-        console.log(`⚡ Event leaderboard reset by ${username}`);
-        await sendSafeMessage(chatId, "✅ Event leaderboard has been cleared. All scores reset.");
-      } catch (err) {
-        console.error("❌ Error resetting event leaderboard:", err.message);
-        await sendSafeMessage(chatId, "⚠️ Failed to reset event leaderboard.");
-      }
-    } else {
-      await sendSafeMessage(chatId, "❌ Reset cancelled.");
-    }
-
-    bot.removeListener("message", confirmationListener);
-  };
-
-  bot.on("message", confirmationListener);
-  setTimeout(() => bot.removeListener("message", confirmationListener), 30000);
-});
-
-// === GAME API ENDPOINTS ===
-
-// 🧩 /submit now mirrors scores to both main & event bins
-app.post("/submit", async (req, res) => {
+// === CALLBACK FIX ===
+bot.on("callback_query", async (query) => {
   try {
-    const { username, score } = req.body;
-    if (!username || typeof score !== "number") {
-      return res.status(400).json({ error: "Invalid data" });
-    }
-
-    // --- MAIN leaderboard update ---
-    const mainRes = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    const mainData = mainRes.data.record || {};
-    const prev = mainData[username] || 0;
-
-    if (score > prev) {
-      mainData[username] = score;
-      await axios.put(MAIN_BIN_URL, mainData, {
-        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
+    if (query.game_short_name === "US_FUD_Dodge") {
+      await bot.answerCallbackQuery(query.id, {
+        url: "https://theunstable.io/fuddodge",
       });
-      console.log(`🔥 Updated main score for ${username}: ${score}`);
     }
-
-    // --- EVENT leaderboard mirror ---
-    try {
-      const eventRes = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-      const eventData = eventRes.data.record || {};
-      const scores = eventData.scores || {};
-      const current = scores[username] || 0;
-
-      if (score > current) {
-        scores[username] = score;
-        await axios.put(EVENT_BIN_URL, { ...eventData, scores }, {
-          headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
-        });
-        console.log(`⚡ Updated event score for ${username}: ${score}`);
-      }
-    } catch (err) {
-      console.error("❌ Event mirror failed:", err.message);
-    }
-
-    res.json({ success: true });
   } catch (err) {
-    console.error("❌ Submit failed:", err.message);
-    res.status(500).json({ error: "Failed to submit score" });
-  }
-});
-
-// === Leaderboard endpoints ===
-app.get("/leaderboard", async (req, res) => {
-  try {
-    const data = await getLeaderboard();
-    const formatted = Object.entries(data).map(([username, score]) => ({ username, score }));
-    res.json(formatted);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to load leaderboard" });
-  }
-});
-
-app.get("/eventtop10", async (req, res) => {
-  try {
-    const eventData = await getEventData();
-    const scores = eventData.scores || {};
-    const formatted = Object.entries(scores)
-      .filter(([user]) => !user.startsWith("_"))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([username, score]) => ({ username, score }));
-    res.json(formatted);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to load event top10" });
-  }
-});
-
-app.get("/eventtop50", async (req, res) => {
-  try {
-    const eventData = await getEventData();
-    const scores = eventData.scores || {};
-    const formatted = Object.entries(scores)
-      .filter(([user]) => !user.startsWith("_"))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 50)
-      .map(([username, score]) => ({ username, score }));
-    res.json(formatted);
-  } catch (err) {
-    res.status(500).json({ error: "Failed to load event top50" });
+    console.error("❌ Game callback error:", err.message);
   }
 });
 
