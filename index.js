@@ -160,6 +160,37 @@ Born without presale. Built by chaos, memes, and belief.
   await sendSafeMessage(chatId, text);
 });
 
+// INFO / HOWTOPLAY
+bot.onText(/\/info|\/howtoplay/, async (msg) => {
+  const chatId = msg.chat.id;
+  const text = `
+🎮 <b>How to Play FUD Dodge</b>
+
+🪙 <b>Goal:</b>  
+Dodge FUD and scams. Collect coins, memes, and green candles to grow your MCap.  
+Simple? Not really.
+
+⚡ <b>Power-ups:</b>  
+• ⚡ Lightning – Clears all FUD on screen  
+• 🪙 Coin – +200 MCap  
+• 🟢 Green Candle – Shield + bonus  
+• 🧠 Meme – Random word drop  
+
+💀 <b>Threats:</b>  
+• ☠️ FUD Skull – Game Over  
+• 🏴‍☠️ Ruggraph – The Scammer! -50% MCap.  
+• 🔴 Red Candle – -500 MCap  
+
+📊 <b>Compete on:</b>  
+• /top10 – All time legends  
+• /eventtop10 – Current event leaderboard  
+
+Keep dodging. Keep growing.  
+Stay unstable. 💛⚡
+`;
+  await sendSafeMessage(chatId, text);
+});
+
 // TOP10 / TOP50
 bot.onText(/\/top10/, async (msg) => {
   const chatId = msg.chat.id;
