@@ -221,14 +221,14 @@ bot.onText(/\/event$/, async (msg) => {
 
     if (!meta.title) {
       meta = {
-        title: "⚡️ Unstable Challenge",
-        info: "Stay tuned for the next event!",
+        title: "⚡️ UnStable Challenge",
+        info: "Score big, stay unstable!",
         endDate: null,
         updatedAt: new Date().toISOString(),
       };
     }
 
-    // 🕓 Format remaining time or status
+    // 🕓 Format remaining time
     let timeInfo = "";
     if (meta.endDate) {
       const now = DateTime.now().toUTC();
@@ -245,19 +245,13 @@ bot.onText(/\/event$/, async (msg) => {
           .setZone(meta.timezone || "Europe/Stockholm")
           .toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
       } else {
-        timeInfo = `\n\n⚠️ <b>The event has ended.</b>\n⚡️ Stay tuned for the next Unstable Challenge!`;
+        timeInfo = `\n\n⚠️ <b>This event has ended.</b>\nStay tuned for the next ⚡️ UnStable Challenge!`;
       }
     }
 
-    const updated = meta.updatedAt
-      ? `\n\n<i>Updated: ${DateTime.fromISO(meta.updatedAt)
-          .toUTC()
-          .toFormat("yyyy-MM-dd HH:mm 'UTC'")}</i>`
-      : "";
-
     await sendSafeMessage(
       msg.chat.id,
-      `<b>${meta.title}</b>\n\n${meta.info}${timeInfo}${updated}`,
+      `<b>${meta.title}</b>\n\n${meta.info}${timeInfo}`,
       { parse_mode: "HTML" }
     );
   } catch (err) {
@@ -492,56 +486,93 @@ app.get("/eventtop50", async (req, res) => {
 });
 
 // === SUBMIT ===
-// POST body: { username, score, target } target = "event" | "main" | undefined (both)
-// If event has ended, server will NOT write to event leaderboard.
 app.post("/submit", async (req, res) => {
   try {
     const { username, score, target } = req.body;
     const adminKey = req.headers["x-admin-key"];
     const isAdmin = adminKey && adminKey === RESET_KEY;
-    if (!username || typeof score !== "number") return res.status(400).json({ error: "Invalid data" });
 
-    console.log(`📥 Submit: ${username} → ${score} (${target || "both"})`);
+    if (!username || typeof score !== "number") {
+      return res.status(400).json({ error: "Invalid data" });
+    }
 
-    // MAIN leaderboard update
+    console.log(`📥 Submit received → ${username}: ${score} (${target || "both"})`);
+
+    // === 1️⃣ Load event meta for status check ===
+    let eventMeta = {};
+    try {
+      const resp = await axios.get(
+        `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}/latest`,
+        { headers: { "X-Master-Key": JSONBIN_KEY } }
+      );
+      eventMeta = resp.data.record || {};
+    } catch (err) {
+      console.warn("⚠️ Failed to load event meta:", err.message);
+    }
+
+    const now = DateTime.now().toUTC();
+    const end = eventMeta.endDate ? DateTime.fromISO(eventMeta.endDate) : null;
+    const eventActive = end ? now < end : false;
+
+    // === 2️⃣ If event is closed, block event scores (unless admin override) ===
+    if (!eventActive && !isAdmin && target !== "main") {
+      console.log(`⏳ Event closed — ${username}'s event score ignored.`);
+      return res.json({
+        success: false,
+        message: "⚠️ Event has ended. Stay tuned for the next ⚡️ UnStable Challenge!",
+        eventActive: false,
+        endDate: eventMeta.endDate || null,
+      });
+    }
+
+    // === 3️⃣ MAIN LEADERBOARD ===
     if (target !== "event") {
       const main = await getLeaderboard();
       const prev = main[username] || 0;
       if (score > prev || isAdmin) {
         main[username] = score;
-        // Save as simple map to MAIN_BIN_URL
-        await axios.put(MAIN_BIN_URL, main, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
+        await axios.put(MAIN_BIN_URL, main, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Master-Key": JSONBIN_KEY,
+          },
+        });
         console.log(`🔥 Main updated for ${username}: ${score}`);
       }
     }
 
-    // EVENT update: only if event is open OR admin override
+    // === 4️⃣ EVENT LEADERBOARD ===
     if (target !== "main") {
-      const meta = await getEventMeta();
-      const eventOpen = isEventOpen(meta);
-      if (!eventOpen && !isAdmin) {
-        // Event closed — do not record to event leaderboard
-        console.log(`⚠️ Event closed — not saving event score for ${username}.`);
-        return res.json({ success: true, eventSaved: false, reason: "Event closed" });
-      }
-
       const { scores } = await getEventData();
       const prev = scores[username] || 0;
       if (score > prev || isAdmin) {
         scores[username] = score;
-        // Save wrapper object { scores: { ... } } to EVENT_BIN_URL
-        await axios.put(EVENT_BIN_URL, { scores }, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
-        console.log(`⚡ Event updated for ${username}: ${score}`);
+        await axios.put(
+          EVENT_BIN_URL,
+          { scores },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "X-Master-Key": JSONBIN_KEY,
+            },
+          }
+        );
+        console.log(`⚡️ Event updated for ${username}: ${score}`);
       }
     }
 
-    res.json({ success: true, eventSaved: true });
+    // === 5️⃣ Success response ===
+    res.json({
+      success: true,
+      message: "✅ Score submitted successfully.",
+      eventActive: eventActive,
+      endDate: eventMeta.endDate || null,
+    });
   } catch (err) {
-    console.error("❌ Submit failed:", err?.message || err);
+    console.error("❌ Submit failed:", err.message);
     res.status(500).json({ error: "Failed to submit score" });
   }
 });
-
 // === CALLBACK (games button) ===
 bot.on("callback_query", async (q) => {
   try {
