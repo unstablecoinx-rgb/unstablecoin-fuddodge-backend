@@ -252,31 +252,41 @@ bot.onText(/\/eventtop50/, async (msg) => {
   sendChunked(msg.chat.id, "<b>🥇 Event Top 50</b>\n\n", lines);
 });
 
-// === 🪩 Public event info for frontend ===
+// === 🪩 Public event info for frontend & game ===
 app.get("/event", async (req, res) => {
   try {
-    const url = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`;
+    // use the same meta-bin that Telegram uses
+    const url = `https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}/latest`;
+
     const resp = await fetch(url, {
       headers: {
-        "X-Master-Key": process.env.JSONBIN_MASTER_KEY,
+        "X-Master-Key": process.env.JSONBIN_KEY,
       },
     });
 
     if (!resp.ok) {
-      return res.status(resp.status).json({ error: "Failed to fetch event info" });
+      console.error("❌ JSONBin fetch failed:", resp.status, await resp.text());
+      return res
+        .status(resp.status)
+        .json({ error: "Failed to fetch event info" });
     }
 
     const json = await resp.json();
     const data = json.record || json;
 
+    // normalize output for the frontend
     res.json({
-      title: data.title || "Current Event",
-      info: data.info || data.description || "",
+      title: data.title || data.name || "Current Event",
+      info: data.info || data.description || "No description available.",
       endDate: data.endDate || data.expiry || null,
-      updatedAt: json.metadata?.modifiedAt || new Date().toISOString(),
+      updatedAt:
+        data.updatedAt ||
+        json.metadata?.modifiedAt ||
+        new Date().toISOString(),
+      source: "EVENT_META_JSONBIN_ID",
     });
   } catch (err) {
-    console.error("❌ Event fetch failed:", err);
+    console.error("❌ /event route error:", err);
     res.status(500).json({ error: "Internal event fetch error" });
   }
 });
