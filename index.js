@@ -165,14 +165,48 @@ Stay unstable. 💛⚡`;
 // /EVENT
 bot.onText(/\/event$/, async (msg) => {
   try {
-    const res = await axios.get(META_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    const res = await axios.get(META_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
     let meta = res.data.record || {};
+
     if (!meta.title) {
-      meta = { title: "🚀 Default Event", info: "Score big, stay unstable!", updatedAt: new Date().toISOString() };
-      await axios.put(META_BIN_URL, meta, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
+      meta = {
+        title: "🚀 Default Event",
+        info: "Score big, stay unstable!",
+        endDate: null,
+        updatedAt: new Date().toISOString(),
+      };
     }
-    await sendSafeMessage(msg.chat.id, `<b>${meta.title}</b>\n\n${meta.info}`);
-  } catch {
+
+    // 🕓 Format remaining time
+    let timeInfo = "";
+    if (meta.endDate) {
+      const now = DateTime.now().toUTC();
+      const end = DateTime.fromISO(meta.endDate);
+      const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
+
+      if (diff.days > 0 || diff.hours > 0 || diff.minutes > 0) {
+        const d = Math.floor(diff.days || 0);
+        const h = Math.floor(diff.hours || 0);
+        const m = Math.floor(diff.minutes || 0);
+        const remaining =
+          (d ? `${d}d ` : "") + (h ? `${h}h ` : "") + (m ? `${m}m` : "");
+        timeInfo = `\n\n⏳ <b>Ends in ${remaining.trim()}</b>\n🗓 ${DateTime.fromISO(meta.endDate)
+          .setZone(meta.timezone || "Europe/Stockholm")
+          .toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
+      } else {
+        timeInfo = `\n\n⚠️ <b>This event has ended.</b>`;
+      }
+    }
+
+    await sendSafeMessage(
+      msg.chat.id,
+      `<b>${meta.title}</b>\n\n${meta.info}${timeInfo}`,
+      { parse_mode: "HTML" }
+    );
+  } catch (err) {
+    console.error("❌ /event error:", err.message);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
 });
@@ -201,7 +235,6 @@ Use:
 
 <b>Examples:</b>
 <code>/setevent Halloween FUD Dodge | Survive until midnight to win! | 2025-10-31 | 23:59 | CET</code>
-
 <code>/setevent Meme Rally | Keep your MCap above FUD! | 2025-11-10 | 18:00</code>
 
 🧠 Notes:
@@ -216,7 +249,7 @@ Use:
     const parts = args.split("|").map((s) => s.trim());
     const [title, info, dateStr, timeStr, tzStr] = parts;
 
-    // If only title/info provided, set event with default date (7 days ahead)
+    // Default if no date/time
     if (!dateStr || !timeStr) {
       const autoEnd = DateTime.now()
         .setZone("Europe/Stockholm")
@@ -243,9 +276,18 @@ Use:
       );
     }
 
-    // Parse with timezone (default Stockholm)
+    // 🕓 Flexible input cleanup
     const zone = tzStr || "Europe/Stockholm";
-    const dt = DateTime.fromFormat(`${dateStr} ${timeStr}`, "yyyy-MM-dd HH:mm", { zone });
+    const cleanedDate = dateStr
+      .replace(/[|/\\]/g, "-")
+      .replace(/\s+/g, "")
+      .trim();
+    const cleanedTime = timeStr.replace(/[|]/g, "").replace(/\s+/g, "").trim();
+
+    // Try multiple date/time formats
+    let dt =
+      DateTime.fromFormat(`${cleanedDate} ${cleanedTime}`, "yyyy-MM-ddHH:mm", { zone }) ||
+      DateTime.fromFormat(`${cleanedDate} ${cleanedTime}`, "yyyy-MM-dd HH:mm", { zone });
 
     if (!dt.isValid) {
       return sendSafeMessage(
@@ -255,8 +297,8 @@ Use:
     }
 
     const newData = {
-      title,
-      info,
+      title: title || "🚀 Default Event",
+      info: info || "Score big, stay unstable!",
       endDate: dt.toUTC().toISO(),
       endLocal: dt.toFormat("yyyy-MM-dd HH:mm ZZZZ"),
       timezone: zone,
