@@ -177,15 +177,109 @@ bot.onText(/\/event$/, async (msg) => {
 });
 
 // /SETEVENT (Admin)
+import { DateTime } from "luxon"; // add this at the top of your file if not present
+
 bot.onText(/\/setevent(.*)/, async (msg, match) => {
   const username = msg.from.username?.toLowerCase() || "";
-  if (!ADMIN_USERS.includes(username)) return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
+  if (!ADMIN_USERS.includes(username))
+    return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
+
   const args = match[1]?.trim();
-  if (!args) return sendSafeMessage(msg.chat.id, "📝 Use:\n<code>/setevent Title | Description</code>");
-  const [title, info] = args.split("|").map((s) => s.trim());
-  const newData = { title: title || "🚀 Default Event", info: info || "Score big, stay unstable!", updatedAt: new Date().toISOString() };
-  await axios.put(META_BIN_URL, newData, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
-  await sendSafeMessage(msg.chat.id, `✅ Event updated:\n<b>${newData.title}</b>\n${newData.info}`);
+  if (!args) {
+    return sendSafeMessage(
+      msg.chat.id,
+`🛠 <b>How to create or update an event</b>
+
+Use:
+<code>/setevent &lt;Title&gt; | &lt;Description&gt; | &lt;Date&gt; | &lt;Time&gt; | [Timezone]</code>
+
+<b>Parameters:</b>
+• Title – name of the event  
+• Description – short text shown in the game  
+• Date – format: YYYY-MM-DD  
+• Time – format: HH:mm (24-hour)  
+• [Timezone] – optional, defaults to Europe/Stockholm (CET/CEST)
+
+<b>Examples:</b>
+<code>/setevent Halloween FUD Dodge | Survive until midnight to win! | 2025-10-31 | 23:59 | CET</code>
+
+<code>/setevent Meme Rally | Keep your MCap above FUD! | 2025-11-10 | 18:00</code>
+
+🧠 Notes:
+- Use the "|" (pipe) between sections.
+- Timezone defaults to Stockholm.
+- Date/time are automatically converted to UTC for saving.`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  try {
+    const parts = args.split("|").map((s) => s.trim());
+    const [title, info, dateStr, timeStr, tzStr] = parts;
+
+    // If only title/info provided, set event with default date (7 days ahead)
+    if (!dateStr || !timeStr) {
+      const autoEnd = DateTime.now()
+        .setZone("Europe/Stockholm")
+        .plus({ days: 7 })
+        .set({ hour: 23, minute: 59 });
+      const newData = {
+        title: title || "🚀 Default Event",
+        info: info || "Score big, stay unstable!",
+        endDate: autoEnd.toUTC().toISO(),
+        endLocal: autoEnd.toFormat("yyyy-MM-dd HH:mm ZZZZ"),
+        timezone: "Europe/Stockholm",
+        updatedAt: new Date().toISOString(),
+      };
+      await axios.put(META_BIN_URL, newData, {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": JSONBIN_KEY,
+        },
+      });
+      return sendSafeMessage(
+        msg.chat.id,
+        `✅ Event updated:\n<b>${newData.title}</b>\n${newData.info}\n🗓 Ends: ${newData.endLocal}`,
+        { parse_mode: "HTML" }
+      );
+    }
+
+    // parse with timezone
+    const zone = tzStr || "Europe/Stockholm";
+    const dt = DateTime.fromFormat(`${dateStr} ${timeStr}`, "yyyy-MM-dd HH:mm", { zone });
+
+    if (!dt.isValid) {
+      return sendSafeMessage(
+        msg.chat.id,
+        "❌ Invalid date/time format.\nUse format: YYYY-MM-DD | HH:mm | [TZ]\nExample: 2025-10-31 | 23:59 | CET"
+      );
+    }
+
+    const newData = {
+      title,
+      info,
+      endDate: dt.toUTC().toISO(),
+      endLocal: dt.toFormat("yyyy-MM-dd HH:mm ZZZZ"),
+      timezone: zone,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await axios.put(META_BIN_URL, newData, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": JSONBIN_KEY,
+      },
+    });
+
+    await sendSafeMessage(
+      msg.chat.id,
+      `✅ Event updated:\n<b>${newData.title}</b>\n${newData.info}\n🗓 Ends: ${newData.endLocal} (${zone})`,
+      { parse_mode: "HTML" }
+    );
+  } catch (err) {
+    console.error("❌ /setevent error:", err);
+    sendSafeMessage(msg.chat.id, "⚠️ Failed to update event (internal error).");
+  }
 });
 
 // /RESETEVENT (Admin)
