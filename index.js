@@ -252,6 +252,35 @@ bot.onText(/\/eventtop50/, async (msg) => {
   sendChunked(msg.chat.id, "<b>🥇 Event Top 50</b>\n\n", lines);
 });
 
+// === 🪩 Public event info for frontend ===
+app.get("/event", async (req, res) => {
+  try {
+    const url = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`;
+    const resp = await fetch(url, {
+      headers: {
+        "X-Master-Key": process.env.JSONBIN_MASTER_KEY,
+      },
+    });
+
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: "Failed to fetch event info" });
+    }
+
+    const json = await resp.json();
+    const data = json.record || json;
+
+    res.json({
+      title: data.title || "Current Event",
+      info: data.info || data.description || "",
+      endDate: data.endDate || data.expiry || null,
+      updatedAt: json.metadata?.modifiedAt || new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("❌ Event fetch failed:", err);
+    res.status(500).json({ error: "Internal event fetch error" });
+  }
+});
+
 // === EXPRESS API ENDPOINTS ===
 // ✅ FIX: sorted output for splash leaderboard
 app.get("/leaderboard", async (req, res) => {
