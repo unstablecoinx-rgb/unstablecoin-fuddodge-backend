@@ -211,121 +211,156 @@ Stay unstable. 💛⚡`;
   await sendSafeMessage(msg.chat.id, text);
 });
 
-// /event -> show event meta + remaining time + open/closed
+// /EVENT
 bot.onText(/\/event$/, async (msg) => {
   try {
-    const meta = await getEventMeta();
+    const res = await axios.get(META_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+    let meta = res.data.record || {};
+
+    if (!meta.title) {
+      meta = {
+        title: "⚡️ Unstable Challenge",
+        info: "Stay tuned for the next event!",
+        endDate: null,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    // 🕓 Format remaining time or status
     let timeInfo = "";
     if (meta.endDate) {
-      const remain = remainingTimeString(meta.endDate, meta.timezone);
-      const endLocal = DateTime.fromISO(meta.endDate, { zone: "utc" }).setZone(meta.timezone || "Europe/Stockholm").toFormat("yyyy-MM-dd HH:mm ZZZZ");
-      if (remain === "Ended") {
-        timeInfo = `\n\n⚠️ <b>This event has ended.</b>\n🗓 Ended: ${endLocal}`;
+      const now = DateTime.now().toUTC();
+      const end = DateTime.fromISO(meta.endDate);
+      const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
+
+      if (diff.days > 0 || diff.hours > 0 || diff.minutes > 0) {
+        const d = Math.floor(diff.days || 0);
+        const h = Math.floor(diff.hours || 0);
+        const m = Math.floor(diff.minutes || 0);
+        const remaining =
+          (d ? `${d}d ` : "") + (h ? `${h}h ` : "") + (m ? `${m}m` : "");
+        timeInfo = `\n\n⏳ <b>Ends in ${remaining.trim()}</b>\n🗓 ${DateTime.fromISO(meta.endDate)
+          .setZone(meta.timezone || "Europe/Stockholm")
+          .toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
       } else {
-        timeInfo = `\n\n⏳ <b>Ends in ${remain}</b>\n🗓 Ends (local): ${endLocal} (${meta.timezone || "Europe/Stockholm"})`;
+        timeInfo = `\n\n⚠️ <b>The event has ended.</b>\n⚡️ Stay tuned for the next Unstable Challenge!`;
       }
-    } else {
-      timeInfo = `\n\nℹ️ No end date set for this event.`;
     }
+
+    const updated = meta.updatedAt
+      ? `\n\n<i>Updated: ${DateTime.fromISO(meta.updatedAt)
+          .toUTC()
+          .toFormat("yyyy-MM-dd HH:mm 'UTC'")}</i>`
+      : "";
 
     await sendSafeMessage(
       msg.chat.id,
-      `<b>${meta.title}</b>\n\n${meta.info}${timeInfo}\n\nUpdated: ${DateTime.fromISO(meta.updatedAt || new Date().toISOString()).toFormat("yyyy-MM-dd HH:mm ZZZZ")}`
+      `<b>${meta.title}</b>\n\n${meta.info}${timeInfo}${updated}`,
+      { parse_mode: "HTML" }
     );
   } catch (err) {
-    console.error("❌ /event error:", err?.message || err);
+    console.error("❌ /event error:", err.message);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
 });
 
-// /setevent (Admin) — requires date + time
+// /SETEVENT (Admin)
 bot.onText(/\/setevent(.*)/, async (msg, match) => {
   const username = msg.from.username?.toLowerCase() || "";
-  if (!ADMIN_USERS.includes(username)) return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
+  if (!ADMIN_USERS.includes(username))
+    return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
 
   const args = match[1]?.trim();
   if (!args) {
-    // help text
     return sendSafeMessage(
       msg.chat.id,
 `🛠 <b>How to create or update an event</b>
 
 Use:
-<code>/setevent &lt;Title&gt; | &lt;Description&gt; | &lt;Date(YYYY-MM-DD)&gt; | &lt;Time(HH:mm)&gt; | [Timezone]</code>
+<code>/setevent &lt;Title&gt; | &lt;Description&gt; | &lt;Date&gt; | &lt;Time&gt; | [Timezone]</code>
 
 <b>Parameters:</b>
-• Title – event name  
+• Title – name of the event  
 • Description – short text shown in the game  
-• Date – format: YYYY-MM-DD (required)  
-• Time – format: HH:mm (24-hour, required)  
+• Date – format: YYYY-MM-DD  
+• Time – format: HH:mm (24-hour)  
 • [Timezone] – optional, defaults to Europe/Stockholm (CET/CEST)
 
-<b>Example:</b>
-<code>/setevent Unstable Challenge | Score big to win! | 2025-10-31 | 23:59 | CET</code>
+<b>Examples:</b>
+<code>/setevent Halloween FUD Dodge | Survive until midnight to win! | 2025-10-31 | 23:59 | CET</code>
 
-Notes:
-- Use the pipe character '|' between values.
-- Date/time will be converted to UTC and saved as ISO.
-- Timezone may be a zone name or CET/CEST/UTC.`,
+<code>/setevent Meme Rally | Keep your MCap above FUD! | 2025-11-10 | 18:00</code>
+
+🧠 Notes:
+- Use the "|" (pipe) between sections.
+- Timezone defaults to Stockholm.
+- Date/time are automatically converted to UTC for saving.`,
       { parse_mode: "HTML" }
     );
   }
 
   try {
-    const parts = args.split("|").map(s => s.trim());
-    // Expect at least 4 parts: title | description | date | time
-    const [titleRaw, infoRaw, dateStrRaw, timeStrRaw, tzRaw] = parts;
-    const title = titleRaw || "Unstable Event";
-    const info = infoRaw || "";
-    const dateStr = (dateStrRaw || "").replace(/[–—]/g, "-"); // normalize dashes
-    const timeStr = (timeStrRaw || "").trim();
+    const parts = args.split("|").map((s) => s.trim());
+    const [title, info, dateStr, timeStr, tzStrRaw] = parts;
 
-    if (!dateStr || !timeStr) {
-      return sendSafeMessage(msg.chat.id, "❌ You must supply both a date and a time. Use /setevent for help.");
-    }
-
-    // Normalize timezone
+    // Normalize timezone names
     const tzMap = {
       CET: "Europe/Stockholm",
       CEST: "Europe/Stockholm",
-      'EUROPE/ STOCKHOLM': "Europe/Stockholm",
       UTC: "UTC",
-      GMT: "UTC"
+      GMT: "UTC",
     };
-    const zone = tzMap[(tzRaw || "").toUpperCase()] || tzRaw || "Europe/Stockholm";
+    const zone = tzMap[tzStrRaw?.toUpperCase()] || tzStrRaw || "Europe/Stockholm";
 
-    // Parse using luxon with provided zone
-    // Accepts date: YYYY-MM-DD and time: HH:mm
-    const dt = DateTime.fromFormat(`${dateStr} ${timeStr}`, "yyyy-MM-dd HH:mm", { zone });
+    // Clean up weird dash characters
+    const cleanDate = (dateStr || "").replace(/[–—]/g, "-");
+
+    // Require valid date and time
+    if (!cleanDate || !timeStr) {
+      return sendSafeMessage(
+        msg.chat.id,
+        "❌ Missing date or time.\nExample: /setevent Title | Info | 2025-10-31 | 23:59 | CET"
+      );
+    }
+
+    // Parse datetime
+    const dt = DateTime.fromFormat(`${cleanDate} ${timeStr}`, "yyyy-MM-dd HH:mm", { zone });
     if (!dt.isValid) {
-      console.warn("❌ /setevent parse failed:", dt.invalidReason || dt.invalidExplanation);
-      return sendSafeMessage(msg.chat.id, `❌ Invalid date/time. Ensure date is YYYY-MM-DD and time HH:mm.\nExample: 2025-10-31 | 23:59 | CET`);
+      return sendSafeMessage(
+        msg.chat.id,
+        "❌ Invalid date/time format.\nUse format: YYYY-MM-DD | HH:mm | [TZ]\nExample: 2025-10-31 | 23:59 | CET"
+      );
     }
 
-    // Must be in the future
-    if (dt <= DateTime.now().setZone(zone)) {
-      return sendSafeMessage(msg.chat.id, "❌ Provided end date/time must be in the future.");
-    }
-
-    const payload = {
-      title,
-      info,
-      endDate: dt.toUTC().toISO(), // canonical storage in UTC ISO
-      timezone: zone,
+    // Build event object
+    const newData = {
+      title: title || "⚡️ Unstable Challenge",
+      info: info || "Score big, stay unstable!",
+      endDate: dt.toUTC().toISO(),
       endLocal: dt.setZone(zone).toFormat("yyyy-MM-dd HH:mm ZZZZ"),
-      updatedAt: new Date().toISOString()
+      timezone: zone,
+      updatedAt: new Date().toISOString(),
     };
 
-    // Save to JSONBin (META bin)
-    await axios.put(META_BIN_URL, payload, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
+    await axios.put(META_BIN_URL, newData, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": JSONBIN_KEY,
+      },
+    });
 
-    await sendSafeMessage(msg.chat.id, `✅ Event updated:\n<b>${payload.title}</b>\n${payload.info}\n🗓 Ends: ${payload.endLocal} (${zone})`, { parse_mode: "HTML" });
+    await sendSafeMessage(
+      msg.chat.id,
+      `✅ <b>Event updated!</b>\n⚡️ <b>${newData.title}</b>\n${newData.info}\n⏳ Ends: ${newData.endLocal} (${zone})`,
+      { parse_mode: "HTML" }
+    );
   } catch (err) {
-    console.error("❌ /setevent error:", err?.message || err);
-    await sendSafeMessage(msg.chat.id, "⚠️ Failed to update event (internal error).");
+    console.error("❌ /setevent error:", err);
+    sendSafeMessage(msg.chat.id, "⚠️ Failed to update event (internal error).");
   }
 });
-
 // /resetevent (Admin) — clears event leaderboard only
 bot.onText(/\/resetevent/, async (msg) => {
   const username = msg.from.username?.toLowerCase() || "";
