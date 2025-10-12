@@ -235,6 +235,7 @@ Use:
 
 <b>Examples:</b>
 <code>/setevent Halloween FUD Dodge | Survive until midnight to win! | 2025-10-31 | 23:59 | CET</code>
+
 <code>/setevent Meme Rally | Keep your MCap above FUD! | 2025-11-10 | 18:00</code>
 
 🧠 Notes:
@@ -247,9 +248,21 @@ Use:
 
   try {
     const parts = args.split("|").map((s) => s.trim());
-    const [title, info, dateStr, timeStr, tzStr] = parts;
+    const [title, info, dateStr, timeStr, tzStrRaw] = parts;
 
-    // Default if no date/time
+    // Normalize common timezone aliases
+    const tzMap = {
+      CET: "Europe/Stockholm",
+      CEST: "Europe/Stockholm",
+      UTC: "UTC",
+      GMT: "UTC",
+    };
+    const zone = tzMap[tzStrRaw?.toUpperCase()] || tzStrRaw || "Europe/Stockholm";
+
+    // Clean date from en/em-dashes → replace with ASCII hyphen
+    const cleanDate = (dateStr || "").replace(/[–—]/g, "-");
+
+    // === Auto fallback (if only title/info provided)
     if (!dateStr || !timeStr) {
       const autoEnd = DateTime.now()
         .setZone("Europe/Stockholm")
@@ -276,31 +289,23 @@ Use:
       );
     }
 
-    // 🕓 Flexible input cleanup
-    const zone = tzStr || "Europe/Stockholm";
-    const cleanedDate = dateStr
-      .replace(/[|/\\]/g, "-")
-      .replace(/\s+/g, "")
-      .trim();
-    const cleanedTime = timeStr.replace(/[|]/g, "").replace(/\s+/g, "").trim();
-
-    // Try multiple date/time formats
-    let dt =
-      DateTime.fromFormat(`${cleanedDate} ${cleanedTime}`, "yyyy-MM-ddHH:mm", { zone }) ||
-      DateTime.fromFormat(`${cleanedDate} ${cleanedTime}`, "yyyy-MM-dd HH:mm", { zone });
+    // === Parse datetime manually
+    const dt = DateTime.fromFormat(`${cleanDate} ${timeStr}`, "yyyy-MM-dd HH:mm", { zone });
 
     if (!dt.isValid) {
+      console.warn("❌ Invalid date parse:", dt.invalidExplanation);
       return sendSafeMessage(
         msg.chat.id,
         "❌ Invalid date/time format.\nUse format: YYYY-MM-DD | HH:mm | [TZ]\nExample: 2025-10-31 | 23:59 | CET"
       );
     }
 
+    // === Construct payload for JSONBin
     const newData = {
-      title: title || "🚀 Default Event",
-      info: info || "Score big, stay unstable!",
+      title: title || "Unnamed Event",
+      info: info || "",
       endDate: dt.toUTC().toISO(),
-      endLocal: dt.toFormat("yyyy-MM-dd HH:mm ZZZZ"),
+      endLocal: dt.setZone(zone).toFormat("yyyy-MM-dd HH:mm ZZZZ"),
       timezone: zone,
       updatedAt: new Date().toISOString(),
     };
