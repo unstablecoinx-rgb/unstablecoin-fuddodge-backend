@@ -1,5 +1,5 @@
 // === UnStableCoin Game Bot ===
-// ⚡ Version: Stable Leaderboard + EventFix + Sorted Splash Endpoint + Admin Tools
+// ⚡ Version: EventTimeStrict + EventCloseOnEnd + Protected Submits + Admin Tools
 // Author: UnStableCoin Community
 // ------------------------------------
 
@@ -9,6 +9,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const cors = require("cors");
 const axios = require("axios");
 require("dotenv").config();
+
 const { DateTime } = require("luxon");
 
 // === ENVIRONMENT VARIABLES ===
@@ -51,18 +52,15 @@ app.get("/", (req, res) => {
 });
 
 // === HELPERS ===
-async function sendSafeMessage(chatId, message) {
+async function sendSafeMessage(chatId, message, opts = {}) {
   try {
-    await bot.sendMessage(chatId, message, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
+    await bot.sendMessage(chatId, message, Object.assign({ parse_mode: "HTML", disable_web_page_preview: true }, opts));
   } catch (err) {
-    console.error("❌ Telegram send failed:", err.message);
+    console.error("❌ Telegram send failed:", err?.message || err);
   }
 }
 
-// === CLEANED LEADERBOARD LOADERS ===
+// Load main leaderboard from JSONBin and normalize {username: score}
 async function getLeaderboard() {
   try {
     const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
@@ -75,11 +73,12 @@ async function getLeaderboard() {
     }
     return clean;
   } catch (err) {
-    console.error("❌ Error loading leaderboard:", err.message);
+    console.error("❌ Error loading leaderboard:", err.message || err);
     return {};
   }
 }
 
+// Load event leaderboard (scores) as { scores: {username:score} }
 async function getEventData() {
   try {
     const res = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
@@ -93,14 +92,64 @@ async function getEventData() {
     }
     return { scores: clean };
   } catch (err) {
-    console.error("❌ Error fetching event data:", err.message);
+    console.error("❌ Error fetching event data:", err.message || err);
     return { scores: {} };
   }
 }
 
+// Load event metadata (title, info, endDate, timezone, etc.)
+async function getEventMeta() {
+  try {
+    // fetch latest version
+    const res = await axios.get(`${META_BIN_URL}/latest`, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    const payload = res.data.record || res.data || {};
+    // ensure shape
+    return {
+      title: payload.title || payload.name || "Current Event",
+      info: payload.info || payload.description || "",
+      endDate: payload.endDate || null,
+      timezone: payload.timezone || "Europe/Stockholm",
+      updatedAt: payload.updatedAt || res.data?.metadata?.modifiedAt || new Date().toISOString(),
+      raw: payload
+    };
+  } catch (err) {
+    console.error("❌ Error fetching event meta:", err?.message || err);
+    return {
+      title: "No active event",
+      info: "No description available.",
+      endDate: null,
+      timezone: "Europe/Stockholm",
+      updatedAt: new Date().toISOString(),
+      raw: {}
+    };
+  }
+}
+
+// Check whether event is currently open (true if endDate in future or endDate null)
+function isEventOpen(meta) {
+  if (!meta || !meta.endDate) return false;
+  const now = DateTime.utc();
+  const end = DateTime.fromISO(meta.endDate, { zone: "utc" });
+  return end > now;
+}
+
+// Format remaining time string
+function remainingTimeString(endIso, tz = "UTC") {
+  if (!endIso) return null;
+  const now = DateTime.now().toUTC();
+  const end = DateTime.fromISO(endIso, { zone: "utc" });
+  if (!end.isValid) return null;
+  const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
+  const days = Math.floor(diff.days || 0);
+  const hours = Math.floor(diff.hours || 0);
+  const minutes = Math.floor(diff.minutes || 0);
+  if (end <= now) return "Ended";
+  return `${days ? days + "d " : ""}${hours ? hours + "h " : ""}${minutes ? minutes + "m" : ""}`.trim();
+}
+
 // === TELEGRAM COMMANDS ===
 
-// /START
+// /start
 bot.onText(/\/start/, async (msg) => {
   try {
     await bot.sendGame(msg.chat.id, "US_FUD_Dodge", {
@@ -114,7 +163,7 @@ bot.onText(/\/start/, async (msg) => {
   }
 });
 
-// /HELP
+// /help
 bot.onText(/\/help/, async (msg) => {
   const text = `
 <b>💛 Welcome to the UnStableCoin Game Bot</b>
@@ -132,7 +181,7 @@ Available commands:
   await sendSafeMessage(msg.chat.id, text);
 });
 
-// /PLAY
+// /play
 bot.onText(/\/play/, async (msg) => {
   const isPrivate = msg.chat.type === "private";
   if (isPrivate) {
@@ -148,7 +197,7 @@ bot.onText(/\/play/, async (msg) => {
   }
 });
 
-// /INFO
+// /info
 bot.onText(/\/info|\/howtoplay/, async (msg) => {
   const text = `
 🎮 <b>How to Play FUD Dodge</b>
@@ -162,204 +211,157 @@ Stay unstable. 💛⚡`;
   await sendSafeMessage(msg.chat.id, text);
 });
 
-// /EVENT
+// /event -> show event meta + remaining time + open/closed
 bot.onText(/\/event$/, async (msg) => {
   try {
-    const res = await axios.get(META_BIN_URL, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
-    });
-    let meta = res.data.record || {};
-
-    if (!meta.title) {
-      meta = {
-        title: "🚀 Default Event",
-        info: "Score big, stay unstable!",
-        endDate: null,
-        updatedAt: new Date().toISOString(),
-      };
-    }
-
-    // 🕓 Format remaining time
+    const meta = await getEventMeta();
     let timeInfo = "";
     if (meta.endDate) {
-      const now = DateTime.now().toUTC();
-      const end = DateTime.fromISO(meta.endDate);
-      const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
-
-      if (diff.days > 0 || diff.hours > 0 || diff.minutes > 0) {
-        const d = Math.floor(diff.days || 0);
-        const h = Math.floor(diff.hours || 0);
-        const m = Math.floor(diff.minutes || 0);
-        const remaining =
-          (d ? `${d}d ` : "") + (h ? `${h}h ` : "") + (m ? `${m}m` : "");
-        timeInfo = `\n\n⏳ <b>Ends in ${remaining.trim()}</b>\n🗓 ${DateTime.fromISO(meta.endDate)
-          .setZone(meta.timezone || "Europe/Stockholm")
-          .toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
+      const remain = remainingTimeString(meta.endDate, meta.timezone);
+      const endLocal = DateTime.fromISO(meta.endDate, { zone: "utc" }).setZone(meta.timezone || "Europe/Stockholm").toFormat("yyyy-MM-dd HH:mm ZZZZ");
+      if (remain === "Ended") {
+        timeInfo = `\n\n⚠️ <b>This event has ended.</b>\n🗓 Ended: ${endLocal}`;
       } else {
-        timeInfo = `\n\n⚠️ <b>This event has ended.</b>`;
+        timeInfo = `\n\n⏳ <b>Ends in ${remain}</b>\n🗓 Ends (local): ${endLocal} (${meta.timezone || "Europe/Stockholm"})`;
       }
+    } else {
+      timeInfo = `\n\nℹ️ No end date set for this event.`;
     }
 
     await sendSafeMessage(
       msg.chat.id,
-      `<b>${meta.title}</b>\n\n${meta.info}${timeInfo}`,
-      { parse_mode: "HTML" }
+      `<b>${meta.title}</b>\n\n${meta.info}${timeInfo}\n\nUpdated: ${DateTime.fromISO(meta.updatedAt || new Date().toISOString()).toFormat("yyyy-MM-dd HH:mm ZZZZ")}`
     );
   } catch (err) {
-    console.error("❌ /event error:", err.message);
+    console.error("❌ /event error:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
 });
 
-// /SETEVENT (Admin)
+// /setevent (Admin) — requires date + time
 bot.onText(/\/setevent(.*)/, async (msg, match) => {
   const username = msg.from.username?.toLowerCase() || "";
-  if (!ADMIN_USERS.includes(username))
-    return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
+  if (!ADMIN_USERS.includes(username)) return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
 
   const args = match[1]?.trim();
   if (!args) {
+    // help text
     return sendSafeMessage(
       msg.chat.id,
 `🛠 <b>How to create or update an event</b>
 
 Use:
-<code>/setevent &lt;Title&gt; | &lt;Description&gt; | &lt;Date&gt; | &lt;Time&gt; | [Timezone]</code>
+<code>/setevent &lt;Title&gt; | &lt;Description&gt; | &lt;Date(YYYY-MM-DD)&gt; | &lt;Time(HH:mm)&gt; | [Timezone]</code>
 
 <b>Parameters:</b>
-• Title – name of the event  
+• Title – event name  
 • Description – short text shown in the game  
-• Date – format: YYYY-MM-DD  
-• Time – format: HH:mm (24-hour)  
+• Date – format: YYYY-MM-DD (required)  
+• Time – format: HH:mm (24-hour, required)  
 • [Timezone] – optional, defaults to Europe/Stockholm (CET/CEST)
 
-<b>Examples:</b>
-<code>/setevent Halloween FUD Dodge | Survive until midnight to win! | 2025-10-31 | 23:59 | CET</code>
+<b>Example:</b>
+<code>/setevent Unstable Challenge | Score big to win! | 2025-10-31 | 23:59 | CET</code>
 
-<code>/setevent Meme Rally | Keep your MCap above FUD! | 2025-11-10 | 18:00</code>
-
-🧠 Notes:
-- Use the "|" (pipe) between sections.
-- Timezone defaults to Stockholm.
-- Date/time are automatically converted to UTC for saving.`,
+Notes:
+- Use the pipe character '|' between values.
+- Date/time will be converted to UTC and saved as ISO.
+- Timezone may be a zone name or CET/CEST/UTC.`,
       { parse_mode: "HTML" }
     );
   }
 
   try {
-    const parts = args.split("|").map((s) => s.trim());
-    const [title, info, dateStr, timeStr, tzStrRaw] = parts;
+    const parts = args.split("|").map(s => s.trim());
+    // Expect at least 4 parts: title | description | date | time
+    const [titleRaw, infoRaw, dateStrRaw, timeStrRaw, tzRaw] = parts;
+    const title = titleRaw || "Unstable Event";
+    const info = infoRaw || "";
+    const dateStr = (dateStrRaw || "").replace(/[–—]/g, "-"); // normalize dashes
+    const timeStr = (timeStrRaw || "").trim();
 
-    // Normalize common timezone aliases
+    if (!dateStr || !timeStr) {
+      return sendSafeMessage(msg.chat.id, "❌ You must supply both a date and a time. Use /setevent for help.");
+    }
+
+    // Normalize timezone
     const tzMap = {
       CET: "Europe/Stockholm",
       CEST: "Europe/Stockholm",
+      'EUROPE/ STOCKHOLM': "Europe/Stockholm",
       UTC: "UTC",
-      GMT: "UTC",
+      GMT: "UTC"
     };
-    const zone = tzMap[tzStrRaw?.toUpperCase()] || tzStrRaw || "Europe/Stockholm";
+    const zone = tzMap[(tzRaw || "").toUpperCase()] || tzRaw || "Europe/Stockholm";
 
-    // Clean date from en/em-dashes → replace with ASCII hyphen
-    const cleanDate = (dateStr || "").replace(/[–—]/g, "-");
-
-    // === Auto fallback (if only title/info provided)
-    if (!dateStr || !timeStr) {
-      const autoEnd = DateTime.now()
-        .setZone("Europe/Stockholm")
-        .plus({ days: 7 })
-        .set({ hour: 23, minute: 59 });
-      const newData = {
-        title: title || "🚀 Default Event",
-        info: info || "Score big, stay unstable!",
-        endDate: autoEnd.toUTC().toISO(),
-        endLocal: autoEnd.toFormat("yyyy-MM-dd HH:mm ZZZZ"),
-        timezone: "Europe/Stockholm",
-        updatedAt: new Date().toISOString(),
-      };
-      await axios.put(META_BIN_URL, newData, {
-        headers: {
-          "Content-Type": "application/json",
-          "X-Master-Key": JSONBIN_KEY,
-        },
-      });
-      return sendSafeMessage(
-        msg.chat.id,
-        `✅ Event updated:\n<b>${newData.title}</b>\n${newData.info}\n🗓 Ends: ${newData.endLocal}`,
-        { parse_mode: "HTML" }
-      );
-    }
-
-    // === Parse datetime manually
-    const dt = DateTime.fromFormat(`${cleanDate} ${timeStr}`, "yyyy-MM-dd HH:mm", { zone });
-
+    // Parse using luxon with provided zone
+    // Accepts date: YYYY-MM-DD and time: HH:mm
+    const dt = DateTime.fromFormat(`${dateStr} ${timeStr}`, "yyyy-MM-dd HH:mm", { zone });
     if (!dt.isValid) {
-      console.warn("❌ Invalid date parse:", dt.invalidExplanation);
-      return sendSafeMessage(
-        msg.chat.id,
-        "❌ Invalid date/time format.\nUse format: YYYY-MM-DD | HH:mm | [TZ]\nExample: 2025-10-31 | 23:59 | CET"
-      );
+      console.warn("❌ /setevent parse failed:", dt.invalidReason || dt.invalidExplanation);
+      return sendSafeMessage(msg.chat.id, `❌ Invalid date/time. Ensure date is YYYY-MM-DD and time HH:mm.\nExample: 2025-10-31 | 23:59 | CET`);
     }
 
-    // === Construct payload for JSONBin
-    const newData = {
-      title: title || "Unnamed Event",
-      info: info || "",
-      endDate: dt.toUTC().toISO(),
-      endLocal: dt.setZone(zone).toFormat("yyyy-MM-dd HH:mm ZZZZ"),
+    // Must be in the future
+    if (dt <= DateTime.now().setZone(zone)) {
+      return sendSafeMessage(msg.chat.id, "❌ Provided end date/time must be in the future.");
+    }
+
+    const payload = {
+      title,
+      info,
+      endDate: dt.toUTC().toISO(), // canonical storage in UTC ISO
       timezone: zone,
-      updatedAt: new Date().toISOString(),
+      endLocal: dt.setZone(zone).toFormat("yyyy-MM-dd HH:mm ZZZZ"),
+      updatedAt: new Date().toISOString()
     };
 
-    await axios.put(META_BIN_URL, newData, {
-      headers: {
-        "Content-Type": "application/json",
-        "X-Master-Key": JSONBIN_KEY,
-      },
-    });
+    // Save to JSONBin (META bin)
+    await axios.put(META_BIN_URL, payload, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
 
-    await sendSafeMessage(
-      msg.chat.id,
-      `✅ Event updated:\n<b>${newData.title}</b>\n${newData.info}\n🗓 Ends: ${newData.endLocal} (${zone})`,
-      { parse_mode: "HTML" }
-    );
+    await sendSafeMessage(msg.chat.id, `✅ Event updated:\n<b>${payload.title}</b>\n${payload.info}\n🗓 Ends: ${payload.endLocal} (${zone})`, { parse_mode: "HTML" });
   } catch (err) {
-    console.error("❌ /setevent error:", err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to update event (internal error).");
+    console.error("❌ /setevent error:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to update event (internal error).");
   }
 });
 
-// /RESETEVENT (Admin)
+// /resetevent (Admin) — clears event leaderboard only
 bot.onText(/\/resetevent/, async (msg) => {
   const username = msg.from.username?.toLowerCase() || "";
   if (!ADMIN_USERS.includes(username)) return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
   const chatId = msg.chat.id;
-  await sendSafeMessage(chatId, "⚠️ Confirm reset? Reply <b>YES</b> within 30s.");
+  await sendSafeMessage(chatId, "⚠️ Confirm reset of event leaderboard? Reply <b>YES</b> within 30s.");
   const listener = async (reply) => {
     if (reply.chat.id !== chatId) return;
     if (reply.from.username?.toLowerCase() !== username) return;
-    if (reply.text.trim().toUpperCase() === "YES") {
+    if (String(reply.text || "").trim().toUpperCase() === "YES") {
       await axios.put(EVENT_BIN_URL, { scores: {} }, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
       await sendSafeMessage(chatId, "✅ Event leaderboard cleared.");
-    } else await sendSafeMessage(chatId, "❌ Cancelled.");
+    } else {
+      await sendSafeMessage(chatId, "❌ Cancelled.");
+    }
     bot.removeListener("message", listener);
   };
   bot.on("message", listener);
   setTimeout(() => bot.removeListener("message", listener), 30000);
 });
 
-// === CHUNK HELPER ===
+// === Helper: sendChunked for long leaderboard messages
 function sendChunked(chatId, header, lines, maxLen = 3500) {
   let buf = header;
   for (const line of lines) {
     if ((buf + line + "\n").length > maxLen) {
       sendSafeMessage(chatId, buf.trim());
       buf = header + line + "\n";
-    } else buf += line + "\n";
+    } else {
+      buf += line + "\n";
+    }
   }
   if (buf.trim()) sendSafeMessage(chatId, buf.trim());
 }
 
-// === LEADERBOARD COMMANDS ===
+// === Leaderboard commands
 bot.onText(/\/top10/, async (msg) => {
   const data = await getLeaderboard();
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
@@ -392,47 +394,25 @@ bot.onText(/\/eventtop50/, async (msg) => {
   sendChunked(msg.chat.id, "<b>🥇 Event Top 50</b>\n\n", lines);
 });
 
-// === 🪩 Public event info for frontend & game ===
+// === Public /event endpoint for frontend (normalized)
 app.get("/event", async (req, res) => {
   try {
-    // use the same meta-bin that Telegram uses
-    const url = `https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}/latest`;
-
-    const resp = await fetch(url, {
-      headers: {
-        "X-Master-Key": process.env.JSONBIN_KEY,
-      },
-    });
-
-    if (!resp.ok) {
-      console.error("❌ JSONBin fetch failed:", resp.status, await resp.text());
-      return res
-        .status(resp.status)
-        .json({ error: "Failed to fetch event info" });
-    }
-
-    const json = await resp.json();
-    const data = json.record || json;
-
-    // normalize output for the frontend
+    const meta = await getEventMeta();
     res.json({
-      title: data.title || data.name || "Current Event",
-      info: data.info || data.description || "No description available.",
-      endDate: data.endDate || data.expiry || null,
-      updatedAt:
-        data.updatedAt ||
-        json.metadata?.modifiedAt ||
-        new Date().toISOString(),
-      source: "EVENT_META_JSONBIN_ID",
+      title: meta.title,
+      info: meta.info,
+      endDate: meta.endDate,
+      timezone: meta.timezone,
+      updatedAt: meta.updatedAt,
+      open: isEventOpen(meta)
     });
   } catch (err) {
-    console.error("❌ /event route error:", err);
+    console.error("❌ /event route error:", err?.message || err);
     res.status(500).json({ error: "Internal event fetch error" });
   }
 });
 
-// === EXPRESS API ENDPOINTS ===
-// ✅ FIX: sorted output for splash leaderboard
+// === Sorted leaderboard endpoints for frontend
 app.get("/leaderboard", async (req, res) => {
   try {
     const data = await getLeaderboard();
@@ -441,32 +421,44 @@ app.get("/leaderboard", async (req, res) => {
       .map(([username, score]) => ({ username, score }));
     res.json(sorted);
   } catch (err) {
-    console.error("❌ Failed /leaderboard:", err.message);
+    console.error("❌ Failed /leaderboard:", err?.message || err);
     res.status(500).json({ error: "Failed to load leaderboard" });
   }
 });
 
 app.get("/eventtop10", async (req, res) => {
-  const { scores } = await getEventData();
-  const sorted = Object.entries(scores)
-    .filter(([u]) => !u.startsWith("_"))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([username, score]) => ({ username, score }));
-  res.json(sorted);
+  try {
+    const { scores } = await getEventData();
+    const sorted = Object.entries(scores)
+      .filter(([u]) => !u.startsWith("_"))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([username, score]) => ({ username, score }));
+    res.json(sorted);
+  } catch (err) {
+    console.error("❌ Failed /eventtop10:", err?.message || err);
+    res.status(500).json({ error: "Failed to load event top10" });
+  }
 });
 
 app.get("/eventtop50", async (req, res) => {
-  const { scores } = await getEventData();
-  const sorted = Object.entries(scores)
-    .filter(([u]) => !u.startsWith("_"))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 50)
-    .map(([username, score]) => ({ username, score }));
-  res.json(sorted);
+  try {
+    const { scores } = await getEventData();
+    const sorted = Object.entries(scores)
+      .filter(([u]) => !u.startsWith("_"))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 50)
+      .map(([username, score]) => ({ username, score }));
+    res.json(sorted);
+  } catch (err) {
+    console.error("❌ Failed /eventtop50:", err?.message || err);
+    res.status(500).json({ error: "Failed to load event top50" });
+  }
 });
 
 // === SUBMIT ===
+// POST body: { username, score, target } target = "event" | "main" | undefined (both)
+// If event has ended, server will NOT write to event leaderboard.
 app.post("/submit", async (req, res) => {
   try {
     const { username, score, target } = req.body;
@@ -476,43 +468,53 @@ app.post("/submit", async (req, res) => {
 
     console.log(`📥 Submit: ${username} → ${score} (${target || "both"})`);
 
-    // MAIN
+    // MAIN leaderboard update
     if (target !== "event") {
       const main = await getLeaderboard();
       const prev = main[username] || 0;
       if (score > prev || isAdmin) {
         main[username] = score;
+        // Save as simple map to MAIN_BIN_URL
         await axios.put(MAIN_BIN_URL, main, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
         console.log(`🔥 Main updated for ${username}: ${score}`);
       }
     }
 
-    // EVENT
+    // EVENT update: only if event is open OR admin override
     if (target !== "main") {
+      const meta = await getEventMeta();
+      const eventOpen = isEventOpen(meta);
+      if (!eventOpen && !isAdmin) {
+        // Event closed — do not record to event leaderboard
+        console.log(`⚠️ Event closed — not saving event score for ${username}.`);
+        return res.json({ success: true, eventSaved: false, reason: "Event closed" });
+      }
+
       const { scores } = await getEventData();
       const prev = scores[username] || 0;
       if (score > prev || isAdmin) {
         scores[username] = score;
+        // Save wrapper object { scores: { ... } } to EVENT_BIN_URL
         await axios.put(EVENT_BIN_URL, { scores }, { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } });
         console.log(`⚡ Event updated for ${username}: ${score}`);
       }
     }
 
-    res.json({ success: true });
+    res.json({ success: true, eventSaved: true });
   } catch (err) {
-    console.error("❌ Submit failed:", err.message);
+    console.error("❌ Submit failed:", err?.message || err);
     res.status(500).json({ error: "Failed to submit score" });
   }
 });
 
-// === CALLBACK ===
+// === CALLBACK (games button) ===
 bot.on("callback_query", async (q) => {
   try {
     if (q.game_short_name === "US_FUD_Dodge") {
       await bot.answerCallbackQuery(q.id, { url: "https://theunstable.io/fuddodge" });
     }
   } catch (err) {
-    console.error("❌ Callback error:", err.message);
+    console.error("❌ Callback error:", err?.message || err);
   }
 });
 
