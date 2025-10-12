@@ -178,8 +178,6 @@ bot.onText(/\/event$/, async (msg) => {
 });
 
 // /SETEVENT (Admin)
-import { DateTime } from "luxon"; // add this at the top of your file if not present
-
 bot.onText(/\/setevent(.*)/, async (msg, match) => {
   const username = msg.from.username?.toLowerCase() || "";
   if (!ADMIN_USERS.includes(username))
@@ -245,7 +243,7 @@ Use:
       );
     }
 
-    // parse with timezone
+    // Parse with timezone (default Stockholm)
     const zone = tzStr || "Europe/Stockholm";
     const dt = DateTime.fromFormat(`${dateStr} ${timeStr}`, "yyyy-MM-dd HH:mm", { zone });
 
