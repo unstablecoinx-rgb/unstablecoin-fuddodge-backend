@@ -391,7 +391,7 @@ bot.onText(/\/help/, async (msg) => {
       lines.push("/winners [n] — Show confirmed winners (verified during event)");
       lines.push("/validatewinners — Re-check top event holders on-chain");
       lines.push("/resetevent — Reset event leaderboard (confirm step)");
-      lines.push("/setevent <Title> | <Info> | <YYYY-MM-DD> | <HH:mm> | [TZ] — Set event");
+      lines.push("/setevent Title | Info | YYYY-MM-DD | HH:mm | [TZ] — Set event");
     }
 
     await sendSafeMessage(msg.chat.id, lines.join("\n"), { parse_mode: "HTML" });
