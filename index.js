@@ -434,6 +434,17 @@ Stay unstable. 💛⚡`;
   await sendSafeMessage(msg.chat.id, text);
 });
 
+function remainingTimeString(endISO, tz = "Europe/Stockholm") {
+  const now = DateTime.now().setZone(tz);
+  const end = DateTime.fromISO(endISO).setZone(tz);
+  const diff = end.diff(now, ["days", "hours", "minutes"]);
+  if (diff.days <= 0 && diff.hours <= 0 && diff.minutes <= 0) return "ended";
+  const d = diff.days > 0 ? `${Math.floor(diff.days)}d ` : "";
+  const h = diff.hours > 0 ? `${Math.floor(diff.hours)}h ` : "";
+  const m = diff.minutes > 0 ? `${Math.floor(diff.minutes)}m` : "";
+  return (d + h + m).trim() || "soon";
+}
+
 // /event (shows event meta)
 bot.onText(/\/event$/, async (msg) => {
   try {
