@@ -387,7 +387,7 @@ bot.onText(/\/help/, async (msg) => {
 
     if (isAdmin) {
       lines.push("🔧 Admin commands:");
-      lines.push("/setholdingreq <whole_tokens> — Set required whole tokens to qualify");
+      lines.push("/setholdingreq &lt;whole_tokens&gt; — Set required whole tokens to qualify");
       lines.push("/winners [n] — Show confirmed winners (verified during event)");
       lines.push("/validatewinners — Re-check top event holders on-chain");
       lines.push("/resetevent — Reset event leaderboard (confirm step)");
