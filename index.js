@@ -937,10 +937,6 @@ app.post("/verifyHolder", async (req, res) => {
   }
 });
 
-app.post("/verifyHolder", async (req, res) => {
-  ...
-});
-
 // === Holder Status Check ===
 app.get("/holderStatus", async (req, res) => {
   try {
