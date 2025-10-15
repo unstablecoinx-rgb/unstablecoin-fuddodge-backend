@@ -687,6 +687,27 @@ Example:
   }
 });
 
+app.post("/isVerified", async (req, res) => {
+  try {
+    const { username, wallet } = req.body;
+    if (!username || !wallet)
+      return res.json({ ok: false, verified: false });
+
+    const holdersRes = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`, {
+      headers: { "X-Master-Key": process.env.JSONBIN_KEY }
+    });
+    const holders = holdersRes.data.record || [];
+    const found = holders.find(
+      (h) => h.username.toLowerCase() === username.toLowerCase() && h.wallet === wallet
+    );
+
+    res.json({ ok: true, verified: !!found });
+  } catch (err) {
+    console.error("❌ isVerified error:", err);
+    res.status(500).json({ ok: false, verified: false });
+  }
+});
+
 /* ============================
    Admin: /holders - list stored holder records (admin only)
    ============================ */
