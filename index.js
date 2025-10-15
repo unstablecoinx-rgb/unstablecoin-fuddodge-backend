@@ -16,6 +16,12 @@
   - RENDER_EXTERNAL_HOSTNAME (optional; used for webhook URL construction)
   - SOLANA_RPC_URL       (optional; otherwise uses clusterApiUrl from @solana/web3.js)
 */
+// === CONFIG ===
+const CONFIG = {
+  tokenMint: '6zzHz3X3s53zhEqyBMmokZLh6Ba5EfC5nP3XURzYpump',
+  minHoldAmount: 500000,
+  network: 'mainnet-beta'
+};
 
 const express = require("express");
 const bodyParser = require("body-parser");
