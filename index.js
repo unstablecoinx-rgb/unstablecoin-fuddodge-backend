@@ -818,11 +818,16 @@ app.post("/verifyHolder", async (req, res) => {
     const holdersRes = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`, {
       headers: { "X-Master-Key": process.env.JSONBIN_KEY }
     });
-    const holders = holdersRes.data.record || [];
+
+    let holders = holdersRes.data.record;
+    if (!Array.isArray(holders)) {
+      holders = Object.values(holders);
+    }
+    if (!Array.isArray(holders)) holders = [];
 
     // ✅ Case-insensitive duplicate check
     const alreadyExists = holders.some(
-      (h) => h.username.toLowerCase() === username.toLowerCase()
+      (h) => h.username && h.username.toLowerCase() === username.toLowerCase()
     );
     if (alreadyExists) {
       return res.json({ ok: true, message: "Already verified.", username });
