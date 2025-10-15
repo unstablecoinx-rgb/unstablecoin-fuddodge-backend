@@ -696,26 +696,27 @@ bot.onText(/\/holders/, async (msg) => {
     if (!ADMIN_USERS.includes(from))
       return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
 
-    // ✅ Fetch holders array from JSONBin
+    // Fetch holders from JSONBin
     const res = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`, {
       headers: { "X-Master-Key": process.env.JSONBIN_KEY }
     });
-
     const holders = res.data.record || [];
 
-    if (!holders.length) {
+    if (!holders.length)
       return sendSafeMessage(msg.chat.id, "📋 No holder records.");
-    }
 
-    // ✅ Format each holder line safely
-    const lines = holders.map((h, i) => {
+    // Sort by date (latest first)
+    holders.sort((a, b) => new Date(b.verifiedAt) - new Date(a.verifiedAt));
+
+    // Format each line cleanly (no index)
+    const lines = holders.map((h) => {
       const username = h.username || "n/a";
       const wallet = h.wallet || "n/a";
       const when = h.verifiedAt || "n/a";
-      return `<b>${i}</b> — ${username} — ${wallet} — ${when}`;
+      return `<b>${username}</b> — ${wallet} — ${when}`;
     });
 
-    // ✅ Send formatted message
+    // Send in chunks if long
     sendChunked(msg.chat.id, "<b>📋 Stored Holder Records</b>\n", lines);
 
   } catch (err) {
