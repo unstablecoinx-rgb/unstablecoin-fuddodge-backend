@@ -693,16 +693,31 @@ Example:
 bot.onText(/\/holders/, async (msg) => {
   try {
     const from = (msg.from.username || "").toLowerCase();
-    if (!ADMIN_USERS.includes(from)) return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
+    if (!ADMIN_USERS.includes(from))
+      return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
 
-    const holders = await getHoldersMap();
-    const lines = Object.entries(holders || {}).map(([u, rec]) => {
-      const when = rec?.verifiedAt || rec?.timestamp || "n/a";
-      const wallet = rec?.wallet || "n/a";
-      return `<b>${u}</b> — ${wallet} — ${when}`;
+    // ✅ Fetch holders array from JSONBin
+    const res = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`, {
+      headers: { "X-Master-Key": process.env.JSONBIN_KEY }
     });
-    if (!lines.length) return sendSafeMessage(msg.chat.id, "No holder records.");
+
+    const holders = res.data.record || [];
+
+    if (!holders.length) {
+      return sendSafeMessage(msg.chat.id, "📋 No holder records.");
+    }
+
+    // ✅ Format each holder line safely
+    const lines = holders.map((h, i) => {
+      const username = h.username || "n/a";
+      const wallet = h.wallet || "n/a";
+      const when = h.verifiedAt || "n/a";
+      return `<b>${i}</b> — ${username} — ${wallet} — ${when}`;
+    });
+
+    // ✅ Send formatted message
     sendChunked(msg.chat.id, "<b>📋 Stored Holder Records</b>\n", lines);
+
   } catch (err) {
     console.error("❌ /holders error:", err?.message || err);
     sendSafeMessage(msg.chat.id, "⚠️ Failed to load holders.");
