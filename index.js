@@ -1002,12 +1002,15 @@ app.get("/eventverifiedtop50", async (req, res) => {
 app.get("/leaderboard", async (req, res) => {
   try {
     const data = await getLeaderboard();
+
+    // Return top 20 players (adjust if needed)
     const sorted = Object.entries(data)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
+      .slice(0, 20)
       .map(([username, score]) => ({ username, score }));
 
-    res.json({ ok: true, leaderboard: sorted });
+    // ✅ Return plain array for your current frontend fetch
+    res.json(sorted);
   } catch (err) {
     console.error("❌ /leaderboard error:", err?.message || err);
     res.status(500).json({ ok: false, message: "Failed to load leaderboard." });
