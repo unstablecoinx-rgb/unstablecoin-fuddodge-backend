@@ -937,6 +937,39 @@ app.post("/verifyHolder", async (req, res) => {
   }
 });
 
+app.post("/verifyHolder", async (req, res) => {
+  ...
+});
+
+// === Holder Status Check ===
+app.get("/holderStatus", async (req, res) => {
+  try {
+    let username = req.query.username;
+    if (!username) return res.status(400).json({ verified: false, message: "Missing username" });
+
+    username = username.trim();
+    if (!username.startsWith("@")) username = "@" + username.replace(/^@+/, "");
+
+    // Load holders list
+    const holdersRes = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`, {
+      headers: { "X-Master-Key": process.env.JSONBIN_KEY },
+    });
+
+    const holders = holdersRes.data.record || [];
+    const match = holders.find(h => h.username?.toLowerCase() === username.toLowerCase());
+
+    if (match) {
+      return res.json({ verified: true, username: match.username, wallet: match.wallet });
+    } else {
+      return res.json({ verified: false });
+    }
+
+  } catch (err) {
+    console.error("❌ holderStatus error:", err);
+    res.status(500).json({ verified: false, message: "Server error checking holder status" });
+  }
+});
+
 // eventverifiedtop10 / eventverifiedtop50
 app.get("/eventverifiedtop10", async (req, res) => {
   try {
