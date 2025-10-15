@@ -805,33 +805,51 @@ app.post("/share", async (req, res) => {
 // /verifyHolder (frontend) - quick on-chain check
 app.post("/verifyHolder", async (req, res) => {
   try {
-    const { username, wallet } = req.body;
-    if (!username || !wallet) return res.status(400).json({ error: "Missing username or wallet" });
+    let { username, wallet } = req.body;
 
-    const cfg = await getConfig();
-    if (!cfg.holderVerificationEnabled) {
-      return res.status(403).json({ ok: false, message: "Holder verification is disabled." });
+    if (!username || !wallet)
+      return res.status(400).json({ ok: false, message: "Missing username or wallet." });
+
+    // ✅ Normalize username: ensure one @, keep user’s casing
+    username = username.trim();
+    if (!username.startsWith("@")) username = "@" + username.replace(/^@+/, "");
+
+    // Load holders list
+    const holdersRes = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`, {
+      headers: { "X-Master-Key": process.env.JSONBIN_KEY }
+    });
+    const holders = holdersRes.data.record || [];
+
+    // ✅ Case-insensitive duplicate check
+    const alreadyExists = holders.some(
+      (h) => h.username.toLowerCase() === username.toLowerCase()
+    );
+    if (alreadyExists) {
+      return res.json({ ok: true, message: "Already verified.", username });
     }
 
-    const required = cfg.minHoldAmount || 0;
-    const check = await checkSolanaHolding(wallet, required);
-
-    if (check.ok) {
-      const rec = {
-        wallet: wallet,
-        verifiedAt: new Date().toISOString(),
-        amount: check.amount,
-        whole: check.whole,
-        decimals: check.decimals,
-      };
-      await saveHolder(username, rec);
-      return res.json({ ok: true, message: "Verified and saved", record: rec });
+    // ✅ Verify Solana wallet balance (mock or real)
+    const verified = await verifySolanaBalance(wallet);
+    if (!verified) {
+      return res.json({ ok: false, message: "Wallet balance below minimum requirement." });
     }
 
-    return res.json({ ok: false, message: "Not holding required amount", info: check });
+    // Add verified holder
+    holders.push({
+      username, // stored exactly as written by user
+      wallet,
+      verifiedAt: new Date().toISOString()
+    });
+
+    // Save to JSONBin
+    await axios.put(`https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`, holders, {
+      headers: { "Content-Type": "application/json", "X-Master-Key": process.env.JSONBIN_KEY }
+    });
+
+    return res.json({ ok: true, message: "✅ Holder verified successfully!", username });
   } catch (err) {
-    console.error("❌ /verifyHolder failed:", err?.message || err);
-    res.status(500).json({ error: err?.message || String(err) });
+    console.error("❌ verifyHolder error:", err);
+    res.status(500).json({ ok: false, message: "Server error verifying holder." });
   }
 });
 
