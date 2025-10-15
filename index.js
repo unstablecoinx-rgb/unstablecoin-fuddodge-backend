@@ -998,6 +998,22 @@ app.get("/eventverifiedtop50", async (req, res) => {
     res.status(500).json({ error: "Failed to load event verified top50" });
   }
 });
+// === Public leaderboard endpoint for frontend ===
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const data = await getLeaderboard();
+    const sorted = Object.entries(data)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([username, score]) => ({ username, score }));
+
+    res.json({ ok: true, leaderboard: sorted });
+  } catch (err) {
+    console.error("❌ /leaderboard error:", err?.message || err);
+    res.status(500).json({ ok: false, message: "Failed to load leaderboard." });
+  }
+});
+
 
 /* ============================
    START SERVER
