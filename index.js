@@ -301,7 +301,7 @@ async function composeShareImage(graphBase64, username, score) {
 const fs = require("fs");
 
 async function composeAthBanner(curveBase64, username, score) {
-  const basePath = "./assets/ath_banner_square.png";  // 🚀 your new square banner
+  const basePath = "./assets/ath_banner_square.png";  // 🚀 your banner file
   const W = 1200, H = 628;
 
   // Decode chart image if present
@@ -334,36 +334,32 @@ async function composeAthBanner(curveBase64, username, score) {
       .toBuffer();
   }
 
-  // Optional thin divider line
+  // Divider
   const lineBuf = await sharp({
     create: {
       width: 4,
       height: H,
       channels: 4,
-      background: { r: 255, g: 212, b: 0, alpha: 0.6 } // yellow lightning glow
+      background: { r: 0, g: 255, b: 200, alpha: 0.5 } // 🔵 blue-green divider
     }
   }).png().toBuffer();
 
-  // Combine into one image
-  const composite = [
-    { input: bannerImgBuf, top: 0, left: 0 },
-    { input: lineBuf, top: 0, left: bannerW - 2 }
-  ];
-  if (chartImgBuf) composite.push({ input: chartImgBuf, top: 0, left: bannerW });
+  if (chartImgBuf) {
+    const composite = [
+      { input: bannerImgBuf, top: 0, left: 0 },
+      { input: lineBuf, top: 0, left: bannerW - 2 },
+      { input: chartImgBuf, top: 0, left: bannerW }
+    ];
+    return await sharp({
+      create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }
+    })
+      .composite(composite)
+      .png()
+      .toBuffer();
+  }
 
-  const finalBuf = await sharp({
-    create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }
-  })
-    .composite(composite)
-    .png()
-    .toBuffer();
-
-  return finalBuf;
-}
-
-// ✅ Fallback if no graph provided
-// (Remove "await" here)
-return sharp(basePath).resize(W, H).png().toBuffer();// ============================
+  // ✅ fallback (no graph)
+  return sharp(basePath).resize(W, H).png().toBuffer();
 // Leaderboard helpers
 // ============================
 async function getLeaderboard() {
