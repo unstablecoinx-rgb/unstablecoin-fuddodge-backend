@@ -297,17 +297,14 @@ async function composeShareImage(graphBase64, username, score) {
   }
 }
 
-// === A.T.H. Banner Composer (using static base image) ===
+// === A.T.H. Banner Composer (stacked: banner above + chart below) ===
 const fs = require("fs");
 
 async function composeAthBanner(curveBase64, username, score) {
-  const basePath = "./assets/ath_banner_base.png";  // ✅ your new static banner
+  const basePath = "./assets/ath_banner_base.png"; // your static banner
   const W = 1200, H = 628;
 
-  // Load the static banner
-  const baseImg = sharp(basePath).resize(W, H);
-
-  // Decode the curve (chart) image if present
+  // Decode curve (chart) if present
   let graphBuf = null;
   try {
     if (curveBase64) {
@@ -319,23 +316,42 @@ async function composeAthBanner(curveBase64, username, score) {
     console.warn("⚠️ Could not parse curveBase64:", err);
   }
 
-  // Composite chart on top of static banner
+  // If a chart image exists → stack vertically
   if (graphBuf) {
-    const graphW = Math.floor(W * 0.9);
+    const graphW = Math.floor(W * 0.85);
     const graphH = Math.floor(H * 0.42);
-    const topOffset = Math.floor(H * 0.50); // lower half placement
-    const graphImg = await sharp(graphBuf)
-      .resize(graphW, graphH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+
+    const bannerH = Math.floor(H * 0.58);
+    const bannerImg = await sharp(basePath)
+      .resize(W, bannerH, { fit: "cover" })
       .toBuffer();
 
-    return await baseImg
-      .composite([{ input: graphImg, top: topOffset, left: Math.floor((W - graphW) / 2) }])
+    const chartImg = await sharp(graphBuf)
+      .resize(graphW, graphH, {
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .toBuffer();
+
+    // Create a new image tall enough for both
+    return await sharp({
+      create: {
+        width: W,
+        height: bannerH + graphH,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 1 },
+      },
+    })
+      .composite([
+        { input: bannerImg, top: 0, left: 0 },
+        { input: chartImg, top: bannerH, left: Math.floor((W - graphW) / 2) },
+      ])
       .png()
       .toBuffer();
   }
 
-  // Fallback if no graph provided
-  return await baseImg.png().toBuffer();
+  // Fallback: just banner
+  return await sharp(basePath).resize(W, H).png().toBuffer();
 }
 // ============================
 // Leaderboard helpers
