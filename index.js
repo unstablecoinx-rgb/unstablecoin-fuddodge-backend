@@ -360,10 +360,10 @@ async function composeAthBanner(curveBase64, username, score) {
 
   return finalBuf;
 }
-  // Fallback: just banner
-  return await sharp(basePath).resize(W, H).png().toBuffer();
-}
-// ============================
+
+// ✅ Fallback if no graph provided
+// (Remove "await" here)
+return sharp(basePath).resize(W, H).png().toBuffer();// ============================
 // Leaderboard helpers
 // ============================
 async function getLeaderboard() {
