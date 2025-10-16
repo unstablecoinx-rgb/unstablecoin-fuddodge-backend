@@ -1020,16 +1020,15 @@ app.post("/share", async (req, res) => {
       const rec = athMap[username] || { ath: 0, lastSentScore: null, milestones: [] };
       const oldAth = +rec.ath || 0;
 
-      // Test mode: allow share if score < oldAth too, but never allow repeat of identical lastSentScore
-      if (!ATH_TEST_MODE) {
-        if (!(score > oldAth)) {
-          return res.status(400).json({ ok: false, message: `Score must beat your A.T.H. of ${oldAth}` });
-        }
-      } else {
-        if (rec.lastSentScore !== null && Number(rec.lastSentScore) === Number(score)) {
-          return res.status(400).json({ ok: false, message: "Already sent for this score during testing." });
-        }
-      }
+if (!ATH_TEST_MODE) {
+  // Production mode: only allow new ATH
+  if (!(score > oldAth)) {
+    return res.status(400).json({ ok: false, message: `Score must beat your A.T.H. of ${oldAth}` });
+  }
+} else {
+  // Test mode: always allow sending
+  console.log(`🧪 ATH_TEST_MODE active: allowing repeat sends for ${username}`);
+}
 
       // If it is a new ATH, update state
       const isNewAth = score > oldAth;
