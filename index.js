@@ -297,14 +297,15 @@ async function composeShareImage(graphBase64, username, score) {
   }
 }
 
-// === A.T.H. Banner Composer (stacked: banner above + chart below) ===
+// === A.T.H. Banner Composer (square rocket banner + chart side by side) ===
+const sharp = require("sharp");
 const fs = require("fs");
 
 async function composeAthBanner(curveBase64, username, score) {
-  const basePath = "./assets/ath_banner_base.png"; // your static banner
+  const basePath = "./assets/ath_banner_square.png";  // 🚀 your new square banner
   const W = 1200, H = 628;
 
-  // Decode curve (chart) if present
+  // Decode chart image if present
   let graphBuf = null;
   try {
     if (curveBase64) {
@@ -316,40 +317,46 @@ async function composeAthBanner(curveBase64, username, score) {
     console.warn("⚠️ Could not parse curveBase64:", err);
   }
 
-  // If a chart image exists → stack vertically
+  // Left banner + right chart layout
+  const bannerW = Math.floor(W * 0.55);
+  const chartW  = W - bannerW;
+
+  const bannerImg = await sharp(basePath)
+    .resize(bannerW, H, { fit: "cover" })
+    .toBuffer();
+
+  let chartImg = null;
   if (graphBuf) {
-    const graphW = Math.floor(W * 0.85);
-    const graphH = Math.floor(H * 0.42);
-
-    const bannerH = Math.floor(H * 0.58);
-    const bannerImg = await sharp(basePath)
-      .resize(W, bannerH, { fit: "cover" })
-      .toBuffer();
-
-    const chartImg = await sharp(graphBuf)
-      .resize(graphW, graphH, {
+    chartImg = await sharp(graphBuf)
+      .resize(chartW, H, {
         fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        background: { r: 0, g: 0, b: 0, alpha: 1 }
       })
-      .toBuffer();
-
-    // Create a new image tall enough for both
-    return await sharp({
-      create: {
-        width: W,
-        height: bannerH + graphH,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 1 },
-      },
-    })
-      .composite([
-        { input: bannerImg, top: 0, left: 0 },
-        { input: chartImg, top: bannerH, left: Math.floor((W - graphW) / 2) },
-      ])
-      .png()
       .toBuffer();
   }
 
+  // Combine into one image
+  const composite = [{ input: bannerImg, top: 0, left: 0 }];
+  if (chartImg) composite.push({ input: chartImg, top: 0, left: bannerW });
+
+  // Optional: add a thin separator line for style (can tweak later)
+  const line = {
+    create: {
+      width: 4,
+      height: H,
+      channels: 4,
+      background: { r: 255, g: 212, b: 0, alpha: 0.6 } // yellow lightning glow
+    }
+  };
+  composite.push({ input: await sharp(line).png().toBuffer(), top: 0, left: bannerW - 2 });
+
+  return await sharp({
+    create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }
+  })
+    .composite(composite)
+    .png()
+    .toBuffer();
+}
   // Fallback: just banner
   return await sharp(basePath).resize(W, H).png().toBuffer();
 }
