@@ -299,7 +299,6 @@ async function composeShareImage(graphBase64, username, score) {
 
 // === A.T.H. Banner Composer (using static base image) ===
 const fs = require("fs");
-const sharp = require("sharp");
 
 async function composeAthBanner(curveBase64, username, score) {
   const basePath = "./assets/ath_banner_base.png";  // ✅ your new static banner
