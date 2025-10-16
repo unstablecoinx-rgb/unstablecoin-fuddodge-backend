@@ -360,7 +360,8 @@ async function composeAthBanner(curveBase64, username, score) {
 
   // ✅ fallback (no graph)
   return sharp(basePath).resize(W, H).png().toBuffer();
-// Leaderboard helpers
+}
+  // Leaderboard helpers
 // ============================
 async function getLeaderboard() {
   try {
