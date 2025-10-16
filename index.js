@@ -298,7 +298,6 @@ async function composeShareImage(graphBase64, username, score) {
 }
 
 // === A.T.H. Banner Composer (square rocket banner + chart side by side) ===
-const sharp = require("sharp");
 const fs = require("fs");
 
 async function composeAthBanner(curveBase64, username, score) {
