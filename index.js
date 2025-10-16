@@ -297,44 +297,47 @@ async function composeShareImage(graphBase64, username, score) {
   }
 }
 
-// A.T.H. banner composition (can be swapped to use a static PNG base later)
+// === A.T.H. Banner Composer (using static base image) ===
+import fs from "fs";
+import sharp from "sharp";
+
 async function composeAthBanner(curveBase64, username, score) {
+  const basePath = "./assets/ath_banner_base.png";  // ✅ your new static banner
   const W = 1200, H = 628;
 
-  let curveBuf = null;
+  // Load the static banner
+  const baseImg = sharp(basePath).resize(W, H);
+
+  // Decode the curve (chart) image if present
+  let graphBuf = null;
   try {
     if (curveBase64) {
       const m = curveBase64.match(/^data:image\/(png|jpeg);base64,(.*)$/);
       const base64 = m ? m[2] : curveBase64;
-      curveBuf = Buffer.from(base64, "base64");
+      graphBuf = Buffer.from(base64, "base64");
     }
-  } catch (_) {}
-
-  // Background
-  const bgSvg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#050505"/>
-        <stop offset="100%" stop-color="#10121a"/>
-      </linearGradient>
-    </defs>
-    <rect width="100%" height="100%" fill="url(#bg)"/>
-    <text x="56" y="88" fill="#ffd400" font-family="Press Start 2P, monospace" font-size="36" font-weight="bold">UnStableCoin – A.T.H.</text>
-    <text x="56" y="130" fill="#ffffff" font-family="Press Start 2P, monospace" font-size="22" opacity="0.95">@${escapeXml(String(username).replace(/^@+/, ""))}  •  MCap: ${escapeXml(String(score))}</text>
-  </svg>`;
-
-  let img = sharp(Buffer.from(bgSvg)).resize(W, H);
-
-  if (curveBuf) {
-    const graphW = Math.floor(W * 0.86);
-    const graphH = Math.floor(H * 0.60);
-    const graphImg = await sharp(curveBuf).resize(graphW, graphH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).toBuffer();
-    img = img.composite([{ input: graphImg, left: Math.floor((W - graphW) / 2), top: Math.floor(H * 0.20) }]);
+  } catch (err) {
+    console.warn("⚠️ Could not parse curveBase64:", err);
   }
 
-  return img.png().toBuffer();
-}
+  // Composite chart on top of static banner
+  if (graphBuf) {
+    const graphW = Math.floor(W * 0.9);
+    const graphH = Math.floor(H * 0.42);
+    const topOffset = Math.floor(H * 0.50); // lower half placement
+    const graphImg = await sharp(graphBuf)
+      .resize(graphW, graphH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .toBuffer();
 
+    return await baseImg
+      .composite([{ input: graphImg, top: topOffset, left: Math.floor((W - graphW) / 2) }])
+      .png()
+      .toBuffer();
+  }
+
+  // Fallback if no graph provided
+  return await baseImg.png().toBuffer();
+}
 // ============================
 // Leaderboard helpers
 // ============================
