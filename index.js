@@ -320,13 +320,13 @@ async function composeAthBanner(curveBase64, username, score) {
   const bannerW = Math.floor(W * 0.55);
   const chartW  = W - bannerW;
 
-  const bannerImg = await sharp(basePath)
+  const bannerImgBuf = await sharp(basePath)
     .resize(bannerW, H, { fit: "cover" })
     .toBuffer();
 
-  let chartImg = null;
+  let chartImgBuf = null;
   if (graphBuf) {
-    chartImg = await sharp(graphBuf)
+    chartImgBuf = await sharp(graphBuf)
       .resize(chartW, H, {
         fit: "contain",
         background: { r: 0, g: 0, b: 0, alpha: 1 }
@@ -334,27 +334,31 @@ async function composeAthBanner(curveBase64, username, score) {
       .toBuffer();
   }
 
-  // Combine into one image
-  const composite = [{ input: bannerImg, top: 0, left: 0 }];
-  if (chartImg) composite.push({ input: chartImg, top: 0, left: bannerW });
-
-  // Optional: add a thin separator line for style (can tweak later)
-  const line = {
+  // Optional thin divider line
+  const lineBuf = await sharp({
     create: {
       width: 4,
       height: H,
       channels: 4,
       background: { r: 255, g: 212, b: 0, alpha: 0.6 } // yellow lightning glow
     }
-  };
-  composite.push({ input: await sharp(line).png().toBuffer(), top: 0, left: bannerW - 2 });
+  }).png().toBuffer();
 
-  return await sharp({
+  // Combine into one image
+  const composite = [
+    { input: bannerImgBuf, top: 0, left: 0 },
+    { input: lineBuf, top: 0, left: bannerW - 2 }
+  ];
+  if (chartImgBuf) composite.push({ input: chartImgBuf, top: 0, left: bannerW });
+
+  const finalBuf = await sharp({
     create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }
   })
     .composite(composite)
     .png()
     .toBuffer();
+
+  return finalBuf;
 }
   // Fallback: just banner
   return await sharp(basePath).resize(W, H).png().toBuffer();
