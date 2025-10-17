@@ -326,12 +326,21 @@ async function composeAthBanner(curveBase64, username, score) {
 
   let chartImgBuf = null;
 if (graphBuf) {
-  // Make the chart draw within a square area (no cropping)
-  const TILE_SIZE = Math.min(chartW, H);
+  // Force the chart to render as a square (no crop, just contain)
+  const squareSize = Math.min(chartW, H);
+  const padX = Math.max(0, (chartW - squareSize) / 2);
+  const padY = Math.max(0, (H - squareSize) / 2);
 
   chartImgBuf = await sharp(graphBuf)
-    .resize(TILE_SIZE, TILE_SIZE, {
-      fit: "contain",       // ⬅️ no cropping, just fit inside
+    .resize(squareSize, squareSize, {
+      fit: "contain",
+      background: { r: 0, g: 0, b: 0, alpha: 1 }
+    })
+    .extend({
+      top: padY,
+      bottom: padY,
+      left: padX,
+      right: padX,
       background: { r: 0, g: 0, b: 0, alpha: 1 }
     })
     .png()
