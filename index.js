@@ -141,17 +141,28 @@ function normalizeName(n) {
   return String(n).trim().replace(/^@+/, "").toLowerCase();
 }
 
-//
-// 5) JSONBIN HELPERS
-//
+// simple in-memory cache for short periods
+const _cache = {};
+
 async function readBin(url, tries = 3) {
+  // return cached if younger than 30s
+  const c = _cache[url];
+  if (c && Date.now() - c.t < 30_000) return c.data;
+
   for (let i = 0; i < tries; i++) {
     try {
       const resp = await axios.get(url, { headers: { "X-Master-Key": JSONBIN_KEY } });
-      return resp.data.record || resp.data || {};
+      const data = resp.data.record || resp.data || {};
+      _cache[url] = { t: Date.now(), data };
+      return data;
     } catch (err) {
       const code = err?.response?.status;
-      if (code === 429 && i < tries - 1) { await sleep(250 * (i + 1)); continue; }
+      if (code === 429 && i < tries - 1) {
+        const delay = 1000 * (i + 1);
+        console.warn(`⏳ 429 rate-limit hit — waiting ${delay} ms`);
+        await sleep(delay);
+        continue;
+      }
       console.error("❌ readBin:", err?.message || err);
       return null;
     }
