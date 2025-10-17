@@ -1316,6 +1316,247 @@ bot.on("message", async (m) => {
   }
 });
 
+/* =========================================================
+   🪙 UNSTABLECOIN – HOLDER MANAGEMENT + TELEGRAM MENU
+   ========================================================= */
+
+// === Persistent main menu keyboard ===
+const mainMenu = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "🪙 Add Wallet" }, { text: "⚡ Verify Holder" }],
+      [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
+      [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  }
+};
+
+// === /start or /menu command ===
+bot.onText(/\/start|\/menu/i, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(
+    chatId,
+    `💛 Welcome to *UnStableCoin* ⚡
+Use the buttons below to manage your wallet or join the current event.`,
+    { ...mainMenu, parse_mode: "Markdown" }
+  );
+});
+
+// === Helper to show menu again automatically ===
+async function returnToMenu(chatId, delayMs = 2000) {
+  setTimeout(() => {
+    bot.sendMessage(
+      chatId,
+      "💛 Back to main menu — choose your next move:",
+      { ...mainMenu, parse_mode: "Markdown" }
+    );
+  }, delayMs);
+}
+
+// === Handle button presses by text ===
+bot.on("message", (msg) => {
+  const txt = msg.text?.toLowerCase();
+  if (!txt) return;
+
+  if (txt.includes("add wallet")) return bot.emit("text", { ...msg, text: "/addwallet" });
+  if (txt.includes("verify"))    return bot.emit("text", { ...msg, text: "/verifyholder" });
+  if (txt.includes("change"))    return bot.emit("text", { ...msg, text: "/changewallet" });
+  if (txt.includes("remove"))    return bot.emit("text", { ...msg, text: "/removewallet" });
+  if (txt.includes("leader"))    return bot.emit("text", { ...msg, text: "/leaderboard" });
+  if (txt.includes("event"))     return bot.emit("text", { ...msg, text: "/event" });
+});
+
+/* =========================================================
+   🔹 /ADDWALLET – Register new holder
+   ========================================================= */
+bot.onText(/\/addwallet/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const realUser = msg.from?.username;
+  if (!realUser) {
+    return bot.sendMessage(chatId, "❌ You must have a Telegram username set in your profile.");
+  }
+
+  try {
+    const res = await axios.get(HOLDER_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    const holders = res.data.record || [];
+
+    const exists = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
+    if (exists) {
+      await bot.sendMessage(chatId, `⚠️ @${realUser}, you’re already registered. Use /changewallet instead.`);
+      return returnToMenu(chatId);
+    }
+
+    await bot.sendMessage(chatId, "🪙 Please paste your Solana wallet address:");
+
+    bot.once("message", async (msg2) => {
+      const wallet = msg2.text.trim();
+      if (!wallet || wallet.length < 32) {
+        await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /addwallet.");
+        return returnToMenu(chatId);
+      }
+
+      holders.push({ username: "@" + realUser, wallet, verifiedAt: null });
+      await axios.put(HOLDER_BIN_URL, holders, {
+        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY }
+      });
+
+      await bot.sendMessage(chatId, `✅ Wallet added for @${realUser}!\nUse /verifyholder to confirm your holdings.`);
+      returnToMenu(chatId);
+    });
+  } catch (err) {
+    console.error("⚠️ /addwallet failed:", err);
+    await bot.sendMessage(chatId, "⚠️ Something went wrong. Please try again later.");
+    returnToMenu(chatId);
+  }
+});
+
+/* =========================================================
+   🔹 /CHANGEWALLET – Update wallet with inline confirm
+   ========================================================= */
+bot.onText(/\/changewallet/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const realUser = msg.from?.username;
+
+  if (!realUser) {
+    return bot.sendMessage(chatId, "❌ You need a Telegram username to use this command.");
+  }
+
+  const res = await axios.get(HOLDER_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+  const holders = res.data.record || [];
+  const user = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
+
+  if (!user) {
+    await bot.sendMessage(chatId, "⚠️ You’re not registered yet. Use /addwallet first.");
+    return returnToMenu(chatId);
+  }
+
+  await bot.sendMessage(chatId, "Do you really want to change your wallet?", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Yes, change it", callback_data: "confirm_change_yes" },
+          { text: "❌ Cancel", callback_data: "confirm_change_no" }
+        ]
+      ]
+    }
+  });
+});
+
+// === Handle all callback confirmations (change / remove) ===
+bot.on("callback_query", async (cb) => {
+  const chatId = cb.message.chat.id;
+  const realUser = cb.from.username;
+
+  if (cb.data === "confirm_change_yes") {
+    await bot.answerCallbackQuery(cb.id, { text: "Proceeding..." });
+    await bot.sendMessage(chatId, "Please paste your new Solana wallet address:");
+
+    bot.once("message", async (msg2) => {
+      const wallet = msg2.text.trim();
+      if (!wallet || wallet.length < 32) {
+        await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /changewallet.");
+        return returnToMenu(chatId);
+      }
+
+      const res = await axios.get(HOLDER_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+      const holders = res.data.record || [];
+      const user = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
+      if (!user) {
+        await bot.sendMessage(chatId, "⚠️ You’re not registered. Use /addwallet first.");
+        return returnToMenu(chatId);
+      }
+
+      user.wallet = wallet;
+      user.verifiedAt = null;
+
+      await axios.put(HOLDER_BIN_URL, holders, {
+        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY }
+      });
+
+      await bot.sendMessage(chatId, `✅ Wallet updated for @${realUser}! Use /verifyholder to confirm.`);
+      returnToMenu(chatId);
+    });
+  } else if (cb.data === "confirm_change_no") {
+    await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
+    await bot.sendMessage(chatId, "❌ Wallet change cancelled.");
+    return returnToMenu(chatId);
+  }
+
+  if (cb.data === "confirm_remove_yes") {
+    await bot.answerCallbackQuery(cb.id, { text: "Removing..." });
+
+    const res = await axios.get(HOLDER_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    let holders = res.data.record || [];
+    holders = holders.filter(h => normalizeName(h.username) !== normalizeName(realUser));
+
+    await axios.put(HOLDER_BIN_URL, holders, {
+      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY }
+    });
+
+    await bot.sendMessage(chatId, `❌ Wallet removed for @${realUser}.`);
+    returnToMenu(chatId);
+  } else if (cb.data === "confirm_remove_no") {
+    await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
+    await bot.sendMessage(chatId, "Action cancelled.");
+    returnToMenu(chatId);
+  }
+});
+
+/* =========================================================
+   🔹 /REMOVEWALLET – Inline confirm for safety
+   ========================================================= */
+bot.onText(/\/removewallet/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const realUser = msg.from?.username;
+  if (!realUser) return bot.sendMessage(chatId, "❌ You need a Telegram username to continue.");
+
+  await bot.sendMessage(chatId, "Are you sure you want to remove your wallet?", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "✅ Yes, remove", callback_data: "confirm_remove_yes" },
+          { text: "❌ Cancel", callback_data: "confirm_remove_no" }
+        ]
+      ]
+    }
+  });
+});
+
+/* =========================================================
+   🔹 /VERIFYHOLDER – Manual verification trigger
+   ========================================================= */
+bot.onText(/\/verifyholder/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const realUser = msg.from?.username;
+  if (!realUser) {
+    await bot.sendMessage(chatId, "❌ Please set a Telegram username to verify.");
+    return returnToMenu(chatId);
+  }
+
+  try {
+    const res = await axios.post(`${API_URL}/verifyHolder`, { username: "@" + realUser });
+    if (res.data.ok) {
+      await bot.sendMessage(chatId, `✅ Verified successfully, @${realUser}! You can now join contests.`);
+    } else {
+      await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`);
+    }
+  } catch (err) {
+    console.error("verifyHolder error:", err);
+    await bot.sendMessage(chatId, "⚠️ Network or backend error during verification.");
+  }
+  returnToMenu(chatId);
+});
+
+/* =========================================================
+   🧠 Helper to normalize usernames
+   ========================================================= */
+function normalizeName(n) {
+  if (!n) return "";
+  return String(n).trim().replace(/^@+/, "").toLowerCase();
+}
+
 /* ============================
    FRONTEND ENDPOINTS
    ============================ */
