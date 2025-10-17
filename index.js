@@ -361,15 +361,6 @@ async function composeAthBanner(curveBase64, username, score) {
     .png()
     .toBuffer();
 }
-// Divider
-  const lineBuf = await sharp({
-    create: {
-      width: 4,
-      height: H,
-      channels: 4,
-      background: { r: 0, g: 255, b: 200, alpha: 0.5 } // 🔵 blue-green divider
-    }
-  }).png().toBuffer();
 
   if (chartImgBuf) {
     const composite = [
