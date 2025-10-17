@@ -325,14 +325,25 @@ async function composeAthBanner(curveBase64, username, score) {
     .toBuffer();
 
   let chartImgBuf = null;
-  if (graphBuf) {
-    chartImgBuf = await sharp(graphBuf)
-      .resize(chartW, H, {
-        fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 1 }
-      })
-      .toBuffer();
-  }
+if (graphBuf) {
+  // Make chart square before composing with banner
+  const TILE_SIZE = Math.min(chartW, H);
+
+  chartImgBuf = await sharp(graphBuf)
+    .resize(TILE_SIZE, TILE_SIZE, {
+      fit: "cover",
+      position: "centre"
+    })
+    .extend({
+      top: 0,
+      bottom: H - TILE_SIZE,
+      left: 0,
+      right: chartW - TILE_SIZE,
+      background: { r: 0, g: 0, b: 0, alpha: 1 }
+    })
+    .png()
+    .toBuffer();
+}
 
   // Divider
   const lineBuf = await sharp({
