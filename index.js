@@ -320,10 +320,12 @@ async function composeAthBanner(curveBase64, username, score) {
   const bannerW = Math.floor(W * 0.55);
   const chartW  = W - bannerW;
 
-  const bannerImgBuf = await sharp(basePath)
-    .resize(bannerW, H, { fit: "cover" })
-    .toBuffer();
-
+const bannerImgBuf = await sharp(basePath)
+  .resize(bannerW, H, {
+    fit: "contain",
+    background: { r: 0, g: 0, b: 0, alpha: 1 }
+  })
+  .toBuffer();
   let chartImgBuf = null;
 if (graphBuf) {
   // Force the chart to render as a square (no crop, just contain)
