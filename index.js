@@ -694,35 +694,46 @@ bot.on("callback_query", async (cb) => {
 });
 
 // ==========================================================
-// 14) TELEGRAM: BUTTON TEXT ROUTER (direct call version)
+// 14) TELEGRAM: BUTTON TEXT ROUTER (loop-safe final version)
 // ----------------------------------------------------------
-// This version calls the same logic as the /commands directly.
-// Works even with webhook mode, no recursion or lag.
+// Converts white button text into commands without recursion.
 // ==========================================================
-bot.on("message", async (msg) => {
+bot.on("message", (msg) => {
   try {
-    const t = (msg.text || "").toLowerCase();
-    if (!t || t.startsWith("/")) return; // ignore real commands
+    // skip: no text, already command, or our own synthetic event
+    if (!msg.text || msg.text.startsWith("/") || msg._internal) return;
 
-    // 🪙 Add Wallet
-    if (t.includes("add wallet")) return bot.emit("text", { ...msg, text: "/addwallet" });
+    const t = msg.text.toLowerCase();
 
-    // ⚡ Verify Holder
-    if (t.includes("verify")) return bot.emit("text", { ...msg, text: "/verifyholder" });
+    let newText = null;
+    if (t.includes("add wallet")) newText = "/addwallet";
+    else if (t.includes("verify")) newText = "/verifyholder";
+    else if (t.includes("change")) newText = "/changewallet";
+    else if (t.includes("remove")) newText = "/removewallet";
+    else if (t.includes("leader")) newText = "/top10";
+    else if (t.includes("event")) newText = "/event";
 
-    // 🔁 Change Wallet
-    if (t.includes("change")) return bot.emit("text", { ...msg, text: "/changewallet" });
-
-    // ❌ Remove Wallet
-    if (t.includes("remove")) return bot.emit("text", { ...msg, text: "/removewallet" });
-
-    // 🏆 Leaderboard
-    if (t.includes("leader")) return bot.emit("text", { ...msg, text: "/top10" });
-
-    // 🚀 Current Event
-    if (t.includes("event")) return bot.emit("text", { ...msg, text: "/event" });
+    if (newText) {
+      // tag it so router ignores it on reentry
+      bot.emit("text", { ...msg, text: newText, _internal: true });
+    }
   } catch (err) {
     console.error("⚠️ Router error:", err?.message || err);
+  }
+});
+
+// ==========================================================
+// 15) INTERNAL TEXT → REAL COMMAND DISPATCHER (safe)
+// ----------------------------------------------------------
+// Handles the synthetic /commands triggered by router above.
+// The _internal flag prevents recursive loops.
+// ==========================================================
+bot.on("text", (msg) => {
+  try {
+    if (!msg._internal) return; // only handle internal ones
+    bot.processUpdate({ message: msg });
+  } catch (err) {
+    console.error("⚠️ Dispatcher error:", err?.message || err);
   }
 });
 
