@@ -326,25 +326,17 @@ async function composeAthBanner(curveBase64, username, score) {
 
   let chartImgBuf = null;
 if (graphBuf) {
-  // Make chart square before composing with banner
+  // Make the chart draw within a square area (no cropping)
   const TILE_SIZE = Math.min(chartW, H);
 
   chartImgBuf = await sharp(graphBuf)
     .resize(TILE_SIZE, TILE_SIZE, {
-      fit: "cover",
-      position: "centre"
-    })
-    .extend({
-      top: 0,
-      bottom: H - TILE_SIZE,
-      left: 0,
-      right: chartW - TILE_SIZE,
+      fit: "contain",       // ⬅️ no cropping, just fit inside
       background: { r: 0, g: 0, b: 0, alpha: 1 }
     })
     .png()
     .toBuffer();
 }
-
   // Divider
   const lineBuf = await sharp({
     create: {
@@ -1074,10 +1066,17 @@ if (!ATH_TEST_MODE) {
       // Target chat
       const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
 
-      // Send photo to Telegram
-      const caption = `<b>${escapeXml(username)}</b>\nA.T.H. MCap: ${escapeXml(String(score))}\nShared from UnStableCoin FUD Dodge`;
-      await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
+   // === Format MCap nicely (k / M) ===
+function formatMCap(v) {
+  if (!v || isNaN(v)) return "0k";
+  if (v >= 1_000_000) return (v / 1_000_000).toFixed(3).replace(/\.?0+$/, "") + "M";
+  if (v >= 1000) return (v / 1000).toFixed(3).replace(/\.?0+$/, "") + "k";
+  return v.toFixed(3).replace(/\.?0+$/, "");
+}
 
+// Send photo to Telegram
+const caption = `<b>${escapeXml(username)}</b>\nA.T.H. MCap: ${formatMCap(score)}\nShared from UnStableCoin FUD Dodge`;
+await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
       // Save record
       const nowIso = new Date().toISOString();
       rec.lastSentScore = score;
