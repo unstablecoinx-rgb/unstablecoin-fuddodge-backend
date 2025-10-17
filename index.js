@@ -1,9 +1,8 @@
-// ============================================================================
-//  UnStableCoin Game Bot
-//  ⚡ Version: Full + EventStart/End + WinnersPeriodCheck + ATH Share + Preview
-//              + Verified Event Lists + Public Event API
-//  Author: UnStableCoin Community
-// ============================================================================
+// === UnStableCoin Game Bot ===
+// ⚡ Version: Full + EventStart/End + WinnersPeriodCheck + ATH Share + Preview + Verified Event Lists + Public Event API
+//      + Secure Wallet Change/Remove (challenge-based) + Robust JSONBin retries
+// Author: UnStableCoin Community
+// ------------------------------------
 
 /*
   Required environment variables:
@@ -17,29 +16,20 @@
   - HOLDER_JSONBIN_ID
   - ATH_JSONBIN_ID
   - RENDER_EXTERNAL_HOSTNAME (optional)
-  - SOLANA_RPC_URL          (optional)
+  - SOLANA_RPC_URL         (optional)
 */
 
-// ---------------------------------------------------------------------------
-// CONFIG DEFAULTS
-// ---------------------------------------------------------------------------
 const CONFIG_DEFAULTS = {
-  tokenMint: "6zzHz3X3s53zhEqyBMmokZLh6Ba5EfC5nP3XURzYpump",
+  tokenMint: '6zzHz3X3s53zhEqyBMmokZLh6Ba5EfC5nP3XURzYpump',
   minHoldAmount: 500000,
-  network: "mainnet-beta",
+  network: 'mainnet-beta'
 };
 
 // === TEST MODE TOGGLES ===
-// While testing A.T.H. flow, allow sending even if score < current ATH.
-// Flip to false in production to require actual new ATH.
-const ATH_TEST_MODE = true;
+const ATH_TEST_MODE = true;                 // keep ON until you say otherwise
+const TEST_ATH_CHAT_ID = '8067310645';      // keep until you request change
 
-// Default Telegram chat for A.T.H. posts during testing
-const TEST_ATH_CHAT_ID = "8067310645";
-
-// ---------------------------------------------------------------------------
-// IMPORTS
-// ---------------------------------------------------------------------------
+// === IMPORTS ===
 const express = require("express");
 const bodyParser = require("body-parser");
 const TelegramBot = require("node-telegram-bot-api");
@@ -51,9 +41,7 @@ const { DateTime } = require("luxon");
 const sharp = require("sharp");
 const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
 
-// ---------------------------------------------------------------------------
-// ENVIRONMENT VALIDATION
-// ---------------------------------------------------------------------------
+// === ENVIRONMENT VALIDATION ===
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const JSONBIN_ID = process.env.JSONBIN_ID;
 const EVENT_JSONBIN_ID = process.env.EVENT_JSONBIN_ID;
@@ -62,7 +50,7 @@ const EVENT_META_JSONBIN_ID = process.env.EVENT_META_JSONBIN_ID;
 const RESET_KEY = process.env.RESET_KEY;
 const CONFIG_JSONBIN_ID = process.env.CONFIG_JSONBIN_ID;
 const HOLDER_JSONBIN_ID = process.env.HOLDER_JSONBIN_ID;
-const ATH_JSONBIN_ID = process.env.ATH_JSONBIN_ID;
+const ATH_JSONBIN_ID = process.env.Ath_JSONBIN_ID || process.env.ATH_JSONBIN_ID; // tolerate casing
 const RENDER_EXTERNAL_HOSTNAME = process.env.RENDER_EXTERNAL_HOSTNAME || null;
 
 if (
@@ -76,28 +64,24 @@ if (
   !HOLDER_JSONBIN_ID ||
   !ATH_JSONBIN_ID
 ) {
-  console.error(
-    "❌ Missing required env vars. Set TELEGRAM_BOT_TOKEN, JSONBIN_ID, EVENT_JSONBIN_ID, JSONBIN_KEY, EVENT_META_JSONBIN_ID, RESET_KEY, CONFIG_JSONBIN_ID, HOLDER_JSONBIN_ID, ATH_JSONBIN_ID"
-  );
+  console.error("❌ Missing required env vars. Set TELEGRAM_BOT_TOKEN, JSONBIN_ID, EVENT_JSONBIN_ID, JSONBIN_KEY, EVENT_META_JSONBIN_ID, RESET_KEY, CONFIG_JSONBIN_ID, HOLDER_JSONBIN_ID, ATH_JSONBIN_ID");
   process.exit(1);
 }
 
-// ---------------------------------------------------------------------------
-// CONSTANTS & URLS
-// ---------------------------------------------------------------------------
-const MAIN_BIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
-const EVENT_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;
-const META_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;
+// === CONSTANTS & URLS ===
+const MAIN_BIN_URL   = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
+const EVENT_BIN_URL  = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;
+const META_BIN_URL   = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;
 const CONFIG_BIN_URL = `https://api.jsonbin.io/v3/b/${CONFIG_JSONBIN_ID}`;
 const HOLDER_BIN_URL = `https://api.jsonbin.io/v3/b/${HOLDER_JSONBIN_ID}`;
-const ATH_BIN_URL = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
+const ATH_BIN_URL    = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
 
 const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot", "pachenko_14"]; // lowercase usernames
 const PORT = process.env.PORT || 10000;
 
-// ---------------------------------------------------------------------------
-// EXPRESS + TELEGRAM WEBHOOK
-// ---------------------------------------------------------------------------
+// ======================================
+// EXPRESS & TELEGRAM SETUP
+// ======================================
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json({ limit: "15mb" }));
@@ -107,9 +91,7 @@ const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 
 (async () => {
   try {
-    const host =
-      RENDER_EXTERNAL_HOSTNAME ||
-      `https://unstablecoin-fuddodge-backend.onrender.com`;
+    const host = RENDER_EXTERNAL_HOSTNAME || `https://unstablecoin-fuddodge-backend.onrender.com`;
     const webhookUrl = `${host.replace(/\/$/, "")}/bot${TELEGRAM_BOT_TOKEN}`;
     await bot.setWebHook(webhookUrl);
     console.log(`✅ Webhook set to: ${webhookUrl}`);
@@ -127,29 +109,24 @@ app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
   res.sendStatus(200);
 });
 
-app.get("/", (_, res) => {
+app.get("/", (req, res) => {
   res.send("💛 UnStableCoin Game Bot with events, holders, and A.T.H. ready.");
 });
 
-// ---------------------------------------------------------------------------
-/**
- * JSONBin helpers with light retry (handles 429 / transient errors)
- */
-// ---------------------------------------------------------------------------
-async function retry(fn, { tries = 3, baseDelay = 250 } = {}) {
+// ======================================
+// JSONBin HELPERS (with light retries)
+// ======================================
+const BIN_HEADERS = { "X-Master-Key": JSONBIN_KEY };
+async function withRetries(fn, label, tries = 3) {
   let lastErr;
   for (let i = 0; i < tries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
+    try { return await fn(); }
+    catch (err) {
       lastErr = err;
       const status = err?.response?.status;
-      if (i < tries - 1 && (status === 429 || status >= 500)) {
-        const delay = baseDelay * Math.pow(2, i);
-        await new Promise((r) => setTimeout(r, delay));
-      } else {
-        break;
-      }
+      console.warn(`⚠️ ${label} failed (try ${i + 1}/${tries})${status ? ` [${status}]` : ""}`);
+      if (status !== 429 && status < 500) break;
+      await new Promise(r => setTimeout(r, 400 * (i + 1)));
     }
   }
   throw lastErr;
@@ -157,10 +134,7 @@ async function retry(fn, { tries = 3, baseDelay = 250 } = {}) {
 
 async function readBin(url) {
   try {
-    const resp = await retry(
-      () => axios.get(url, { headers: { "X-Master-Key": JSONBIN_KEY } }),
-      { tries: 3, baseDelay: 300 }
-    );
+    const resp = await withRetries(() => axios.get(url, { headers: BIN_HEADERS }), "readBin");
     return resp.data.record || resp.data || {};
   } catch (err) {
     console.error("❌ readBin failed:", err?.message || err);
@@ -170,16 +144,9 @@ async function readBin(url) {
 
 async function writeBin(url, payload) {
   try {
-    const resp = await retry(
-      () =>
-        axios.put(url, payload, {
-          headers: {
-            "Content-Type": "application/json",
-            "X-Master-Key": JSONBIN_KEY,
-          },
-        }),
-      { tries: 3, baseDelay: 300 }
-    );
+    const resp = await withRetries(() => axios.put(url, payload, {
+      headers: { "Content-Type": "application/json", ...BIN_HEADERS },
+    }), "writeBin");
     return resp.data;
   } catch (err) {
     console.error("❌ writeBin failed:", err?.message || err);
@@ -187,9 +154,9 @@ async function writeBin(url, payload) {
   }
 }
 
-// ---------------------------------------------------------------------------
+// ======================================
 // CONFIG / HOLDERS
-// ---------------------------------------------------------------------------
+// ======================================
 async function getConfig() {
   const cfg = (await readBin(CONFIG_BIN_URL)) || {};
   return Object.assign(
@@ -208,9 +175,7 @@ async function getConfig() {
 
 async function updateConfig(newPartial) {
   const cur = (await readBin(CONFIG_BIN_URL)) || {};
-  const merged = Object.assign({}, cur, newPartial, {
-    lastUpdated: new Date().toISOString(),
-  });
+  const merged = Object.assign({}, cur, newPartial, { lastUpdated: new Date().toISOString() });
   await writeBin(CONFIG_BIN_URL, merged);
   return merged;
 }
@@ -230,13 +195,27 @@ async function getHoldersMapFromArray() {
   return map;
 }
 
-// ---------------------------------------------------------------------------
-// SOLANA ON-CHAIN HOLDER CHECK
-// ---------------------------------------------------------------------------
+// ======================================
+// SOLANA HOLDER CHECK + VALIDATION
+// ======================================
+function isValidSolanaAddress(addr) {
+  try {
+    // Throws if invalid
+    new PublicKey(addr);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function checkSolanaHolding(walletAddress, requiredWholeTokens) {
   try {
     const config = await getConfig();
     if (!config.tokenMint) throw new Error("tokenMint not set in config JSONBin.");
+    if (!isValidSolanaAddress(walletAddress)) {
+      return { ok: false, amount: 0, whole: 0, decimals: 0, error: "invalid wallet address" };
+    }
+
     const network = config.network || "mainnet-beta";
     const rpc = process.env.SOLANA_RPC_URL || clusterApiUrl(network);
     const conn = new Connection(rpc, "confirmed");
@@ -244,57 +223,40 @@ async function checkSolanaHolding(walletAddress, requiredWholeTokens) {
     const ownerPub = new PublicKey(walletAddress);
     const mintPub = new PublicKey(config.tokenMint);
 
-    const parsed = await conn.getParsedTokenAccountsByOwner(ownerPub, {
-      mint: mintPub,
-    });
-
-    if (!parsed.value || parsed.value.length === 0)
-      return { ok: false, amount: 0, decimals: 0 };
+    const parsed = await conn.getParsedTokenAccountsByOwner(ownerPub, { mint: mintPub });
+    if (!parsed.value || parsed.value.length === 0) return { ok: false, amount: 0, whole: 0, decimals: 0 };
 
     let total = 0;
-    let decimals = null;
+    let decimals = 0;
     for (const acc of parsed.value) {
-      const parsedInfo = acc.account?.data?.parsed?.info;
-      if (parsedInfo?.tokenAmount) {
-        const amt = parseFloat(parsedInfo.tokenAmount.amount || 0);
-        const dec = parsedInfo.tokenAmount.decimals || 0;
-        decimals = dec;
-        const ui = amt / Math.pow(10, dec);
-        total += ui;
-      }
+      const info = acc.account?.data?.parsed?.info?.tokenAmount;
+      if (!info) continue;
+      const amt = parseFloat(info.amount || 0);
+      const dec = info.decimals || 0;
+      decimals = dec;
+      total += amt / Math.pow(10, dec);
     }
-
     const whole = Math.floor(total);
-    const ok = whole >= requiredWholeTokens;
+    const ok = whole >= (requiredWholeTokens || 0);
     return { ok, amount: total, whole, decimals };
   } catch (err) {
     console.error("❌ checkSolanaHolding error:", err?.message || err);
-    return {
-      ok: false,
-      amount: 0,
-      whole: 0,
-      decimals: 0,
-      error: err?.message || String(err),
-    };
+    return { ok: false, amount: 0, whole: 0, decimals: 0, error: err?.message || String(err) };
   }
 }
 
-// ---------------------------------------------------------------------------
+// ======================================
 // IMAGE HELPERS
-// ---------------------------------------------------------------------------
+// ======================================
 function escapeXml(unsafe) {
   return String(unsafe)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// Share image for generic posts
+// Classic share image used by /share for generic posts
 async function composeShareImage(graphBase64, username, score) {
-  const W = 1200,
-    H = 628;
+  const W = 1200, H = 628;
 
   // normalize base64
   let base64 = graphBase64 || "";
@@ -304,17 +266,14 @@ async function composeShareImage(graphBase64, username, score) {
   let graphBuffer = null;
   try {
     if (base64) graphBuffer = Buffer.from(base64, "base64");
-  } catch (_) {
+  } catch {
     graphBuffer = null;
   }
 
   const bgSvg = `<svg width="${W}" height="${H}">
-    <defs>
-      <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
-        <stop offset="0%" stop-color="#070707"/>
-        <stop offset="100%" stop-color="#0b0b10"/>
-      </linearGradient>
-    </defs>
+    <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#070707"/><stop offset="100%" stop-color="#0b0b10"/>
+    </linearGradient></defs>
     <rect width="100%" height="100%" fill="url(#g)"/>
   </svg>`;
 
@@ -338,20 +297,11 @@ async function composeShareImage(graphBase64, username, score) {
     if (graphBuffer) {
       const graphW = Math.floor(W * 0.86);
       const graphH = Math.floor(H * 0.62);
-      const graphImg = await sharp(graphBuffer)
-        .resize(graphW, graphH, {
-          fit: "contain",
-          background: { r: 0, g: 0, b: 0, alpha: 0 },
-        })
-        .toBuffer();
+      const graphImg = await sharp(graphBuffer).resize(graphW, graphH, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).toBuffer();
 
       img = img.composite([
-        {
-          input: graphImg,
-          left: Math.floor((W - graphW) / 2),
-          top: Math.floor(H * 0.18),
-        },
-        { input: Buffer.from(textSvg), left: 0, top: 0 },
+        { input: graphImg, left: Math.floor((W - graphW) / 2), top: Math.floor(H * 0.18) },
+        { input: Buffer.from(textSvg), left: 0, top: 0 }
       ]);
     } else {
       img = img.composite([{ input: Buffer.from(textSvg), left: 0, top: 0 }]);
@@ -364,11 +314,9 @@ async function composeShareImage(graphBase64, username, score) {
   }
 }
 
-// Square left banner + square chart right, centered vertically
 async function composeAthBanner(curveBase64, username, score) {
-  const basePath = "./assets/ath_banner_square.png"; // provide this asset
-  const W = 1200,
-    H = 628;
+  const basePath = "./assets/ath_banner_square.png";  // left square image
+  const W = 1200, H = 628;
 
   // Decode chart image if present
   let graphBuf = null;
@@ -382,71 +330,50 @@ async function composeAthBanner(curveBase64, username, score) {
     console.warn("⚠️ Could not parse curveBase64:", err?.message || err);
   }
 
-  // Layout
+  // Layout sizes
   const bannerW = Math.floor(W * 0.55);
   const chartW = W - bannerW;
-
-  // Make both square blocks the same size (based on the left column width)
   const squareSize = Math.min(bannerW, H);
 
-  // Left: rocket banner (square)
+  // Left: rocket/banner
   const bannerImgBuf = await sharp(basePath)
-    .resize(squareSize, squareSize, {
-      fit: "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
-    })
+    .resize(squareSize, squareSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 1 } })
     .toBuffer();
 
-  // Right: chart (square if provided)
+  // Right: chart, if provided
   let chartImgBuf = null;
   if (graphBuf) {
     chartImgBuf = await sharp(graphBuf)
-      .resize(squareSize, squareSize, {
-        fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 1 },
-      })
+      .resize(squareSize, squareSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 1 } })
       .toBuffer();
   }
 
-  // Composite side by side on a canvas (resulting width == W)
+  // Compose side-by-side on a black canvas
   const composite = [
-    {
-      input: bannerImgBuf,
-      top: Math.floor((H - squareSize) / 2),
-      left: Math.floor((bannerW - squareSize) / 2),
-    },
+    { input: bannerImgBuf, top: Math.floor((H - squareSize) / 2), left: Math.floor((bannerW - squareSize) / 2) },
   ];
 
   if (chartImgBuf) {
     composite.push({
       input: chartImgBuf,
       top: Math.floor((H - squareSize) / 2),
-      left: bannerW + Math.floor((chartW - squareSize) / 2),
+      left: bannerW + Math.floor((chartW - squareSize) / 2)
     });
   }
 
   return await sharp({
-    create: {
-      width: W,
-      height: H,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
-    },
-  })
-    .composite(composite)
-    .png()
-    .toBuffer();
+    create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } }
+  }).composite(composite).png().toBuffer();
 }
 
-// ---------------------------------------------------------------------------
-// LEADERBOARD HELPERS
-// ---------------------------------------------------------------------------
+// ======================================
+// LEADERBOARD & EVENT HELPERS
+// ======================================
 async function getLeaderboard() {
   try {
-    const res = await readBin(MAIN_BIN_URL);
-    let data = res || {};
+    const res = await axios.get(MAIN_BIN_URL, { headers: BIN_HEADERS });
+    let data = res.data.record || {};
     if (data.scores && typeof data.scores === "object") data = data.scores;
-
     const clean = {};
     for (const [u, v] of Object.entries(data)) {
       const n = parseFloat(v);
@@ -454,18 +381,17 @@ async function getLeaderboard() {
     }
     return clean;
   } catch (err) {
-    console.error("❌ Error loading leaderboard:", err?.message || err);
+    console.error("❌ Error loading leaderboard:", err.message || err);
     return {};
   }
 }
 
 async function getEventData() {
   try {
-    const res = await readBin(EVENT_BIN_URL);
-    let data = res || {};
+    const res = await axios.get(EVENT_BIN_URL, { headers: BIN_HEADERS });
+    let data = res.data.record || {};
     if (data.scores?.scores) data = data.scores.scores;
     else if (data.scores) data = data.scores;
-
     const clean = {};
     for (const [u, v] of Object.entries(data)) {
       const n = parseFloat(v);
@@ -473,20 +399,14 @@ async function getEventData() {
     }
     return { scores: clean };
   } catch (err) {
-    console.error("❌ Error fetching event data:", err?.message || err);
+    console.error("❌ Error fetching event data:", err.message || err);
     return { scores: {} };
   }
 }
 
 async function getEventMeta() {
   try {
-    const res = await retry(
-      () =>
-        axios.get(`${META_BIN_URL}/latest`, {
-          headers: { "X-Master-Key": JSONBIN_KEY },
-        }),
-      { tries: 3, baseDelay: 300 }
-    );
+    const res = await axios.get(`${META_BIN_URL}/latest`, { headers: BIN_HEADERS });
     const payload = res.data.record || res.data || {};
     return {
       title: payload.title || payload.name || "Current Event",
@@ -494,11 +414,8 @@ async function getEventMeta() {
       startDate: payload.startDate || null,
       endDate: payload.endDate || null,
       timezone: payload.timezone || "Europe/Stockholm",
-      updatedAt:
-        payload.updatedAt ||
-        res.data?.metadata?.modifiedAt ||
-        new Date().toISOString(),
-      raw: payload,
+      updatedAt: payload.updatedAt || res.data?.metadata?.modifiedAt || new Date().toISOString(),
+      raw: payload
     };
   } catch (err) {
     console.error("❌ Error fetching event meta:", err?.message || err);
@@ -509,21 +426,17 @@ async function getEventMeta() {
       endDate: null,
       timezone: "Europe/Stockholm",
       updatedAt: new Date().toISOString(),
-      raw: {},
+      raw: {}
     };
   }
 }
 
-// ---------------------------------------------------------------------------
+// ======================================
 // TELEGRAM SEND HELPERS
-// ---------------------------------------------------------------------------
+// ======================================
 async function sendSafeMessage(chatId, message, opts = {}) {
   try {
-    await bot.sendMessage(
-      chatId,
-      message,
-      Object.assign({ parse_mode: "HTML", disable_web_page_preview: true }, opts)
-    );
+    await bot.sendMessage(chatId, message, Object.assign({ parse_mode: "HTML", disable_web_page_preview: true }, opts));
   } catch (err) {
     console.error("❌ Telegram send failed:", err?.message || err);
   }
@@ -542,11 +455,9 @@ function sendChunked(chatId, header, lines, maxLen = 3500) {
   if (buf.trim()) sendSafeMessage(chatId, buf.trim());
 }
 
-// ---------------------------------------------------------------------------
+// ======================================
 // TELEGRAM COMMANDS
-// ---------------------------------------------------------------------------
-
-// /help
+// ======================================
 bot.onText(/\/help/, async (msg) => {
   try {
     const isAdmin = ADMIN_USERS.includes((msg.from.username || "").toLowerCase());
@@ -558,7 +469,7 @@ bot.onText(/\/help/, async (msg) => {
       "⚡ /eventtop10 — Event top 10 (verified holders list)",
       "🥇 /eventtop50 — Event top 50 (verified holders list)",
       "📢 /event — Show current event info",
-      "",
+      ""
     ];
 
     if (isAdmin) {
@@ -567,9 +478,7 @@ bot.onText(/\/help/, async (msg) => {
       lines.push("/winners [n] — Winners who were holders for full event");
       lines.push("/validatewinners — Re-check top event holders now");
       lines.push("/resetevent — Reset event leaderboard");
-      lines.push(
-        "/setevent Title | Info | start-YYYY-MM-DD | start-HH:mm | end-YYYY-MM-DD | end-HH:mm | [TZ]"
-      );
+      lines.push("/setevent Title | Info | start-YYYY-MM-DD | start-HH:mm | end-YYYY-MM-DD | end-HH:mm | [TZ]");
     }
 
     await sendSafeMessage(msg.chat.id, lines.join("\n"), { parse_mode: "HTML" });
@@ -578,40 +487,25 @@ bot.onText(/\/help/, async (msg) => {
   }
 });
 
-// /play
 bot.onText(/\/play/, async (msg) => {
   try {
     const isPrivate = msg.chat.type === "private";
     if (isPrivate) {
       await bot.sendMessage(msg.chat.id, "🎮 <b>Play FUD Dodge</b>", {
         parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "⚡ Open Game", web_app: { url: "https://theunstable.io/fuddodge" } }],
-          ],
-        },
+        reply_markup: { inline_keyboard: [[{ text: "⚡ Open Game", web_app: { url: "https://theunstable.io/fuddodge" } }]] },
       });
     } else {
-      const me = await bot.getMe();
-      await bot.sendMessage(
-        msg.chat.id,
-        "💨 FUD levels too high here 😅\nPlay safely in DM 👇",
-        {
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "⚡ Open DM to Play", url: `https://t.me/${me.username}?start=play` }],
-            ],
-          },
-        }
-      );
+      await bot.sendMessage(msg.chat.id, "💨 FUD levels too high here 😅\nPlay safely in DM 👇", {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[{ text: "⚡ Open DM to Play", url: `https://t.me/${(await bot.getMe()).username}?start=play` }]] },
+      });
     }
   } catch (err) {
     console.error("❌ /play error:", err?.message || err);
   }
 });
 
-// /info & /howtoplay
 bot.onText(/\/info|\/howtoplay/, async (msg) => {
   const text = `
 🎮 <b>How to Play FUD Dodge</b>
@@ -625,7 +519,6 @@ Stay unstable. 💛⚡`;
   await sendSafeMessage(msg.chat.id, text);
 });
 
-// /event (bot view)
 bot.onText(/\/event$/, async (msg) => {
   try {
     const meta = await getEventMeta();
@@ -651,7 +544,7 @@ bot.onText(/\/event$/, async (msg) => {
   }
 });
 
-// /top10 /top50
+// Top lists
 bot.onText(/\/top10/, async (msg) => {
   const data = await getLeaderboard();
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
@@ -659,7 +552,6 @@ bot.onText(/\/top10/, async (msg) => {
   const lines = sorted.slice(0, 10).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s} pts`);
   sendChunked(msg.chat.id, "<b>🏆 Top 10 Players</b>\n\n", lines);
 });
-
 bot.onText(/\/top50/, async (msg) => {
   const data = await getLeaderboard();
   const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
@@ -668,7 +560,7 @@ bot.onText(/\/top50/, async (msg) => {
   sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
 });
 
-// /eventtop10 /eventtop50 — verified holders only
+// Event tops (verified holders only)
 bot.onText(/\/eventtop10/, async (msg) => {
   try {
     const arr = await getVerifiedEventTop(10);
@@ -680,7 +572,6 @@ bot.onText(/\/eventtop10/, async (msg) => {
     sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
   }
 });
-
 bot.onText(/\/eventtop50/, async (msg) => {
   try {
     const arr = await getVerifiedEventTop(50);
@@ -703,11 +594,9 @@ async function getVerifiedEventTop(n) {
     .map(([username, score]) => ({ username, score }));
 }
 
-// ---------------------------------------------------------------------------
-// ADMIN COMMANDS: setholdingreq / winners / validatewinners / resetevent / setevent
-// ---------------------------------------------------------------------------
-
-// /setholdingreq <amount>
+// ======================================
+// ADMIN COMMANDS
+// ======================================
 bot.onText(/\/setholdingreq ?(.+)?/, async (msg, match) => {
   try {
     const from = (msg.from.username || "").toLowerCase();
@@ -715,10 +604,7 @@ bot.onText(/\/setholdingreq ?(.+)?/, async (msg, match) => {
 
     const param = (match && match[1]) ? match[1].trim() : null;
     if (!param || isNaN(parseInt(param))) {
-      return sendSafeMessage(
-        msg.chat.id,
-        `Usage: /setholdingreq <whole_tokens>\nExample: /setholdingreq 500000`
-      );
+      return sendSafeMessage(msg.chat.id, `Usage: /setholdingreq <whole_tokens>\nExample: /setholdingreq 500000`);
     }
     const amount = parseInt(param, 10);
     await updateConfig({ minHoldAmount: amount });
@@ -729,7 +615,6 @@ bot.onText(/\/setholdingreq ?(.+)?/, async (msg, match) => {
   }
 });
 
-// /winners [n] — must be holders for the full event period
 bot.onText(/\/winners ?(.*)?/, async (msg, match) => {
   try {
     const from = (msg.from.username || "").toLowerCase();
@@ -750,7 +635,7 @@ bot.onText(/\/winners ?(.*)?/, async (msg, match) => {
     const startUtc = DateTime.fromISO(meta.startDate).toUTC();
 
     async function isFullPeriodHolder(u) {
-      const rec = holders.find((h) => h.username === u);
+      const rec = holders.find(h => h.username === u);
       if (!rec || !rec.verifiedAt || !rec.wallet) return false;
       const verifiedAt = DateTime.fromISO(rec.verifiedAt).toUTC();
       if (!(verifiedAt <= startUtc)) return false;
@@ -758,7 +643,6 @@ bot.onText(/\/winners ?(.*)?/, async (msg, match) => {
       return !!onChain.ok;
     }
 
-    // Sort by score and filter for full-period holders
     const sorted = Object.entries(scores)
       .filter(([u]) => !u.startsWith("_"))
       .sort((a, b) => b[1] - a[1])
@@ -781,8 +665,7 @@ bot.onText(/\/winners ?(.*)?/, async (msg, match) => {
   }
 });
 
-// /validatewinners — quick on-chain check now for top 50
-bot.onText(/\/validatewinners ?(.*)?/, async (msg) => {
+bot.onText(/\/validatewinners/, async (msg) => {
   try {
     const from = (msg.from.username || "").toLowerCase();
     if (!ADMIN_USERS.includes(from)) return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
@@ -801,20 +684,10 @@ bot.onText(/\/validatewinners ?(.*)?/, async (msg) => {
         continue;
       }
       const check = await checkSolanaHolding(rec.wallet, required);
-      results.push({
-        username: uname,
-        ok: check.ok,
-        amount: check.amount,
-        reason: check.ok ? "ok" : "insufficient",
-      });
+      results.push({ username: uname, ok: check.ok, amount: check.amount, reason: check.ok ? "ok" : "insufficient" });
     }
 
-    const lines = results.map(
-      (r, i) =>
-        `${i + 1}. ${r.username} — ${r.ok ? "✅" : "❌"} ${
-          r.amount ? "(" + r.amount + ")" : ""
-        } ${r.reason || ""}`
-    );
+    const lines = results.map((r, i) => `${i + 1}. ${r.username} — ${r.ok ? "✅" : "❌"} ${r.amount ? "(" + r.amount + ")" : ""} ${r.reason || ""}`);
     sendChunked(msg.chat.id, `<b>🔎 Revalidation results (top 50)</b>\n`, lines);
   } catch (err) {
     console.error("❌ /validatewinners error:", err?.message || err);
@@ -822,7 +695,6 @@ bot.onText(/\/validatewinners ?(.*)?/, async (msg) => {
   }
 });
 
-// /resetevent
 bot.onText(/\/resetevent/, async (msg) => {
   try {
     const from = (msg.from.username || "").toLowerCase();
@@ -849,26 +721,22 @@ bot.onText(/\/resetevent/, async (msg) => {
   }
 });
 
-// /setevent Title | Info | startDate | startTime | endDate | endTime | [TZ]
+// Set event
 bot.onText(/\/setevent(.*)/, async (msg, match) => {
   try {
     const username = msg.from.username?.toLowerCase() || "";
-    if (!ADMIN_USERS.includes(username))
-      return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
+    if (!ADMIN_USERS.includes(username)) return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
 
     const args = match[1]?.trim();
     if (!args) {
-      return sendSafeMessage(
-        msg.chat.id,
-        `🛠 <b>Create or update event</b>
+      return sendSafeMessage(msg.chat.id,
+`🛠 <b>Create or update event</b>
 
 Use:
 <code>/setevent &lt;Title&gt; | &lt;Description&gt; | &lt;start-YYYY-MM-DD&gt; | &lt;start-HH:mm&gt; | &lt;end-YYYY-MM-DD&gt; | &lt;end-HH:mm&gt; | [TZ]</code>
 
 Example:
-<code>/setevent Meme Rally | Keep MCap above FUD | 2025-11-02 | 18:00 | 2025-11-10 | 21:00 | CET</code>`,
-        { parse_mode: "HTML" }
-      );
+<code>/setevent Meme Rally | Keep MCap above FUD | 2025-11-02 | 18:00 | 2025-11-10 | 21:00 | CET</code>`, { parse_mode: "HTML" });
     }
 
     const parts = args.split("|").map((s) => s.trim());
@@ -878,14 +746,11 @@ Example:
     const zone = tzMap[tzStrRaw?.toUpperCase()] || tzStrRaw || "Europe/Stockholm";
 
     if (!startDateStr || !startTimeStr || !endDateStr || !endTimeStr) {
-      return sendSafeMessage(
-        msg.chat.id,
-        "❌ Missing start or end date/time.\nUse: YYYY-MM-DD | HH:mm | YYYY-MM-DD | HH:mm | [TZ]"
-      );
+      return sendSafeMessage(msg.chat.id, "❌ Missing start or end date/time.\nUse: YYYY-MM-DD | HH:mm | YYYY-MM-DD | HH:mm | [TZ]");
     }
 
     const startLocal = DateTime.fromFormat(`${startDateStr} ${startTimeStr}`, "yyyy-MM-dd HH:mm", { zone });
-    const endLocal = DateTime.fromFormat(`${endDateStr} ${endTimeStr}`, "yyyy-MM-dd HH:mm", { zone });
+    const endLocal   = DateTime.fromFormat(`${endDateStr} ${endTimeStr}`, "yyyy-MM-dd HH:mm", { zone });
 
     if (!startLocal.isValid || !endLocal.isValid || endLocal <= startLocal) {
       return sendSafeMessage(msg.chat.id, "❌ Invalid dates. End must be after start.");
@@ -903,26 +768,40 @@ Example:
     };
 
     await writeBin(META_BIN_URL, newData);
-    await sendSafeMessage(
-      msg.chat.id,
-      `✅ <b>Event updated</b>
+    await sendSafeMessage(msg.chat.id, `✅ <b>Event updated</b>
 <b>${newData.title}</b>
 ${newData.info}
 🟢 Starts: ${newData.startLocal}
-🛑 Ends: ${newData.endLocal}`
-    );
+🛑 Ends: ${newData.endLocal}`);
   } catch (err) {
     console.error("❌ /setevent error:", err?.message || err);
     sendSafeMessage(msg.chat.id, "⚠️ Failed to update event.");
   }
 });
 
-// ---------------------------------------------------------------------------
-// FRONTEND ENDPOINTS (PUBLIC)
-// ---------------------------------------------------------------------------
+// List holders
+bot.onText(/\/holders/, async (msg) => {
+  try {
+    const from = (msg.from.username || "").toLowerCase();
+    if (!ADMIN_USERS.includes(from))
+      return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
 
-// Current event payload (play.html)
-app.get("/event", async (_req, res) => {
+    const holders = await getHoldersArray();
+    if (!holders.length) return sendSafeMessage(msg.chat.id, "📋 No holder records.");
+
+    holders.sort((a, b) => new Date(b.verifiedAt || 0) - new Date(a.verifiedAt || 0));
+    const lines = holders.map((h) => `<b>${h.username || "n/a"}</b> — ${h.wallet || "n/a"} — ${h.verifiedAt || "n/a"}${h.pending ? " — pending change" : ""}`);
+    sendChunked(msg.chat.id, "<b>📋 Stored Holder Records</b>\n", lines);
+  } catch (err) {
+    console.error("❌ /holders error:", err?.message || err);
+    sendSafeMessage(msg.chat.id, "⚠️ Failed to load holders.");
+  }
+});
+
+// ======================================
+// PUBLIC FRONTEND ENDPOINTS
+// ======================================
+app.get("/event", async (req, res) => {
   try {
     const meta = await getEventMeta();
     res.json({
@@ -930,15 +809,14 @@ app.get("/event", async (_req, res) => {
       info: meta.info,
       startDate: meta.startDate,
       endDate: meta.endDate,
-      timezone: meta.timezone,
+      timezone: meta.timezone
     });
   } catch (err) {
     res.status(500).json({ ok: false, message: "Failed to load event" });
   }
 });
 
-// eventtop10/50 — verified holders only
-app.get("/eventtop10", async (_req, res) => {
+app.get("/eventtop10", async (req, res) => {
   try {
     const arr = await getVerifiedEventTop(10);
     res.json(arr);
@@ -947,7 +825,7 @@ app.get("/eventtop10", async (_req, res) => {
   }
 });
 
-app.get("/eventtop50", async (_req, res) => {
+app.get("/eventtop50", async (req, res) => {
   try {
     const arr = await getVerifiedEventTop(50);
     res.json(arr);
@@ -956,7 +834,9 @@ app.get("/eventtop50", async (_req, res) => {
   }
 });
 
-// Submit score (main + event)
+// ======================================
+// SCORE SUBMIT (main + event)
+// ======================================
 app.post("/submit", async (req, res) => {
   try {
     const { username, score, target } = req.body;
@@ -967,19 +847,13 @@ app.post("/submit", async (req, res) => {
       return res.status(400).json({ error: "Invalid data" });
     }
 
-    // load event meta (tolerate failure)
+    // load event meta
     let eventMeta = {};
     try {
-      const resp = await retry(
-        () =>
-          axios.get(`${META_BIN_URL}/latest`, {
-            headers: { "X-Master-Key": JSONBIN_KEY },
-          }),
-        { tries: 3, baseDelay: 300 }
-      );
+      const resp = await axios.get(`${META_BIN_URL}/latest`, { headers: BIN_HEADERS });
       eventMeta = resp.data.record || {};
     } catch (err) {
-      console.warn("⚠️ Failed to load event meta:", err?.message || err);
+      console.warn("⚠️ Failed to load event meta:", err.message);
     }
 
     const now = DateTime.now().toUTC();
@@ -1015,35 +889,28 @@ app.post("/submit", async (req, res) => {
       }
     }
 
-    res.json({
-      success: true,
-      message: "✅ Score submitted.",
-      eventActive,
-      endDate: eventMeta.endDate || null,
-    });
+    res.json({ success: true, message: "✅ Score submitted.", eventActive, endDate: eventMeta.endDate || null });
   } catch (err) {
-    console.error("❌ Submit failed:", err?.message || err);
+    console.error("❌ Submit failed:", err.message || err);
     res.status(500).json({ error: "Failed to submit score" });
   }
 });
 
-// Holder Verify APIs
+// ======================================
+// HOLDER VERIFY (initial)
+// ======================================
 async function verifySolanaBalance(wallet) {
   try {
     const config = await getConfig();
-    const connection = new Connection(
-      clusterApiUrl(config.network || CONFIG_DEFAULTS.network),
-      "confirmed"
-    );
+    if (!isValidSolanaAddress(wallet)) return false;
 
-    const publicKey = new PublicKey(wallet);
-    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-      publicKey,
-      { mint: new PublicKey(config.tokenMint || CONFIG_DEFAULTS.tokenMint) }
-    );
+    const connection = new Connection(clusterApiUrl(config.network || CONFIG_DEFAULTS.network), "confirmed");
+    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(new PublicKey(wallet), {
+      mint: new PublicKey(config.tokenMint || CONFIG_DEFAULTS.tokenMint)
+    });
 
     let totalBalance = 0;
-    tokenAccounts.value.forEach((acc) => {
+    tokenAccounts.value.forEach(acc => {
       const amount = acc.account.data.parsed.info.tokenAmount.uiAmount;
       totalBalance += amount;
     });
@@ -1058,32 +925,27 @@ async function verifySolanaBalance(wallet) {
 app.post("/verifyHolder", async (req, res) => {
   try {
     let { username, wallet } = req.body;
-    if (!username || !wallet)
-      return res.status(400).json({ ok: false, message: "Missing username or wallet." });
+    if (!username || !wallet) return res.status(400).json({ ok: false, message: "Missing username or wallet." });
 
     username = username.trim();
     if (!username.startsWith("@")) username = "@" + username.replace(/^@+/, "");
+    wallet = String(wallet).trim();
 
-    const holdersRes = await readBin(HOLDER_BIN_URL);
-    let holders = holdersRes || [];
-    if (!Array.isArray(holders)) holders = [];
+    if (!isValidSolanaAddress(wallet)) {
+      return res.json({ ok: false, message: "Invalid Solana wallet address." });
+    }
 
-    const alreadyExists = holders.some(
-      (h) => h.username?.toLowerCase() === username.toLowerCase()
-    );
-    if (alreadyExists)
-      return res.json({ ok: true, message: "Already verified.", username });
+    const isOk = await verifySolanaBalance(wallet);
+    if (!isOk) return res.json({ ok: false, message: "Wallet balance below minimum requirement." });
 
-    const verified = await verifySolanaBalance(wallet);
-    if (!verified)
-      return res.json({
-        ok: false,
-        message: "Wallet balance below minimum requirement.",
-      });
+    // persist
+    const holders = await getHoldersArray();
+    const idx = holders.findIndex(h => h.username.toLowerCase() === username.toLowerCase());
+    const record = { username, wallet, verifiedAt: new Date().toISOString() };
+    if (idx >= 0) holders[idx] = Object.assign({}, holders[idx], record, { pending: undefined });
+    else holders.push(record);
 
-    holders.push({ username, wallet, verifiedAt: new Date().toISOString() });
     await writeBin(HOLDER_BIN_URL, holders);
-
     return res.json({ ok: true, message: "✅ Holder verified successfully!", username });
   } catch (err) {
     console.error("❌ verifyHolder error:", err?.message || err);
@@ -1098,11 +960,10 @@ app.get("/holderStatus", async (req, res) => {
     username = username.trim();
     if (!username.startsWith("@")) username = "@" + username.replace(/^@+/, "");
 
-    const holdersRes = await readBin(HOLDER_BIN_URL);
-    const holders = holdersRes || [];
-    const match = holders.find((h) => h.username?.toLowerCase() === username.toLowerCase());
+    const holders = await getHoldersArray();
+    const match = holders.find(h => h.username?.toLowerCase() === username.toLowerCase());
 
-    if (match) return res.json({ verified: true, username: match.username, wallet: match.wallet });
+    if (match && match.wallet) return res.json({ verified: true, username: match.username, wallet: match.wallet });
     else return res.json({ verified: false });
   } catch (err) {
     console.error("❌ holderStatus error:", err?.message || err);
@@ -1110,36 +971,130 @@ app.get("/holderStatus", async (req, res) => {
   }
 });
 
-// Public leaderboard endpoint for frontend
-app.get("/leaderboard", async (_req, res) => {
+// ======================================
+// SECURE WALLET CHANGE/REMOVE (2-step)
+// ======================================
+function generateCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit
+}
+
+/*
+Flow summary:
+1) POST /requestHolderChange { username, action: "change"|"remove", newWallet? }
+   - Generates code, stores in holder.pending { code, action, newWallet, expiresAt }
+   - Validates newWallet format if action=change (but does NOT verify balance yet)
+2) POST /confirmHolderChange { username, code }
+   - If action=change: verify on-chain balance of pending.newWallet, then commit
+   - If action=remove: clear wallet + verifiedAt
+*/
+
+app.post("/requestHolderChange", async (req, res) => {
   try {
-    const data = await getLeaderboard();
-    const sorted = Object.entries(data)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20)
-      .map(([username, score]) => ({ username, score }));
-    res.json(sorted);
+    let { username, action, newWallet } = req.body;
+    if (!username || !action) return res.status(400).json({ ok: false, message: "Missing username or action." });
+
+    username = username.trim();
+    if (!username.startsWith("@")) username = "@" + username.replace(/^@+/, "");
+    action = String(action).toLowerCase();
+
+    if (!["change", "remove"].includes(action)) {
+      return res.status(400).json({ ok: false, message: "action must be 'change' or 'remove'." });
+    }
+
+    const holders = await getHoldersArray();
+    const idx = holders.findIndex(h => h.username.toLowerCase() === username.toLowerCase());
+    if (idx < 0) return res.json({ ok: false, message: "No existing holder record." });
+
+    if (action === "change") {
+      if (!newWallet || !isValidSolanaAddress(newWallet)) {
+        return res.json({ ok: false, message: "Provide a valid Solana wallet address." });
+      }
+    }
+
+    const code = generateCode();
+    const expiresAt = DateTime.utc().plus({ minutes: 15 }).toISO();
+
+    holders[idx].pending = {
+      code,
+      action,
+      newWallet: action === "change" ? String(newWallet).trim() : null,
+      requestedAt: new Date().toISOString(),
+      expiresAt
+    };
+
+    await writeBin(HOLDER_BIN_URL, holders);
+
+    // Normally you'd send code via a secure channel. Here we return it (frontend may show it or DM it).
+    return res.json({ ok: true, message: "Change request created. Confirm with the code.", code, expiresAt });
   } catch (err) {
-    console.error("❌ /leaderboard error:", err?.message || err);
-    res.status(500).json({ ok: false, message: "Failed to load leaderboard." });
+    console.error("❌ requestHolderChange error:", err?.message || err);
+    res.status(500).json({ ok: false, message: "Server error creating request." });
   }
 });
 
-// ---------------------------------------------------------------------------
-// A.T.H. STORAGE HELPERS
-// ---------------------------------------------------------------------------
-/*
-Structure in ATH bin:
-{
-  "@user": {
-    "ath": 123456,
-    "lastSentScore": 123456,
-    "lastSentAt": "2025-10-15T12:00:00Z",
-    "milestones": [{ "score": 123456, "date": "...", "sent": true }]
-  },
-  ...
-}
-*/
+app.post("/confirmHolderChange", async (req, res) => {
+  try {
+    let { username, code } = req.body;
+    if (!username || !code) return res.status(400).json({ ok: false, message: "Missing username or code." });
+    username = username.trim();
+    if (!username.startsWith("@")) username = "@" + username.replace(/^@+/, "");
+
+    const holders = await getHoldersArray();
+    const idx = holders.findIndex(h => h.username.toLowerCase() === username.toLowerCase());
+    if (idx < 0) return res.json({ ok: false, message: "No existing holder record." });
+
+    const rec = holders[idx];
+    const p = rec.pending;
+    if (!p) return res.json({ ok: false, message: "No pending change found." });
+
+    const now = DateTime.utc();
+    if (now > DateTime.fromISO(p.expiresAt)) {
+      holders[idx].pending = undefined;
+      await writeBin(HOLDER_BIN_URL, holders);
+      return res.json({ ok: false, message: "Code expired. Please start again." });
+    }
+
+    if (String(p.code) !== String(code)) {
+      return res.json({ ok: false, message: "Invalid code." });
+    }
+
+    if (p.action === "remove") {
+      holders[idx] = Object.assign({}, rec, {
+        wallet: null,
+        verifiedAt: null,
+        pending: undefined,
+        removedAt: new Date().toISOString()
+      });
+      await writeBin(HOLDER_BIN_URL, holders);
+      return res.json({ ok: true, message: "✅ Wallet removed. Holder connection cleared." });
+    }
+
+    if (p.action === "change") {
+      const cfg = await getConfig();
+      const check = await checkSolanaHolding(p.newWallet, cfg.minHoldAmount || 0);
+      if (!check.ok) {
+        return res.json({ ok: false, message: "New wallet does not meet holding requirement." });
+      }
+
+      holders[idx] = Object.assign({}, rec, {
+        wallet: p.newWallet,
+        verifiedAt: new Date().toISOString(),
+        pending: undefined
+      });
+      await writeBin(HOLDER_BIN_URL, holders);
+      return res.json({ ok: true, message: "✅ Wallet updated and verified." });
+    }
+
+    return res.json({ ok: false, message: "Unknown action." });
+  } catch (err) {
+    console.error("❌ confirmHolderChange error:", err?.message || err);
+    res.status(500).json({ ok: false, message: "Server error confirming change." });
+  }
+});
+
+// ======================================
+// A.T.H. STORAGE & SHARE
+// ======================================
 async function getAthMap() {
   const raw = (await readBin(ATH_BIN_URL)) || {};
   return typeof raw === "object" && raw ? raw : {};
@@ -1149,9 +1104,7 @@ async function saveAthMap(map) {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// /share — includes ATH mode (with your caption style, no #)
-// ---------------------------------------------------------------------------
+// /share — includes ATH mode (caption style without '#')
 app.post("/share", async (req, res) => {
   try {
     const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
@@ -1162,16 +1115,15 @@ app.post("/share", async (req, res) => {
     // Holder-gated posting config
     const cfg = await getConfig();
     const holders = await getHoldersMapFromArray();
+
     if (!cfg.allowPostingWithoutHold) {
       const rec = holders[username];
-      if (!rec) {
-        return res
-          .status(403)
-          .json({ ok: false, message: "User not a verified holder. Posting blocked." });
+      if (!rec || !rec.wallet) {
+        return res.status(403).json({ ok: false, message: "User not a verified holder. Posting blocked." });
       }
     }
 
-    // === A.T.H. MODE ===
+    // A.T.H. MODE
     if (String(mode).toLowerCase() === "ath") {
       const athMap = await getAthMap();
       const rec = athMap[username] || { ath: 0, lastSentScore: null, milestones: [] };
@@ -1179,9 +1131,7 @@ app.post("/share", async (req, res) => {
 
       if (!ATH_TEST_MODE) {
         if (!(score > oldAth)) {
-          return res
-            .status(400)
-            .json({ ok: false, message: `Score must beat your A.T.H. of ${oldAth}` });
+          return res.status(400).json({ ok: false, message: `Score must beat your A.T.H. of ${oldAth}` });
         }
       } else {
         console.log(`🧪 ATH_TEST_MODE active: allowing repeat sends for ${username}`);
@@ -1190,13 +1140,13 @@ app.post("/share", async (req, res) => {
       const isNewAth = score > oldAth;
       if (isNewAth) rec.ath = score;
 
-      // Compose banner (rocket + chart, both square)
+      // Compose banner
       const banner = await composeAthBanner(curveImage || imageBase64 || null, username, score);
 
       // Target chat
       const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
 
-      // Format MCap nicely
+      // Format MCap
       function formatMCap(v) {
         if (!v || isNaN(v)) return "0k";
         if (v >= 1_000_000) return (v / 1_000_000).toFixed(3).replace(/\.?0+$/, "") + "M";
@@ -1204,7 +1154,7 @@ app.post("/share", async (req, res) => {
         return Number(v).toFixed(3).replace(/\.?0+$/, "");
       }
 
-      // Compute current main leaderboard position (best effort)
+      // Current leaderboard position (no '#')
       let positionText = "unranked";
       try {
         const mainData = await getLeaderboard();
@@ -1212,21 +1162,18 @@ app.post("/share", async (req, res) => {
         const index = sorted.findIndex(([u]) => u === username);
         if (index >= 0) positionText = `${index + 1}`;
       } catch (err) {
-        console.warn("⚠️ Failed to compute leaderboard position:", err?.message || err);
+        console.warn("⚠️ Failed to compute leaderboard position:", err?.message);
       }
 
-      // Build caption (no '#', keep your style)
       const formattedScore = formatMCap(score);
       const caption =
         `${escapeXml(username)} sent a strong signal. ⚡\n` +
-        `New A.T.H. logged at ${escapeXml(formattedScore)}.\n` +
-        `Current rank: ${escapeXml(positionText)}.\n` +
+        `New A.T.H. logged at ${formattedScore}.\n` +
+        `Rank: ${positionText}.\n` +
         `We aim for Win-Win`;
 
-      // Send photo to Telegram
       await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
 
-      // Save record
       const nowIso = new Date().toISOString();
       rec.lastSentScore = score;
       rec.lastSentAt = nowIso;
@@ -1238,12 +1185,10 @@ app.post("/share", async (req, res) => {
       return res.json({ ok: true, message: "Posted A.T.H. banner" });
     }
 
-    // === Default (non-ATH) share branch ===
+    // Default (non-ATH) share
     const imgBuf = await composeShareImage(imageBase64, username, score);
     const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
-    const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(
-      String(score)
-    )}\nShared from UnStableCoin FUD Dodge`;
+    const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(String(score))}\nShared from UnStableCoin FUD Dodge`;
     await bot.sendPhoto(targetChatId, imgBuf, { caption, parse_mode: "HTML" });
 
     res.json({ ok: true, message: "Posted to Telegram" });
@@ -1253,7 +1198,7 @@ app.post("/share", async (req, res) => {
   }
 });
 
-// Preview endpoint for A.T.H. banner (frontend can show before posting)
+// Preview endpoint for A.T.H. banner
 app.post("/athbannerpreview", async (req, res) => {
   try {
     const { username, score, curveImage } = req.body;
@@ -1269,15 +1214,15 @@ app.post("/athbannerpreview", async (req, res) => {
   }
 });
 
-// A.T.H. leaders — simple aggregation by milestones count
-app.get("/athleaders", async (_req, res) => {
+// A.T.H. leaders and records
+app.get("/athleaders", async (req, res) => {
   try {
     const map = await getAthMap();
-    const rows = Object.keys(map).map((u) => ({
+    const rows = Object.keys(map).map(u => ({
       username: u,
       ath: map[u]?.ath || 0,
       milestones: Array.isArray(map[u]?.milestones) ? map[u].milestones.length : 0,
-      lastSentAt: map[u]?.lastSentAt || null,
+      lastSentAt: map[u]?.lastSentAt || null
     }));
     rows.sort((a, b) => b.milestones - a.milestones || b.ath - a.ath);
     res.json(rows);
@@ -1286,8 +1231,7 @@ app.get("/athleaders", async (_req, res) => {
   }
 });
 
-// A.T.H. raw records dump
-app.get("/athrecords", async (_req, res) => {
+app.get("/athrecords", async (req, res) => {
   try {
     const map = await getAthMap();
     res.json(map);
@@ -1296,9 +1240,9 @@ app.get("/athrecords", async (_req, res) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// START SERVER
-// ---------------------------------------------------------------------------
+// ======================================
+/* START SERVER */
+// ======================================
 app.listen(PORT, () => {
   console.log(`🚀 UnStableCoinBot running on port ${PORT}`);
   (async () => {
@@ -1307,7 +1251,7 @@ app.listen(PORT, () => {
       console.log("✅ Config loaded:", {
         tokenMint: cfg.tokenMint,
         minHoldAmount: cfg.minHoldAmount,
-        network: cfg.network,
+        network: cfg.network
       });
     } catch (_) {}
   })();
