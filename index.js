@@ -1557,6 +1557,19 @@ function normalizeName(n) {
   return String(n).trim().replace(/^@+/, "").toLowerCase();
 }
 
+// === Handle button presses by text ===
+bot.on("message", (msg) => {
+  const txt = msg.text?.toLowerCase();
+  if (!txt) return;
+
+  if (txt.includes("add wallet")) return bot.emit("text", { ...msg, text: "/addwallet" });
+  if (txt.includes("verify"))    return bot.emit("text", { ...msg, text: "/verifyholder" });
+  if (txt.includes("change"))    return bot.emit("text", { ...msg, text: "/changewallet" });
+  if (txt.includes("remove"))    return bot.emit("text", { ...msg, text: "/removewallet" });
+  if (txt.includes("leader"))    return bot.emit("text", { ...msg, text: "/leaderboard" });
+  if (txt.includes("event"))     return bot.emit("text", { ...msg, text: "/event" });
+});
+
 /* ============================
    FRONTEND ENDPOINTS
    ============================ */
