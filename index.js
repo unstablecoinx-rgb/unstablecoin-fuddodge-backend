@@ -1,39 +1,43 @@
-// === UnStableCoin Game Bot ===
-// ⚡ Version: Full + EventStart/End + WinnersPeriodCheck + ATH Share + Preview
-// + Verified Event Lists + Public Event API + Change/Remove Wallet (confirm prompts)
-// Author: UnStableCoin Community
-// ------------------------------------
-
 /*
-  Required environment variables:
-  - TELEGRAM_BOT_TOKEN
-  - JSONBIN_ID
-  - EVENT_JSONBIN_ID
-  - JSONBIN_KEY
-  - EVENT_META_JSONBIN_ID
-  - RESET_KEY
-  - CONFIG_JSONBIN_ID
-  - HOLDER_JSONBIN_ID
-  - ATH_JSONBIN_ID
-  - RENDER_EXTERNAL_HOSTNAME (optional)
-  - SOLANA_RPC_URL (optional)
+==========================================================
+🧩 UnStableCoin Bot v3.2 — Full Wallet Flow + Events + ATH
+Build: 2025-10-17  |  TEST MODE: ON
+==========================================================
+📑 TABLE OF CONTENTS (search these headers quickly on phone)
+1)  Imports & Config Defaults
+2)  Environment & Constants
+3)  Express + Telegram Webhook Setup
+4)  Small Utilities (sleep, escape, normalize, validators)
+5)  JSONBin Helpers (readBin, writeBin)
+6)  Config & Holders (get/save helpers & maps)
+7)  Solana Checks (isLikelySolanaAddress, on-chain balance)
+8)  Image Composition (share image + ATH banner)
+9)  Leaderboards & Event Data (main + event + meta)
+10) Telegram: Safe send helpers (sendSafeMessage, sendChunked)
+11) Telegram: Main Menu UI (keyboard) + /start /menu
+12) Telegram: Core Commands
+    • /help /play /info /event
+    • /top10 /top50
+    • /eventtop10 /eventtop50
+13) Telegram: Wallet Flows (Add / Change / Remove / Verify)
+    • /addwallet — register wallet
+    • /changewallet — update with YES confirm
+    • /removewallet — remove with YES confirm
+    • /verifyholder — manual trigger (backend verify)
+14) Telegram: Button Text Router (works with white buttons)
+15) HTTP: Frontend Endpoints
+    • GET /event, /eventtop10, /eventtop50
+    • POST /verifyHolder, GET /holderStatus
+    • POST /submit
+    • POST /share, POST /athbannerpreview
+    • GET  /athleaders, /athrecords
+16) Server Start (logs config on boot)
+==========================================================
 */
 
-const CONFIG_DEFAULTS = {
-  tokenMint: "6zzHz3X3s53zhEqyBMmokZLh6Ba5EfC5nP3XURzYpump",
-  minHoldAmount: 500000,
-  network: "mainnet-beta",
-};
-
-// === TEST MODE TOGGLES ===
-// While testing A.T.H. flow, allow sending even if score < current ATH.
-// Flip to false in production to require actual new ATH.
-const ATH_TEST_MODE = true;
-
-// Default Telegram chat for A.T.H. posts during testing
-const TEST_ATH_CHAT_ID = "8067310645";
-
-// === IMPORTS ===
+//
+// 1) IMPORTS & CONFIG DEFAULTS
+//
 const express = require("express");
 const bodyParser = require("body-parser");
 const TelegramBot = require("node-telegram-bot-api");
@@ -45,162 +49,134 @@ const { DateTime } = require("luxon");
 const sharp = require("sharp");
 const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
 
-// === ENVIRONMENT VALIDATION ===
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const JSONBIN_ID = process.env.JSONBIN_ID;
-const EVENT_JSONBIN_ID = process.env.EVENT_JSONBIN_ID;
-const JSONBIN_KEY = process.env.JSONBIN_KEY;
-const EVENT_META_JSONBIN_ID = process.env.EVENT_META_JSONBIN_ID;
-const RESET_KEY = process.env.RESET_KEY;
-const CONFIG_JSONBIN_ID = process.env.CONFIG_JSONBIN_ID;
-const HOLDER_JSONBIN_ID = process.env.HOLDER_JSONBIN_ID;
-const ATH_JSONBIN_ID = process.env.ATH_JSONBIN_ID;
+const CONFIG_DEFAULTS = {
+  tokenMint: "6zzHz3X3s53zhEqyBMmokZLh6Ba5EfC5nP3XURzYpump",
+  minHoldAmount: 500000,
+  network: "mainnet-beta",
+};
+
+// 🧪 TEST toggles (keep ON while testing)
+const ATH_TEST_MODE = true;                   // allow share even if not new ATH
+const TEST_ATH_CHAT_ID = "8067310645";       // where images are posted in test
+
+//
+// 2) ENVIRONMENT & CONSTANTS
+//
+const TELEGRAM_BOT_TOKEN   = process.env.TELEGRAM_BOT_TOKEN;
+const JSONBIN_ID           = process.env.JSONBIN_ID;
+const EVENT_JSONBIN_ID     = process.env.EVENT_JSONBIN_ID;
+const JSONBIN_KEY          = process.env.JSONBIN_KEY;
+const EVENT_META_JSONBIN_ID= process.env.EVENT_META_JSONBIN_ID;
+const RESET_KEY            = process.env.RESET_KEY;
+const CONFIG_JSONBIN_ID    = process.env.CONFIG_JSONBIN_ID;
+const HOLDER_JSONBIN_ID    = process.env.HOLDER_JSONBIN_ID;
+const ATH_JSONBIN_ID       = process.env.ATH_JSONBIN_ID;
 const RENDER_EXTERNAL_HOSTNAME = process.env.RENDER_EXTERNAL_HOSTNAME || null;
+const PORT = process.env.PORT || 10000;
 
 if (
-  !TELEGRAM_BOT_TOKEN ||
-  !JSONBIN_ID ||
-  !EVENT_JSONBIN_ID ||
-  !JSONBIN_KEY ||
-  !EVENT_META_JSONBIN_ID ||
-  !RESET_KEY ||
-  !CONFIG_JSONBIN_ID ||
-  !HOLDER_JSONBIN_ID ||
+  !TELEGRAM_BOT_TOKEN || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY ||
+  !EVENT_META_JSONBIN_ID || !RESET_KEY || !CONFIG_JSONBIN_ID || !HOLDER_JSONBIN_ID ||
   !ATH_JSONBIN_ID
 ) {
-  console.error(
-    "❌ Missing required env vars. Set TELEGRAM_BOT_TOKEN, JSONBIN_ID, EVENT_JSONBIN_ID, JSONBIN_KEY, EVENT_META_JSONBIN_ID, RESET_KEY, CONFIG_JSONBIN_ID, HOLDER_JSONBIN_ID, ATH_JSONBIN_ID"
-  );
+  console.error("❌ Missing env vars. Required: TELEGRAM_BOT_TOKEN, JSONBIN_ID, EVENT_JSONBIN_ID, JSONBIN_KEY, EVENT_META_JSONBIN_ID, RESET_KEY, CONFIG_JSONBIN_ID, HOLDER_JSONBIN_ID, ATH_JSONBIN_ID");
   process.exit(1);
 }
 
-// === CONSTANTS & URLS ===
-const MAIN_BIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
+const MAIN_BIN_URL  = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 const EVENT_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;
-const META_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;
-const CONFIG_BIN_URL = `https://api.jsonbin.io/v3/b/${CONFIG_JSONBIN_ID}`;
-const HOLDER_BIN_URL = `https://api.jsonbin.io/v3/b/${HOLDER_JSONBIN_ID}`;
-const ATH_BIN_URL = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
+const META_BIN_URL  = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;
+const CONFIG_BIN_URL= `https://api.jsonbin.io/v3/b/${CONFIG_JSONBIN_ID}`;
+const HOLDER_BIN_URL= `https://api.jsonbin.io/v3/b/${HOLDER_JSONBIN_ID}`;
+const ATH_BIN_URL   = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
 
 const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot", "pachenko_14"]; // lowercase usernames
-const PORT = process.env.PORT || 10000;
 
-// === EXPRESS SETUP ===
+//
+// 3) EXPRESS + TELEGRAM WEBHOOK SETUP
+//
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json({ limit: "15mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// === TELEGRAM BOT (webhook) ===
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 
 (async () => {
   try {
-    const host =
-      RENDER_EXTERNAL_HOSTNAME ||
-      `https://unstablecoin-fuddodge-backend.onrender.com`;
+    const host = RENDER_EXTERNAL_HOSTNAME || `https://unstablecoin-fuddodge-backend.onrender.com`;
     const webhookUrl = `${host.replace(/\/$/, "")}/bot${TELEGRAM_BOT_TOKEN}`;
     await bot.setWebHook(webhookUrl);
-    console.log(`✅ Webhook set to: ${webhookUrl}`);
+    console.log(`✅ Webhook set: ${webhookUrl}`);
   } catch (err) {
     console.warn("⚠️ setWebHook warning:", err?.message || err);
   }
 })();
 
-// endpoint for telegram webhook
+// Telegram webhook endpoint
 app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
-  try {
-    bot.processUpdate(req.body);
-  } catch (err) {
-    console.error("❌ processUpdate failed:", err?.message || err);
-  }
+  try { bot.processUpdate(req.body); } catch (e) { console.error("❌ processUpdate:", e?.message || e); }
   res.sendStatus(200);
 });
 
-app.get("/", (req, res) => {
-  res.send("💛 UnStableCoin Game Bot with events, holders, and A.T.H. ready.");
-});
+app.get("/", (_req, res) => res.send("💛 UnStableCoin Bot v3.2 running."));
 
-// ============================
-// Small utils
-// ============================
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+//
+// 4) SMALL UTILITIES
+//
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function escapeXml(unsafe) {
   return String(unsafe)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&apos;")
+    .replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-
 function normalizeUsername(u) {
   if (!u) return null;
   const base = u.toString().trim().replace(/^@+/, "");
   return "@" + base;
 }
-
-// Robust-ish Solana address check
-function isLikelySolanaAddress(s) {
-  try {
-    const pk = new PublicKey(s);
-    return PublicKey.isOnCurve(pk.toBytes());
-  } catch (_) {
-    return false;
-  }
+function normalizeName(n) {
+  if (!n) return "";
+  return String(n).trim().replace(/^@+/, "").toLowerCase();
 }
 
-// ============================
-// JSONBin helpers (with tiny backoff for 429)
-// ============================
+//
+// 5) JSONBIN HELPERS
+//
 async function readBin(url, tries = 3) {
   for (let i = 0; i < tries; i++) {
     try {
-      const resp = await axios.get(url, {
-        headers: { "X-Master-Key": JSONBIN_KEY },
-      });
+      const resp = await axios.get(url, { headers: { "X-Master-Key": JSONBIN_KEY } });
       return resp.data.record || resp.data || {};
     } catch (err) {
       const code = err?.response?.status;
-      if (code === 429 && i < tries - 1) {
-        await sleep(300 * (i + 1));
-        continue;
-      }
-      console.error("❌ readBin failed:", err?.message || err);
+      if (code === 429 && i < tries - 1) { await sleep(250 * (i + 1)); continue; }
+      console.error("❌ readBin:", err?.message || err);
       return null;
     }
   }
   return null;
 }
-
 async function writeBin(url, payload, tries = 3) {
   for (let i = 0; i < tries; i++) {
     try {
       const resp = await axios.put(url, payload, {
-        headers: {
-          "Content-Type": "application/json",
-          "X-Master-Key": JSONBIN_KEY,
-        },
+        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
       });
       return resp.data;
     } catch (err) {
       const code = err?.response?.status;
-      if (code === 429 && i < tries - 1) {
-        await sleep(300 * (i + 1));
-        continue;
-      }
-      console.error("❌ writeBin failed:", err?.message || err);
+      if (code === 429 && i < tries - 1) { await sleep(250 * (i + 1)); continue; }
+      console.error("❌ writeBin:", err?.message || err);
       throw err;
     }
   }
 }
 
-// ============================
-// Config / holders
-// ============================
+//
+// 6) CONFIG & HOLDERS
+//
 async function getConfig() {
   const cfg = (await readBin(CONFIG_BIN_URL)) || {};
   return Object.assign(
@@ -216,506 +192,339 @@ async function getConfig() {
     cfg
   );
 }
-
-async function updateConfig(newPartial) {
+async function updateConfig(patch) {
   const cur = (await readBin(CONFIG_BIN_URL)) || {};
-  const merged = Object.assign({}, cur, newPartial, {
-    lastUpdated: new Date().toISOString(),
-  });
+  const merged = Object.assign({}, cur, patch, { lastUpdated: new Date().toISOString() });
   await writeBin(CONFIG_BIN_URL, merged);
   return merged;
 }
-
 async function getHoldersArray() {
   const arr = (await readBin(HOLDER_BIN_URL)) || [];
   return Array.isArray(arr) ? arr : [];
 }
-
-async function saveHoldersArray(arr) {
-  await writeBin(HOLDER_BIN_URL, arr);
-  return true;
-}
-
+async function saveHoldersArray(arr) { await writeBin(HOLDER_BIN_URL, arr); return true; }
 async function getHoldersMapFromArray() {
   const arr = await getHoldersArray();
   const map = {};
-  for (const h of arr) {
-    if (!h?.username) continue;
-    map[h.username] = h;
-  }
+  for (const h of arr) if (h?.username) map[h.username] = h;
   return map;
 }
 
-// ============================
-// Solana on-chain holder check
-// ============================
+//
+// 7) SOLANA CHECKS
+//
+function isLikelySolanaAddress(s) {
+  try { const pk = new PublicKey(s); return PublicKey.isOnCurve(pk.toBytes()); }
+  catch (_) { return false; }
+}
 async function checkSolanaHolding(walletAddress, requiredWholeTokens) {
   try {
     const config = await getConfig();
-    if (!config.tokenMint) throw new Error("tokenMint not set in config JSONBin.");
-    const network = config.network || "mainnet-beta";
-    const rpc = process.env.SOLANA_RPC_URL || clusterApiUrl(network);
+    const rpc = process.env.SOLANA_RPC_URL || clusterApiUrl(config.network || "mainnet-beta");
     const conn = new Connection(rpc, "confirmed");
 
     const ownerPub = new PublicKey(walletAddress);
-    const mintPub = new PublicKey(config.tokenMint);
+    const mintPub  = new PublicKey(config.tokenMint);
 
-    const parsed = await conn.getParsedTokenAccountsByOwner(ownerPub, {
-      mint: mintPub,
-    });
+    const parsed = await conn.getParsedTokenAccountsByOwner(ownerPub, { mint: mintPub });
+    if (!parsed.value || parsed.value.length === 0) return { ok: false, amount: 0, decimals: 0 };
 
-    if (!parsed.value || parsed.value.length === 0)
-      return { ok: false, amount: 0, decimals: 0 };
-
-    let total = 0;
-    let decimals = null;
+    let total = 0, decimals = 0;
     for (const acc of parsed.value) {
-      const parsedInfo = acc.account?.data?.parsed?.info;
-      if (parsedInfo && parsedInfo.tokenAmount) {
-        const amt = parseFloat(parsedInfo.tokenAmount.amount || 0);
-        const dec = parsedInfo.tokenAmount.decimals || 0;
-        decimals = dec;
-        const ui = amt / Math.pow(10, dec);
-        total += ui;
-      }
+      const info = acc.account?.data?.parsed?.info?.tokenAmount;
+      if (!info) continue;
+      decimals = info.decimals || 0;
+      total += (parseFloat(info.amount || 0) / Math.pow(10, decimals));
     }
-
     const whole = Math.floor(total);
-    const ok = whole >= requiredWholeTokens;
-    return { ok, amount: total, whole, decimals };
+    return { ok: whole >= requiredWholeTokens, amount: total, whole, decimals };
   } catch (err) {
-    console.error("❌ checkSolanaHolding error:", err?.message || err);
-    return {
-      ok: false,
-      amount: 0,
-      whole: 0,
-      decimals: 0,
-      error: err?.message || String(err),
-    };
+    console.error("❌ checkSolanaHolding:", err?.message || err);
+    return { ok: false, amount: 0, whole: 0, decimals: 0, error: err?.message || String(err) };
   }
 }
 
-// ============================
-// Image helpers
-// ============================
+//
+// 8) IMAGE COMPOSITION
+//
 async function composeShareImage(graphBase64, username, score) {
-  const W = 1200,
-    H = 628;
-
-  // normalize base64
+  const W = 1200, H = 628;
   let base64 = graphBase64 || "";
   const m = base64.match(/^data:image\/(png|jpeg);base64,(.*)$/);
   if (m) base64 = m[2];
 
   let graphBuffer = null;
-  try {
-    if (base64) graphBuffer = Buffer.from(base64, "base64");
-  } catch (err) {
-    graphBuffer = null;
-  }
+  try { if (base64) graphBuffer = Buffer.from(base64, "base64"); } catch (_) {}
 
   const bgSvg = `<svg width="${W}" height="${H}">
-    <defs>
-      <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
-        <stop offset="0%" stop-color="#070707"/>
-        <stop offset="100%" stop-color="#0b0b10"/>
-      </linearGradient>
-    </defs>
+    <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#070707"/><stop offset="100%" stop-color="#0b0b10"/>
+    </linearGradient></defs>
     <rect width="100%" height="100%" fill="url(#g)"/>
   </svg>`;
 
   const title = "UnStableCoin – FUD Dodge";
-  const sub = `@${String(username).replace(/^@+/, "")}  •  MCap: ${score}`;
-
+  const sub   = `@${String(username).replace(/^@+/, "")}  •  MCap: ${score}`;
   const textSvg = `<svg width="${W}" height="${H}">
     <style>
-      .title { fill: #ffd400; font-family: 'Press Start 2P', monospace; font-size:34px; font-weight:bold; }
-      .sub { fill: #ffffff; font-family: 'Press Start 2P', monospace; font-size:22px; opacity:0.95; }
-      .badge { fill: rgba(255,212,0,0.06); stroke: rgba(255,212,0,0.18); stroke-width:1; rx:8; }
+      .title{fill:#ffd400;font-family:'Press Start 2P',monospace;font-size:34px;font-weight:bold}
+      .sub{fill:#fff;font-family:'Press Start 2P',monospace;font-size:22px;opacity:.95}
+      .badge{fill:rgba(255,212,0,.06);stroke:rgba(255,212,0,.18);stroke-width:1;rx:8}
     </style>
-    <rect x="40" y="36" width="${W - 80}" height="100" rx="10" class="badge" />
+    <rect x="40" y="36" width="${W-80}" height="100" rx="10" class="badge" />
     <text x="80" y="80" class="title">${escapeXml(title)}</text>
     <text x="80" y="110" class="sub">${escapeXml(sub)}</text>
   </svg>`;
 
-  try {
-    let img = sharp(Buffer.from(bgSvg)).resize(W, H);
-
-    if (graphBuffer) {
-      const graphW = Math.floor(W * 0.86);
-      const graphH = Math.floor(H * 0.62);
-      const graphImg = await sharp(graphBuffer)
-        .resize(graphW, graphH, {
-          fit: "contain",
-          background: { r: 0, g: 0, b: 0, alpha: 0 },
-        })
-        .toBuffer();
-
-      img = img.composite([
-        {
-          input: graphImg,
-          left: Math.floor((W - graphW) / 2),
-          top: Math.floor(H * 0.18),
-        },
-        { input: Buffer.from(textSvg), left: 0, top: 0 },
-      ]);
-    } else {
-      img = img.composite([{ input: Buffer.from(textSvg), left: 0, top: 0 }]);
-    }
-
-    const out = await img.png().toBuffer();
-    return out;
-  } catch (err) {
-    console.error("❌ composeShareImage failed:", err?.message || err);
-    throw err;
+  let img = sharp(Buffer.from(bgSvg)).resize(W, H);
+  if (graphBuffer) {
+    const graphW = Math.floor(W * 0.86);
+    const graphH = Math.floor(H * 0.62);
+    const graphImg = await sharp(graphBuffer).resize(graphW, graphH, { fit: "contain", background: { r:0,g:0,b:0,alpha:0 } }).toBuffer();
+    img = img.composite([{ input: graphImg, left: Math.floor((W-graphW)/2), top: Math.floor(H*0.18) }, { input: Buffer.from(textSvg), left: 0, top: 0 }]);
+  } else {
+    img = img.composite([{ input: Buffer.from(textSvg), left: 0, top: 0 }]);
   }
+  return await img.png().toBuffer();
 }
 
 async function composeAthBanner(curveBase64, username, score) {
-  const rocketPath = "./assets/ath_banner_square.png"; // left square
-  const W = 1200,
-    H = 628;
+  const rocketPath = "./assets/ath_banner_square.png";
+  const W = 1200, H = 628, leftW = Math.floor(W*0.55), rightW = W-leftW;
+  const square = Math.min(leftW, H);
 
-  // Decode chart image if present
   let chartBuf = null;
   try {
     if (curveBase64) {
       const m = curveBase64.match(/^data:image\/(png|jpeg);base64,(.*)$/);
-      const base64 = m ? m[2] : curveBase64;
-      chartBuf = Buffer.from(base64, "base64");
+      const b = m ? m[2] : curveBase64;
+      chartBuf = Buffer.from(b, "base64");
     }
-  } catch (err) {
-    console.warn("⚠️ Could not parse curveBase64:", err?.message || err);
-  }
+  } catch (_) {}
 
-  // Sizes
-  const leftW = Math.floor(W * 0.55);
-  const rightW = W - leftW;
-  const squareSize = Math.min(leftW, H);
-
-  // Left: rocket (square, centered)
-  const leftImg = await sharp(rocketPath)
-    .resize(squareSize, squareSize, {
-      fit: "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
-    })
-    .toBuffer();
-
-  // Right: chart (square, centered) or empty
+  const leftImg = await sharp(rocketPath).resize(square, square, { fit:"contain", background: { r:0,g:0,b:0,alpha:1 } }).toBuffer();
   let rightImg = null;
-  if (chartBuf) {
-    rightImg = await sharp(chartBuf)
-      .resize(squareSize, squareSize, {
-        fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 1 },
-      })
-      .toBuffer();
-  }
+  if (chartBuf) rightImg = await sharp(chartBuf).resize(square, square, { fit:"contain", background:{ r:0,g:0,b:0,alpha:1 } }).toBuffer();
 
-  const base = sharp({
-    create: {
-      width: W,
-      height: H,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
-    },
-  });
-
+  const base = sharp({ create: { width: W, height: H, channels: 4, background: { r:0,g:0,b:0,alpha:1 } }});
   const comps = [
-    {
-      input: leftImg,
-      top: Math.floor((H - squareSize) / 2),
-      left: Math.floor((leftW - squareSize) / 2),
-    },
+    { input: leftImg,  top: Math.floor((H-square)/2), left: Math.floor((leftW-square)/2) },
+    { input: await sharp({ create:{ width:3,height:H,channels:4, background:{ r:0,g:255,b:200,alpha:.5 }}}).png().toBuffer(), top:0, left:leftW-2 },
   ];
-
-  // Divider
-  const divider = await sharp({
-    create: {
-      width: 3,
-      height: H,
-      channels: 4,
-      background: { r: 0, g: 255, b: 200, alpha: 0.5 },
-    },
-  })
-    .png()
-    .toBuffer();
-
-  comps.push({ input: divider, top: 0, left: leftW - 2 });
-
-  if (rightImg) {
-    comps.push({
-      input: rightImg,
-      top: Math.floor((H - squareSize) / 2),
-      left: leftW + Math.floor((rightW - squareSize) / 2),
-    });
-  }
-
+  if (rightImg) comps.push({ input: rightImg, top: Math.floor((H-square)/2), left: leftW + Math.floor((rightW-square)/2) });
   return await base.composite(comps).png().toBuffer();
 }
 
-// ============================
-// Leaderboard helpers
-// ============================
+//
+// 9) LEADERBOARDS & EVENT DATA
+//
 async function getLeaderboard() {
   try {
-    const res = await axios.get(MAIN_BIN_URL, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
-    });
+    const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
     let data = res.data.record || {};
     if (data.scores && typeof data.scores === "object") data = data.scores;
     const clean = {};
-    for (const [u, v] of Object.entries(data)) {
-      const n = parseFloat(v);
-      if (!isNaN(n)) clean[u] = n;
-    }
+    for (const [u, v] of Object.entries(data)) { const n = +v; if (!Number.isNaN(n)) clean[u] = n; }
     return clean;
   } catch (err) {
-    console.error("❌ Error loading leaderboard:", err.message || err);
+    console.error("❌ getLeaderboard:", err?.message || err);
     return {};
   }
 }
-
 async function getEventData() {
   try {
-    const res = await axios.get(EVENT_BIN_URL, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
-    });
+    const res = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
     let data = res.data.record || {};
     if (data.scores?.scores) data = data.scores.scores;
     else if (data.scores) data = data.scores;
     const clean = {};
-    for (const [u, v] of Object.entries(data)) {
-      const n = parseFloat(v);
-      if (!isNaN(n)) clean[u] = n;
-    }
+    for (const [u, v] of Object.entries(data)) { const n = +v; if (!Number.isNaN(n)) clean[u] = n; }
     return { scores: clean };
   } catch (err) {
-    console.error("❌ Error fetching event data:", err.message || err);
+    console.error("❌ getEventData:", err?.message || err);
     return { scores: {} };
   }
 }
-
 async function getEventMeta() {
   try {
-    const res = await axios.get(`${META_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
-    });
-    const payload = res.data.record || res.data || {};
+    const res = await axios.get(`${META_BIN_URL}/latest`, { headers: { "X-Master-Key": JSONBIN_KEY }});
+    const p = res.data.record || res.data || {};
     return {
-      title: payload.title || payload.name || "Current Event",
-      info: payload.info || payload.description || "",
-      startDate: payload.startDate || null,
-      endDate: payload.endDate || null,
-      timezone: payload.timezone || "Europe/Stockholm",
-      updatedAt:
-        payload.updatedAt ||
-        res.data?.metadata?.modifiedAt ||
-        new Date().toISOString(),
-      raw: payload,
+      title: p.title || p.name || "Current Event",
+      info:  p.info  || p.description || "",
+      startDate: p.startDate || null,
+      endDate:   p.endDate   || null,
+      timezone:  p.timezone  || "Europe/Stockholm",
+      updatedAt: p.updatedAt || res.data?.metadata?.modifiedAt || new Date().toISOString(),
+      raw: p,
     };
   } catch (err) {
-    console.error("❌ Error fetching event meta:", err?.message || err);
-    return {
-      title: "No active event",
-      info: "No description available.",
-      startDate: null,
-      endDate: null,
-      timezone: "Europe/Stockholm",
-      updatedAt: new Date().toISOString(),
-      raw: {},
-    };
+    console.error("❌ getEventMeta:", err?.message || err);
+    return { title:"No active event", info:"", startDate:null, endDate:null, timezone:"Europe/Stockholm", updatedAt:new Date().toISOString(), raw:{} };
   }
 }
+async function getVerifiedEventTop(n = 10) {
+  const { scores } = await getEventData();
+  const holdersMap = await getHoldersMapFromArray();
+  const cfg = await getConfig();
+  const minHold = cfg.minHoldAmount || 0;
 
-// ============================
-// send helpers
-// ============================
+  const sorted = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
+  const out = [];
+  for (const [uname, score] of sorted) {
+    const rec = holdersMap[uname];
+    if (!rec?.wallet) continue;
+    // Assume user was verified earlier; we can trust record OR do an additional on-chain check if needed:
+    const check = await checkSolanaHolding(rec.wallet, minHold);
+    if (check.ok) out.push({ username: uname, score });
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+//
+// 10) TELEGRAM SAFE SEND HELPERS
+//
 async function sendSafeMessage(chatId, message, opts = {}) {
   try {
-    await bot.sendMessage(
-      chatId,
-      message,
-      Object.assign({ parse_mode: "HTML", disable_web_page_preview: true }, opts)
-    );
-  } catch (err) {
-    console.error("❌ Telegram send failed:", err?.message || err);
-  }
+    await bot.sendMessage(chatId, message, Object.assign({ parse_mode: "HTML", disable_web_page_preview: true }, opts));
+  } catch (err) { console.error("❌ sendMessage:", err?.message || err); }
 }
-
 function sendChunked(chatId, header, lines, maxLen = 3500) {
   let buf = header;
   for (const line of lines) {
     if ((buf + line + "\n").length > maxLen) {
       sendSafeMessage(chatId, buf.trim());
       buf = header + line + "\n";
-    } else {
-      buf += line + "\n";
-    }
+    } else buf += line + "\n";
   }
   if (buf.trim()) sendSafeMessage(chatId, buf.trim());
 }
 
-// ============================
-// Telegram Commands
-// ============================
+//
+// 11) TELEGRAM MAIN MENU UI (+ /start /menu)
+//
+const mainMenu = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "🪙 Add Wallet" }, { text: "⚡ Verify Holder" }],
+      [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
+      [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }],
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false,
+  },
+};
 
-// /help
+bot.onText(/\/start|\/menu/i, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(
+    chatId,
+    `💛 Welcome to <b>UnStableCoin</b>\nUse the buttons to manage wallet or join the event.`,
+    { ...mainMenu, parse_mode: "HTML" }
+  );
+});
+
+//
+// 12) TELEGRAM CORE COMMANDS
+//
 bot.onText(/\/help/, async (msg) => {
-  try {
-    const isAdmin = ADMIN_USERS.includes((msg.from.username || "").toLowerCase());
-    const lines = [
-      "🎮 <b>FUD Dodge — Bot Commands</b>",
-      "🎮 /play — Get link to the game",
-      "🏆 /top10 — Top 10 players (global)",
-      "📈 /top50 — Top 50 players (global)",
-      "⚡ /eventtop10 — Event top 10 (verified holders list)",
-      "🥇 /eventtop50 — Event top 50 (verified holders list)",
-      "📢 /event — Show current event info",
-      "",
-    ];
-
-    if (isAdmin) {
-      lines.push("🔧 Admin commands:");
-      lines.push(
-        "/setholdingreq &lt;whole_tokens&gt; — Set required whole tokens"
-      );
-      lines.push("/winners [n] — Winners who were holders for full event");
-      lines.push("/validatewinners — Re-check top event holders now");
-      lines.push("/resetevent — Reset event leaderboard");
-      lines.push(
-        "/setevent Title | Info | start-YYYY-MM-DD | start-HH:mm | end-YYYY-MM-DD | end-HH:mm | [TZ]"
-      );
-    }
-
-    await sendSafeMessage(msg.chat.id, lines.join("\n"), { parse_mode: "HTML" });
-  } catch (err) {
-    console.error("❌ /help error:", err?.message || err);
+  const isAdmin = ADMIN_USERS.includes((msg.from.username || "").toLowerCase());
+  const lines = [
+    "🎮 <b>FUD Dodge — Bot Commands</b>",
+    "🎮 /play — Game link",
+    "🏆 /top10 — Top 10",
+    "📈 /top50 — Top 50",
+    "⚡ /eventtop10 — Event top 10 (holders)",
+    "🥇 /eventtop50 — Event top 50 (holders)",
+    "📢 /event — Current event info",
+    "",
+  ];
+  if (isAdmin) {
+    lines.push("🔧 Admin:");
+    lines.push("/winners [n] — Check top event holders now");
+    lines.push("/resetevent — Reset event leaderboard");
+    lines.push("/setevent Title | Info | start-YYYY-MM-DD | start-HH:mm | end-YYYY-MM-DD | end-HH:mm | [TZ]");
   }
+  await sendSafeMessage(msg.chat.id, lines.join("\n"));
 });
 
-// /play
 bot.onText(/\/play/, async (msg) => {
-  try {
-    const isPrivate = msg.chat.type === "private";
-    if (isPrivate) {
-      await bot.sendMessage(msg.chat.id, "🎮 <b>Play FUD Dodge</b>", {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: "⚡ Open Game",
-                web_app: { url: "https://theunstable.io/fuddodge" },
-              },
-            ],
-          ],
-        },
-      });
-    } else {
-      const me = await bot.getMe();
-      await bot.sendMessage(
-        msg.chat.id,
-        "💨 FUD levels too high here 😅\nPlay safely in DM 👇",
-        {
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: "⚡ Open DM to Play",
-                  url: `https://t.me/${me.username}?start=play`,
-                },
-              ],
-            ],
-          },
-        }
-      );
-    }
-  } catch (err) {
-    console.error("❌ /play error:", err?.message || err);
+  const isPrivate = msg.chat.type === "private";
+  if (isPrivate) {
+    await bot.sendMessage(msg.chat.id, "🎮 <b>Play FUD Dodge</b>", {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[{ text: "⚡ Open Game", web_app: { url: "https://theunstable.io/fuddodge" } }]] },
+    });
+  } else {
+    const me = await bot.getMe();
+    await bot.sendMessage(msg.chat.id, "Play safely in DM 👇", {
+      reply_markup: { inline_keyboard: [[{ text: "⚡ Open DM", url: `https://t.me/${me.username}?start=play` }]] },
+    });
   }
 });
 
-// /info & /howtoplay
-bot.onText(/\/info|\/howtoplay/, async (msg) => {
+bot.onText(/\/info|\/howtoplay/, (msg) => {
   const text = `
 🎮 <b>How to Play FUD Dodge</b>
 
-🪙 Dodge FUD and scams. Collect coins and memes to grow your MCap.
+🪙 Dodge FUD & scams. Collect coins/memes to grow MCap.
 ⚡ Power-ups: Lightning, Coin, Green Candle, Meme
 💀 Threats: FUD Skull, Red Candle, The Scammer (-50%)
-📊 Compete: /top10  /eventtop10
+📊 Compete: /top10 • /eventtop10
 
 Stay unstable. 💛⚡`;
-  await sendSafeMessage(msg.chat.id, text);
+  sendSafeMessage(msg.chat.id, text);
 });
 
-// /event (bot view)
 bot.onText(/\/event$/, async (msg) => {
   try {
     const meta = await getEventMeta();
     let body = `<b>${escapeXml(meta.title)}</b>\n\n${escapeXml(meta.info)}`;
     if (meta.startDate) {
-      const start = DateTime.fromISO(meta.startDate).setZone(
-        meta.timezone || "Europe/Stockholm"
-      );
+      const start = DateTime.fromISO(meta.startDate).setZone(meta.timezone || "Europe/Stockholm");
       body += `\n🟢 Starts: ${start.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
     }
     if (meta.endDate) {
-      const end = DateTime.fromISO(meta.endDate).setZone(
-        meta.timezone || "Europe/Stockholm"
-      );
+      const end = DateTime.fromISO(meta.endDate).setZone(meta.timezone || "Europe/Stockholm");
       const now = DateTime.now().setZone(meta.timezone || "Europe/Stockholm");
       if (now < end) {
-        const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
-        const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${
-          diff.hours ? Math.floor(diff.hours) + "h " : ""
-        }${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
+        const diff = end.diff(now, ["days","hours","minutes"]).toObject();
+        const remain = `${diff.days?Math.floor(diff.days)+"d ":""}${diff.hours?Math.floor(diff.hours)+"h ":""}${diff.minutes?Math.floor(diff.minutes)+"m":""}`.trim();
         body += `\n⏳ Ends in ${remain}`;
       }
       body += `\n🛑 Ends: ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
     }
     await sendSafeMessage(msg.chat.id, body);
   } catch (err) {
-    console.error("❌ /event error:", err?.message || err);
+    console.error("❌ /event:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
 });
 
-// /top10 /top50
 bot.onText(/\/top10/, async (msg) => {
   const data = await getLeaderboard();
-  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(data).sort((a,b)=>b[1]-a[1]);
   if (!sorted.length) return sendSafeMessage(msg.chat.id, "No scores yet!");
-  const lines = sorted
-    .slice(0, 10)
-    .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s} pts`);
-  sendChunked(msg.chat.id, "<b>🏆 Top 10 Players</b>\n\n", lines);
+  const lines = sorted.slice(0,10).map(([u,s],i)=>`${i+1}. <b>${u}</b> – ${s}`);
+  sendChunked(msg.chat.id, "<b>🏆 Top 10</b>\n\n", lines);
 });
 bot.onText(/\/top50/, async (msg) => {
   const data = await getLeaderboard();
-  const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(data).sort((a,b)=>b[1]-a[1]);
   if (!sorted.length) return sendSafeMessage(msg.chat.id, "No scores yet!");
-  const lines = sorted
-    .slice(0, 50)
-    .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s} pts`);
-  sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
+  const lines = sorted.slice(0,50).map(([u,s],i)=>`${i+1}. <b>${u}</b> – ${s}`);
+  sendChunked(msg.chat.id, "<b>📈 Top 50</b>\n\n", lines);
 });
 
-// /eventtop10 /eventtop50 — verified holders only
 bot.onText(/\/eventtop10/, async (msg) => {
   try {
     const arr = await getVerifiedEventTop(10);
     if (!arr.length) return sendSafeMessage(msg.chat.id, "No event scores yet.");
-    const lines = arr.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(
-      msg.chat.id,
-      "<b>🥇 Event Top 10 (verified holders)</b>\n\n",
-      lines
-    );
+    const lines = arr.map((p,i)=>`${i+1}. <b>${p.username}</b> – ${p.score}`);
+    sendChunked(msg.chat.id, "<b>🥇 Event Top 10 (verified)</b>\n\n", lines);
   } catch (err) {
-    console.error("❌ /eventtop10 error:", err?.message || err);
+    console.error("❌ /eventtop10:", err?.message || err);
     sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
   }
 });
@@ -723,939 +532,268 @@ bot.onText(/\/eventtop50/, async (msg) => {
   try {
     const arr = await getVerifiedEventTop(50);
     if (!arr.length) return sendSafeMessage(msg.chat.id, "No event scores yet.");
-    const lines = arr.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(
-      msg.chat.id,
-      "<b>🥇 Event Top 50 (verified holders)</b>\n\n",
-      lines
-    );
+    const lines = arr.map((p,i)=>`${i+1}. <b>${p.username}</b> – ${p.score}`);
+    sendChunked(msg.chat.id, "<b>🥇 Event Top 50 (verified)</b>\n\n", lines);
   } catch (err) {
-    console.error("❌ /eventtop50 error:", err?.message || err);
+    console.error("❌ /eventtop50:", err?.message || err);
     sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top50.");
   }
 });
 
-/* ==========================================
-   🔄 CHANGE / REMOVE WALLET HANDLERS
-   ========================================== */
+//
+// 13) TELEGRAM: WALLET FLOWS (ADD / CHANGE / REMOVE / VERIFY)
+//
+bot.onText(/\/addwallet/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const realUser = msg.from?.username;
+  if (!realUser) return bot.sendMessage(chatId, "❌ Set a Telegram username first (Settings → Username).");
 
-// --- Helpers ---
-function normalizeName(u) {
-  if (!u) return "";
-  return u.trim().replace(/^@+/, "").toLowerCase();
-}
-
-function findUserRecord(username, holders) {
-  const norm = normalizeName(username);
-  let rec = holders.find(h => normalizeName(h.username) === norm);
-  if (!rec) {
-    // fallback: partial or close match
-    rec = holders.find(h => normalizeName(h.username).includes(norm));
+  try {
+    const holders = await getHoldersArray();
+    const exists = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
+    if (exists) {
+      await bot.sendMessage(chatId, `⚠️ @${realUser}, you’re already registered. Use /changewallet.`);
+      return;
+    }
+    await bot.sendMessage(chatId, "🪙 Paste your Solana wallet address:");
+    bot.once("message", async (m2) => {
+      const wallet = (m2.text||"").trim();
+      if (!isLikelySolanaAddress(wallet)) {
+        await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /addwallet.");
+        return;
+      }
+      holders.push({ username: "@"+realUser, wallet, verifiedAt: null });
+      await saveHoldersArray(holders);
+      await bot.sendMessage(chatId, `✅ Wallet added for @${realUser}!\nUse /verifyholder to confirm holdings.`);
+    });
+  } catch (err) {
+    console.error("⚠️ /addwallet:", err);
+    await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.");
   }
-  return rec;
-}
+});
 
-// --- Change Wallet Command ---
 bot.onText(/\/changewallet/i, async (msg) => {
   const chatId = msg.chat.id;
-  const realUser = msg.from.username;
-
-  if (!realUser) {
-    return bot.sendMessage(chatId, "⚠️ No Telegram username found. Please set one in your Telegram settings first.");
-  }
-
+  const realUser = msg.from?.username;
+  if (!realUser) return bot.sendMessage(chatId, "❌ You need a Telegram username.");
   try {
-    const res = await axios.get(`${MAIN_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY }
-    });
-    const holders = res.data?.record || [];
-
-    let record = findUserRecord(realUser, holders);
-
-    if (!record) {
-      return bot.sendMessage(chatId, "⚠️ User not recognized.\nIf you verified only inside the game, please re-verify once more there.");
+    const holders = await getHoldersArray();
+    const user = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
+    if (!user) {
+      await bot.sendMessage(chatId, "⚠️ You’re not registered yet. Use /addwallet first.");
+      return;
     }
-
-    // Ask for new wallet
-    bot.sendMessage(chatId, `🪙 Hi @${realUser}, please send your new Solana wallet address to update your record.`, {
-      reply_markup: { force_reply: true }
-    }).then(sent => {
-      bot.onReplyToMessage(sent.chat.id, sent.message_id, async reply => {
-        const newWallet = reply.text.trim();
-
-        if (!newWallet || newWallet.length < 30) {
-          return bot.sendMessage(chatId, "⚠️ That doesn’t look like a valid wallet address.");
-        }
-
-        record.wallet = newWallet;
-
-        await axios.put(MAIN_BIN_URL, { record: holders }, {
-          headers: { "X-Master-Key": JSONBIN_KEY }
-        });
-
-        bot.sendMessage(chatId, `✅ Wallet updated successfully!\n\n@${realUser} → ${newWallet}`);
-      });
+    await bot.sendMessage(chatId, "Do you really want to change your wallet?", {
+      reply_markup: { inline_keyboard: [[
+        { text: "✅ Yes, change it", callback_data: "confirm_change_yes" },
+        { text: "❌ Cancel",        callback_data: "confirm_change_no"  },
+      ]]}
     });
-
   } catch (err) {
-    console.error("Change wallet error:", err.message);
-    bot.sendMessage(chatId, "❌ Error updating wallet. Please try again later.");
+    console.error("⚠️ /changewallet:", err?.message || err);
+    await bot.sendMessage(chatId, "⚠️ Error. Try again later.");
   }
 });
 
-// --- Remove Wallet Command ---
 bot.onText(/\/removewallet/i, async (msg) => {
   const chatId = msg.chat.id;
-  const realUser = msg.from.username;
-
-  if (!realUser) {
-    return bot.sendMessage(chatId, "⚠️ No Telegram username found. Please set one in your Telegram settings first.");
-  }
-
-  try {
-    const res = await axios.get(`${MAIN_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY }
-    });
-    const holders = res.data?.record || [];
-
-    const record = findUserRecord(realUser, holders);
-
-    if (!record) {
-      return bot.sendMessage(chatId, "⚠️ No wallet found linked to your username.");
-    }
-
-    const filtered = holders.filter(h => normalizeName(h.username) !== normalizeName(realUser));
-
-    await axios.put(MAIN_BIN_URL, { record: filtered }, {
-      headers: { "X-Master-Key": JSONBIN_KEY }
-    });
-
-    bot.sendMessage(chatId, `🧹 Wallet removed successfully.\nYou're free to verify again anytime, @${realUser}.`);
-  } catch (err) {
-    console.error("Remove wallet error:", err.message);
-    bot.sendMessage(chatId, "❌ Error removing wallet. Please try again later.");
-  }
+  const realUser = msg.from?.username;
+  if (!realUser) return bot.sendMessage(chatId, "❌ You need a Telegram username.");
+  await bot.sendMessage(chatId, "Are you sure you want to remove your wallet?", {
+    reply_markup: { inline_keyboard: [[
+      { text:"✅ Yes, remove", callback_data:"confirm_remove_yes" },
+      { text:"❌ Cancel",      callback_data:"confirm_remove_no"  },
+    ]]}
+  });
 });
 
-// /validatewinners — quick on-chain check now for top 50
-bot.onText(/\/validatewinners ?(.*)?/, async (msg) => {
+bot.onText(/\/verifyholder/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const realUser = msg.from?.username;
+  if (!realUser) return bot.sendMessage(chatId, "❌ Set a Telegram username to verify.");
   try {
-    const from = (msg.from.username || "").toLowerCase();
-    if (!ADMIN_USERS.includes(from))
-      return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
-
-    const { scores } = await getEventData();
-    const holdersMap = await getHoldersMapFromArray();
-    const cfg = await getConfig();
-    const required = cfg.minHoldAmount || 0;
-
-    const sorted = Object.entries(scores)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 50);
-    const results = [];
-    for (const [uname] of sorted) {
-      const rec = holdersMap[uname];
-      if (!rec || !rec.wallet) {
-        results.push({ username: uname, ok: false, reason: "no record" });
-        continue;
-      }
-      const check = await checkSolanaHolding(rec.wallet, required);
-      results.push({
-        username: uname,
-        ok: check.ok,
-        amount: check.amount,
-        reason: check.ok ? "ok" : "insufficient",
-      });
-    }
-
-    const lines = results.map(
-      (r, i) =>
-        `${i + 1}. ${r.username} — ${r.ok ? "✅" : "❌"} ${
-          r.amount ? "(" + r.amount + ")" : ""
-        } ${r.reason || ""}`
-    );
-    sendChunked(
-      msg.chat.id,
-      `<b>🔎 Revalidation results (top 50)</b>\n`,
-      lines
-    );
-  } catch (err) {
-    console.error("❌ /validatewinners error:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Validation failed.");
-  }
-});
-
-// /resetevent
-bot.onText(/\/resetevent/, async (msg) => {
-  try {
-    const from = (msg.from.username || "").toLowerCase();
-    if (!ADMIN_USERS.includes(from))
-      return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
-
-    const chatId = msg.chat.id;
-    await sendSafeMessage(
-      chatId,
-      "⚠️ Confirm reset of event leaderboard? Reply YES within 30s."
-    );
-
-    const listener = async (reply) => {
-      if (reply.chat.id !== chatId) return;
-      if ((reply.from.username || "").toLowerCase() !== from) return;
-      if (String(reply.text || "").trim().toUpperCase() === "YES") {
-        await writeBin(EVENT_BIN_URL, { scores: {} });
-        await sendSafeMessage(chatId, "✅ Event leaderboard cleared.");
-      } else {
-        await sendSafeMessage(chatId, "❌ Cancelled.");
-      }
-      bot.removeListener("message", listener);
-    };
-
-    bot.on("message", listener);
-    setTimeout(() => bot.removeListener("message", listener), 30000);
-  } catch (err) {
-    console.error("❌ /resetevent error:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to reset event.");
-  }
-});
-
-// /setevent Title | Info | startDate | startTime | endDate | endTime | [TZ]
-bot.onText(/\/setevent(.*)/, async (msg, match) => {
-  try {
-    const username = msg.from.username?.toLowerCase() || "";
-    if (!ADMIN_USERS.includes(username))
-      return sendSafeMessage(msg.chat.id, "🚫 You are not authorized.");
-
-    const args = match[1]?.trim();
-    if (!args) {
-      return sendSafeMessage(
-        msg.chat.id,
-        `🛠 <b>Create or update event</b>
-
-Use:
-<code>/setevent &lt;Title&gt; | &lt;Description&gt; | &lt;start-YYYY-MM-DD&gt; | &lt;start-HH:mm&gt; | &lt;end-YYYY-MM-DD&gt; | &lt;end-HH:mm&gt; | [TZ]</code>
-
-Example:
-<code>/setevent Meme Rally | Keep MCap above FUD | 2025-11-02 | 18:00 | 2025-11-10 | 21:00 | CET</code>`,
-        { parse_mode: "HTML" }
-      );
-    }
-
-    const parts = args.split("|").map((s) => s.trim());
-    const [title, info, startDateStr, startTimeStr, endDateStr, endTimeStr, tzStrRaw] =
-      parts;
-
-    const tzMap = {
-      CET: "Europe/Stockholm",
-      CEST: "Europe/Stockholm",
-      UTC: "UTC",
-      GMT: "UTC",
-    };
-    const zone = tzMap[tzStrRaw?.toUpperCase()] || tzStrRaw || "Europe/Stockholm";
-
-    if (!startDateStr || !startTimeStr || !endDateStr || !endTimeStr) {
-      return sendSafeMessage(
-        msg.chat.id,
-        "❌ Missing start or end date/time.\nUse: YYYY-MM-DD | HH:mm | YYYY-MM-DD | HH:mm | [TZ]"
-      );
-    }
-
-    const startLocal = DateTime.fromFormat(
-      `${startDateStr} ${startTimeStr}`,
-      "yyyy-MM-dd HH:mm",
-      { zone }
-    );
-    const endLocal = DateTime.fromFormat(
-      `${endDateStr} ${endTimeStr}`,
-      "yyyy-MM-dd HH:mm",
-      { zone }
-    );
-
-    if (!startLocal.isValid || !endLocal.isValid || endLocal <= startLocal) {
-      return sendSafeMessage(
-        msg.chat.id,
-        "❌ Invalid dates. End must be after start."
-      );
-    }
-
-    const newData = {
-      title: title || "⚡️ Unstable Challenge",
-      info: info || "Score big. Stay unstable.",
-      startDate: startLocal.toUTC().toISO(),
-      startLocal: startLocal.toFormat("yyyy-MM-dd HH:mm ZZZZ"),
-      endDate: endLocal.toUTC().toISO(),
-      endLocal: endLocal.toFormat("yyyy-MM-dd HH:mm ZZZZ"),
-      timezone: zone,
-      updatedAt: new Date().toISOString(),
-    };
-
-    await writeBin(META_BIN_URL, newData);
-    await sendSafeMessage(
-      msg.chat.id,
-      `✅ <b>Event updated</b>
-<b>${newData.title}</b>
-${newData.info}
-🟢 Starts: ${newData.startLocal}
-🛑 Ends: ${newData.endLocal}`
-    );
-  } catch (err) {
-    console.error("❌ /setevent error:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to update event.");
-  }
-});
-
-/* ============================
-   Admin: /holders (list)
-   ============================ */
-bot.onText(/\/holders/, async (msg) => {
-  try {
-    const from = (msg.from.username || "").toLowerCase();
-    if (!ADMIN_USERS.includes(from))
-      return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
-
     const holders = await getHoldersArray();
-    if (!holders.length) return sendSafeMessage(msg.chat.id, "📋 No holder records.");
-
-    holders.sort((a, b) => new Date(b.verifiedAt) - new Date(a.verifiedAt));
-    const lines = holders.map(
-      (h) =>
-        `<b>${h.username || "n/a"}</b> — ${h.wallet || "n/a"} — ${
-          h.verifiedAt || "n/a"
-        }`
-    );
-    sendChunked(msg.chat.id, "<b>📋 Stored Holder Records</b>\n", lines);
+    const rec = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
+    if (!rec?.wallet) {
+      await bot.sendMessage(chatId, "⚠️ No wallet on file. Use /addwallet first.");
+      return;
+    }
+    // Trigger server-side verify (checks min holding)
+    const res = await axios.post(`https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`, {
+      username: "@"+realUser,
+      wallet: rec.wallet
+    });
+    if (res.data.ok) {
+      await bot.sendMessage(chatId, `✅ Verified successfully, @${realUser}!`);
+    } else {
+      await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`);
+    }
   } catch (err) {
-    console.error("❌ /holders error:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to load holders.");
+    console.error("verifyHolder:", err?.message || err);
+    await bot.sendMessage(chatId, "⚠️ Network or backend error during verification.");
   }
 });
 
-/* ============================
-   HOLDER VERIFY + CHANGE/REMOVE
-   ============================ */
+// Callback confirmations for change/remove
+bot.on("callback_query", async (cb) => {
+  const chatId = cb.message.chat.id;
+  const realUser = cb.from.username;
 
-// HTTP verify (kept)
-async function verifySolanaBalance(wallet) {
   try {
-    const config = await getConfig();
-    const connection = new Connection(
-      process.env.SOLANA_RPC_URL || clusterApiUrl(config.network || CONFIG_DEFAULTS.network),
-      "confirmed"
-    );
+    if (cb.data === "confirm_change_yes") {
+      await bot.answerCallbackQuery(cb.id, { text: "Proceeding..." });
+      await bot.sendMessage(chatId, "Paste your new Solana wallet address:");
+      bot.once("message", async (m2) => {
+        const wallet = (m2.text||"").trim();
+        if (!isLikelySolanaAddress(wallet)) {
+          await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /changewallet.");
+          return;
+        }
+        // Optional: on-chain pre-check (comment out if you prefer verify later)
+        const cfg = await getConfig();
+        const check = await checkSolanaHolding(wallet, cfg.minHoldAmount || 0);
+        if (!check.ok) {
+          await bot.sendMessage(chatId, `❌ This wallet doesn't meet the minimum holding requirement of ${cfg.minHoldAmount} whole tokens.`);
+          return;
+        }
 
-    const publicKey = new PublicKey(wallet);
-    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, {
-      mint: new PublicKey(config.tokenMint || CONFIG_DEFAULTS.tokenMint),
-    });
-
-    let totalBalance = 0;
-    tokenAccounts.value.forEach((acc) => {
-      const amount = acc.account.data.parsed.info.tokenAmount.uiAmount;
-      totalBalance += amount;
-    });
-
-    return totalBalance >= (config.minHoldAmount || CONFIG_DEFAULTS.minHoldAmount);
+        const holders = await getHoldersArray();
+        const user = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
+        if (!user) { await bot.sendMessage(chatId, "⚠️ You’re not registered. Use /addwallet first."); return; }
+        user.prevWallet = user.wallet || null;
+        user.wallet = wallet;
+        user.verifiedAt = new Date().toISOString();
+        user.changedAt  = new Date().toISOString();
+        await saveHoldersArray(holders);
+        await bot.sendMessage(chatId, `✅ Wallet updated for @${realUser}.\nNew wallet:\n<code>${wallet}</code>`, { parse_mode: "HTML" });
+      });
+      return;
+    }
+    if (cb.data === "confirm_change_no") {
+      await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
+      await bot.sendMessage(chatId, "❌ Wallet change cancelled.");
+      return;
+    }
+    if (cb.data === "confirm_remove_yes") {
+      await bot.answerCallbackQuery(cb.id, { text: "Removing..." });
+      let holders = await getHoldersArray();
+      holders = holders.filter(h => normalizeName(h.username) !== normalizeName(realUser));
+      await saveHoldersArray(holders);
+      await bot.sendMessage(chatId, `🧹 Wallet removed for @${realUser}. You can verify again any time.`);
+      return;
+    }
+    if (cb.data === "confirm_remove_no") {
+      await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
+      await bot.sendMessage(chatId, "Action cancelled.");
+      return;
+    }
   } catch (err) {
-    console.error("❌ verifySolanaBalance error:", err?.message || err);
-    return false;
+    console.error("callback_query:", err?.message || err);
+    await bot.answerCallbackQuery(cb.id, { text: "Error. Try again later." });
   }
-}
+});
 
+//
+// 14) TELEGRAM: BUTTON TEXT ROUTER (for white buttons)
+//
+bot.on("message", (msg) => {
+  const t = (msg.text || "").toLowerCase();
+  if (!t) return;
+  if (t.includes("add wallet"))    return bot.emit("text", { ...msg, text: "/addwallet" });
+  if (t.includes("verify"))        return bot.emit("text", { ...msg, text: "/verifyholder" });
+  if (t.includes("change"))        return bot.emit("text", { ...msg, text: "/changewallet" });
+  if (t.includes("remove"))        return bot.emit("text", { ...msg, text: "/removewallet" });
+  if (t.includes("leader"))        return bot.emit("text", { ...msg, text: "/top10" });
+  if (t.includes("event"))         return bot.emit("text", { ...msg, text: "/event" });
+});
+
+//
+// 15) HTTP: FRONTEND ENDPOINTS
+//
+// Verify holder (from game)
 app.post("/verifyHolder", async (req, res) => {
   try {
     let { username, wallet } = req.body;
-    if (!username || !wallet)
-      return res
-        .status(400)
-        .json({ ok: false, message: "Missing username or wallet." });
-
+    if (!username || !wallet) return res.status(400).json({ ok:false, message:"Missing username or wallet." });
     username = normalizeUsername(username);
 
-    // Validate address form first
-    if (!isLikelySolanaAddress(wallet)) {
-      return res
-        .status(400)
-        .json({ ok: false, message: "Invalid Solana address format." });
-    }
+    if (!isLikelySolanaAddress(wallet)) return res.status(400).json({ ok:false, message:"Invalid Solana address format." });
 
-    const holders = (await getHoldersArray()) || [];
+    const holders = await getHoldersArray();
+    const already = holders.find(h => h.username.toLowerCase() === username.toLowerCase());
+    const verified = await checkSolanaHolding(wallet, (await getConfig()).minHoldAmount || 0);
 
-    const already = holders.find(
-      (h) => h.username.toLowerCase() === username.toLowerCase()
-    );
-    if (already && already.wallet === wallet) {
-      return res.json({ ok: true, message: "Already verified.", username });
-    }
-
-    const verified = await verifySolanaBalance(wallet);
-    if (!verified)
-      return res.json({
-        ok: false,
-        message: "Wallet balance below minimum requirement.",
-      });
+    if (!verified.ok) return res.json({ ok:false, message:"Wallet balance below minimum requirement." });
 
     if (already) {
       already.prevWallet = already.wallet || null;
       already.wallet = wallet;
       already.verifiedAt = new Date().toISOString();
-      already.changedAt = new Date().toISOString();
+      already.changedAt  = new Date().toISOString();
     } else {
       holders.push({ username, wallet, verifiedAt: new Date().toISOString() });
     }
-
     await saveHoldersArray(holders);
-    return res.json({ ok: true, message: "✅ Holder verified successfully!", username });
+    res.json({ ok:true, message:"✅ Holder verified successfully!", username });
   } catch (err) {
-    console.error("❌ verifyHolder error:", err?.message || err);
-    res.status(500).json({ ok: false, message: "Server error verifying holder." });
+    console.error("verifyHolder:", err?.message || err);
+    res.status(500).json({ ok:false, message:"Server error verifying holder." });
   }
 });
 
 app.get("/holderStatus", async (req, res) => {
   try {
     let username = req.query.username;
-    if (!username)
-      return res.status(400).json({ verified: false, message: "Missing username" });
+    if (!username) return res.status(400).json({ verified:false, message:"Missing username" });
     username = normalizeUsername(username);
-
-    const holders = (await getHoldersArray()) || [];
-    const match = holders.find(
-      (h) => h.username?.toLowerCase() === username.toLowerCase()
-    );
-
-    if (match && match.wallet)
-      return res.json({
-        verified: !!match.verifiedAt,
-        username: match.username,
-        wallet: match.wallet,
-        verifiedAt: match.verifiedAt || null,
-      });
-    else return res.json({ verified: false });
+    const holders = await getHoldersArray();
+    const match = holders.find(h => h.username?.toLowerCase() === username.toLowerCase());
+    if (match?.wallet) {
+      return res.json({ verified: !!match.verifiedAt, username: match.username, wallet: match.wallet, verifiedAt: match.verifiedAt || null });
+    }
+    res.json({ verified:false });
   } catch (err) {
-    console.error("❌ holderStatus error:", err?.message || err);
-    res
-      .status(500)
-      .json({ verified: false, message: "Server error checking holder status" });
+    console.error("holderStatus:", err?.message || err);
+    res.status(500).json({ verified:false, message:"Server error checking holder status" });
   }
 });
 
-// In-memory simple state for Telegram confirm flows
-const walletFlow = new Map(); // key: chatId, value: { step, intent, newWallet }
-
-// /changewallet — user flow in DM (no codes, just YES confirm)
-bot.onText(/\/changewallet/, async (msg) => {
-  const chatId = msg.chat.id;
-  if (msg.chat.type !== "private") {
-    return sendSafeMessage(
-      chatId,
-      "For your privacy, change wallet in DM. 👇",
-      {
-        reply_markup: {
-          inline_keyboard: [[{ text: "Open DM", url: `https://t.me/${(await bot.getMe()).username}` }]],
-        },
-      }
-    );
-  }
-
-  const uname = normalizeUsername(msg.from.username || "");
-  if (!uname) return sendSafeMessage(chatId, "⚠️ No Telegram username found.");
-
-  walletFlow.set(chatId, { step: "ask_action", intent: null, newWallet: null });
-  await sendSafeMessage(
-    chatId,
-    `🧩 <b>Change Wallet</b>\nYou can either:\n• <b>Change</b> to a new wallet\n• <b>Remove</b> your wallet\n\nReply with: <code>change</code> or <code>remove</code>`,
-    { parse_mode: "HTML" }
-  );
-});
-
-// Catch replies in DM for the flow
-bot.on("message", async (m) => {
-  try {
-    const chatId = m.chat.id;
-    if (m.chat.type !== "private") return;
-    const state = walletFlow.get(chatId);
-    if (!state) return; // not in flow
-
-    const text = (m.text || "").trim();
-
-    // Step: choose action
-    if (state.step === "ask_action") {
-      if (/^change$/i.test(text)) {
-        state.step = "ask_wallet";
-        state.intent = "change";
-        walletFlow.set(chatId, state);
-        return sendSafeMessage(
-          chatId,
-          `✍️ Send your <b>new Solana wallet address</b>\n\n<i>Note:</i> Changing wallet during an active event may impact eligibility if requirements say “holder for full event period”.`,
-          { parse_mode: "HTML" }
-        );
-      } else if (/^remove$/i.test(text)) {
-        state.step = "confirm_remove";
-        state.intent = "remove";
-        walletFlow.set(chatId, state);
-        return sendSafeMessage(
-          chatId,
-          `⚠️ Are you sure you want to <b>remove</b> your wallet?\nType <code>YES</code> to confirm or <code>NO</code> to cancel.`,
-          { parse_mode: "HTML" }
-        );
-      } else {
-        return sendSafeMessage(
-          chatId,
-          `Please reply with exactly <code>change</code> or <code>remove</code>.`,
-          { parse_mode: "HTML" }
-        );
-      }
-    }
-
-    // Step: removal confirm
-    if (state.step === "confirm_remove" && state.intent === "remove") {
-      if (/^YES$/i.test(text)) {
-        const holders = await getHoldersArray();
-        const uname = normalizeUsername(m.from.username || "");
-        const rec = holders.find(
-          (h) => h.username.toLowerCase() === uname.toLowerCase()
-        );
-
-        if (!rec || !rec.wallet) {
-          walletFlow.delete(chatId);
-          return sendSafeMessage(chatId, "No wallet to remove.");
-        }
-        rec.prevWallet = rec.wallet;
-        rec.wallet = null;
-        rec.removedAt = new Date().toISOString();
-        rec.verifiedAt = null; // becomes unverified for event lists
-        await saveHoldersArray(holders);
-
-        walletFlow.delete(chatId);
-        return sendSafeMessage(
-          chatId,
-          "✅ Wallet removed. You are no longer a verified holder."
-        );
-      } else if (/^NO$/i.test(text)) {
-        walletFlow.delete(chatId);
-        return sendSafeMessage(chatId, "❌ Cancelled.");
-      } else {
-        return sendSafeMessage(
-          chatId,
-          `Please type <code>YES</code> to confirm or <code>NO</code> to cancel.`,
-          { parse_mode: "HTML" }
-        );
-      }
-    }
-
-    // Step: ask for new wallet
-    if (state.step === "ask_wallet" && state.intent === "change") {
-      const wallet = text;
-      if (!isLikelySolanaAddress(wallet)) {
-        return sendSafeMessage(
-          chatId,
-          "❌ That doesn't look like a valid Solana address. Please paste a valid address."
-        );
-      }
-
-      // On-chain check
-      const cfg = await getConfig();
-      const balance = await checkSolanaHolding(wallet, cfg.minHoldAmount || 0);
-      if (!balance.ok) {
-        return sendSafeMessage(
-          chatId,
-          `❌ This wallet doesn't meet the minimum holding requirement of ${cfg.minHoldAmount} whole tokens.`
-        );
-      }
-
-      state.newWallet = wallet;
-      state.step = "confirm_change";
-      walletFlow.set(chatId, state);
-
-      return sendSafeMessage(
-        chatId,
-        `⚠️ Are you sure you want to change your wallet to:\n<code>${wallet}</code>\n\nThis may affect event eligibility (full-period holder rules).\n\nType <code>YES</code> to confirm or <code>NO</code> to cancel.`,
-        { parse_mode: "HTML" }
-      );
-    }
-
-    // Step: change confirm
-    if (state.step === "confirm_change" && state.intent === "change") {
-      if (/^YES$/i.test(text)) {
-        const holders = await getHoldersArray();
-        const uname = normalizeUsername(m.from.username || "");
-        let rec = holders.find(
-          (h) => h.username.toLowerCase() === uname.toLowerCase()
-        );
-
-        if (!rec) {
-          rec = { username: uname };
-          holders.push(rec);
-        }
-
-        rec.prevWallet = rec.wallet || null;
-        rec.wallet = state.newWallet;
-        rec.verifiedAt = new Date().toISOString();
-        rec.changedAt = new Date().toISOString();
-
-        await saveHoldersArray(holders);
-
-        walletFlow.delete(chatId);
-        return sendSafeMessage(
-          chatId,
-          `✅ Wallet updated.\nNew wallet:\n<code>${state.newWallet}</code>`,
-          { parse_mode: "HTML" }
-        );
-      } else if (/^NO$/i.test(text)) {
-        walletFlow.delete(chatId);
-        return sendSafeMessage(chatId, "❌ Cancelled.");
-      } else {
-        return sendSafeMessage(
-          chatId,
-          `Please type <code>YES</code> to confirm or <code>NO</code> to cancel.`,
-          { parse_mode: "HTML" }
-        );
-      }
-    }
-  } catch (err) {
-    console.error("❌ wallet flow error:", err?.message || err);
-  }
-});
-
-/* =========================================================
-   🪙 UNSTABLECOIN – HOLDER MANAGEMENT + TELEGRAM MENU
-   ========================================================= */
-
-// === Persistent main menu keyboard ===
-const mainMenu = {
-  reply_markup: {
-    keyboard: [
-      [{ text: "🪙 Add Wallet" }, { text: "⚡ Verify Holder" }],
-      [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
-      [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }]
-    ],
-    resize_keyboard: true,
-    one_time_keyboard: false
-  }
-};
-
-// === /start or /menu command ===
-bot.onText(/\/start|\/menu/i, async (msg) => {
-  const chatId = msg.chat.id;
-  await bot.sendMessage(
-    chatId,
-    `💛 Welcome to *UnStableCoin* ⚡
-Use the buttons below to manage your wallet or join the current event.`,
-    { ...mainMenu, parse_mode: "Markdown" }
-  );
-});
-
-// === Handle button text presses ===
-bot.on("message", (msg) => {
-  const txt = msg.text?.toLowerCase();
-  if (!txt) return;
-
-  if (txt.includes("add wallet")) return bot.emit("text", { ...msg, text: "/addwallet" });
-  if (txt.includes("verify"))    return bot.emit("text", { ...msg, text: "/verifyholder" });
-  if (txt.includes("change"))    return bot.emit("text", { ...msg, text: "/changewallet" });
-  if (txt.includes("remove"))    return bot.emit("text", { ...msg, text: "/removewallet" });
-  if (txt.includes("leader"))    return bot.emit("text", { ...msg, text: "/leaderboard" });
-  if (txt.includes("event"))     return bot.emit("text", { ...msg, text: "/event" });
-});
-
-// === Helper to show menu again automatically ===
-async function returnToMenu(chatId, delayMs = 2000) {
-  setTimeout(() => {
-    bot.sendMessage(
-      chatId,
-      "💛 Back to main menu — choose your next move:",
-      { ...mainMenu, parse_mode: "Markdown" }
-    );
-  }, delayMs);
-}
-
-// === Handle button presses by text ===
-bot.on("message", (msg) => {
-  const txt = msg.text?.toLowerCase();
-  if (!txt) return;
-
-  if (txt.includes("add wallet")) return bot.emit("text", { ...msg, text: "/addwallet" });
-  if (txt.includes("verify"))    return bot.emit("text", { ...msg, text: "/verifyholder" });
-  if (txt.includes("change"))    return bot.emit("text", { ...msg, text: "/changewallet" });
-  if (txt.includes("remove"))    return bot.emit("text", { ...msg, text: "/removewallet" });
-  if (txt.includes("leader"))    return bot.emit("text", { ...msg, text: "/leaderboard" });
-  if (txt.includes("event"))     return bot.emit("text", { ...msg, text: "/event" });
-});
-
-/* =========================================================
-   🔹 /ADDWALLET – Register new holder
-   ========================================================= */
-bot.onText(/\/addwallet/i, async (msg) => {
-  const chatId = msg.chat.id;
-  const realUser = msg.from?.username;
-  if (!realUser) {
-    return bot.sendMessage(chatId, "❌ You must have a Telegram username set in your profile.");
-  }
-
-  try {
-    const res = await axios.get(HOLDER_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    const holders = res.data.record || [];
-
-    const exists = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
-    if (exists) {
-      await bot.sendMessage(chatId, `⚠️ @${realUser}, you’re already registered. Use /changewallet instead.`);
-      return returnToMenu(chatId);
-    }
-
-    await bot.sendMessage(chatId, "🪙 Please paste your Solana wallet address:");
-
-    bot.once("message", async (msg2) => {
-      const wallet = msg2.text.trim();
-      if (!wallet || wallet.length < 32) {
-        await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /addwallet.");
-        return returnToMenu(chatId);
-      }
-
-      holders.push({ username: "@" + realUser, wallet, verifiedAt: null });
-      await axios.put(HOLDER_BIN_URL, holders, {
-        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY }
-      });
-
-      await bot.sendMessage(chatId, `✅ Wallet added for @${realUser}!\nUse /verifyholder to confirm your holdings.`);
-      returnToMenu(chatId);
-    });
-  } catch (err) {
-    console.error("⚠️ /addwallet failed:", err);
-    await bot.sendMessage(chatId, "⚠️ Something went wrong. Please try again later.");
-    returnToMenu(chatId);
-  }
-});
-
-/* =========================================================
-   🔹 /CHANGEWALLET – Update wallet with inline confirm
-   ========================================================= */
-bot.onText(/\/changewallet/i, async (msg) => {
-  const chatId = msg.chat.id;
-  const realUser = msg.from?.username;
-
-  if (!realUser) {
-    return bot.sendMessage(chatId, "❌ You need a Telegram username to use this command.");
-  }
-
-  const res = await axios.get(HOLDER_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-  const holders = res.data.record || [];
-  const user = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
-
-  if (!user) {
-    await bot.sendMessage(chatId, "⚠️ You’re not registered yet. Use /addwallet first.");
-    return returnToMenu(chatId);
-  }
-
-  await bot.sendMessage(chatId, "Do you really want to change your wallet?", {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "✅ Yes, change it", callback_data: "confirm_change_yes" },
-          { text: "❌ Cancel", callback_data: "confirm_change_no" }
-        ]
-      ]
-    }
-  });
-});
-
-// === Handle all callback confirmations (change / remove) ===
-bot.on("callback_query", async (cb) => {
-  const chatId = cb.message.chat.id;
-  const realUser = cb.from.username;
-
-  if (cb.data === "confirm_change_yes") {
-    await bot.answerCallbackQuery(cb.id, { text: "Proceeding..." });
-    await bot.sendMessage(chatId, "Please paste your new Solana wallet address:");
-
-    bot.once("message", async (msg2) => {
-      const wallet = msg2.text.trim();
-      if (!wallet || wallet.length < 32) {
-        await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /changewallet.");
-        return returnToMenu(chatId);
-      }
-
-      const res = await axios.get(HOLDER_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-      const holders = res.data.record || [];
-      const user = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
-      if (!user) {
-        await bot.sendMessage(chatId, "⚠️ You’re not registered. Use /addwallet first.");
-        return returnToMenu(chatId);
-      }
-
-      user.wallet = wallet;
-      user.verifiedAt = null;
-
-      await axios.put(HOLDER_BIN_URL, holders, {
-        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY }
-      });
-
-      await bot.sendMessage(chatId, `✅ Wallet updated for @${realUser}! Use /verifyholder to confirm.`);
-      returnToMenu(chatId);
-    });
-  } else if (cb.data === "confirm_change_no") {
-    await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
-    await bot.sendMessage(chatId, "❌ Wallet change cancelled.");
-    return returnToMenu(chatId);
-  }
-
-  if (cb.data === "confirm_remove_yes") {
-    await bot.answerCallbackQuery(cb.id, { text: "Removing..." });
-
-    const res = await axios.get(HOLDER_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    let holders = res.data.record || [];
-    holders = holders.filter(h => normalizeName(h.username) !== normalizeName(realUser));
-
-    await axios.put(HOLDER_BIN_URL, holders, {
-      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY }
-    });
-
-    await bot.sendMessage(chatId, `❌ Wallet removed for @${realUser}.`);
-    returnToMenu(chatId);
-  } else if (cb.data === "confirm_remove_no") {
-    await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
-    await bot.sendMessage(chatId, "Action cancelled.");
-    returnToMenu(chatId);
-  }
-});
-
-/* =========================================================
-   🔹 /REMOVEWALLET – Inline confirm for safety
-   ========================================================= */
-bot.onText(/\/removewallet/i, async (msg) => {
-  const chatId = msg.chat.id;
-  const realUser = msg.from?.username;
-  if (!realUser) return bot.sendMessage(chatId, "❌ You need a Telegram username to continue.");
-
-  await bot.sendMessage(chatId, "Are you sure you want to remove your wallet?", {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "✅ Yes, remove", callback_data: "confirm_remove_yes" },
-          { text: "❌ Cancel", callback_data: "confirm_remove_no" }
-        ]
-      ]
-    }
-  });
-});
-
-/* =========================================================
-   🔹 /VERIFYHOLDER – Manual verification trigger
-   ========================================================= */
-bot.onText(/\/verifyholder/i, async (msg) => {
-  const chatId = msg.chat.id;
-  const realUser = msg.from?.username;
-  if (!realUser) {
-    await bot.sendMessage(chatId, "❌ Please set a Telegram username to verify.");
-    return returnToMenu(chatId);
-  }
-
-  try {
-    const res = await axios.post(`${API_URL}/verifyHolder`, { username: "@" + realUser });
-    if (res.data.ok) {
-      await bot.sendMessage(chatId, `✅ Verified successfully, @${realUser}! You can now join contests.`);
-    } else {
-      await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`);
-    }
-  } catch (err) {
-    console.error("verifyHolder error:", err);
-    await bot.sendMessage(chatId, "⚠️ Network or backend error during verification.");
-  }
-  returnToMenu(chatId);
-});
-
-/* =========================================================
-   🧠 Helper to normalize usernames
-   ========================================================= */
-function normalizeName(n) {
-  if (!n) return "";
-  return String(n).trim().replace(/^@+/, "").toLowerCase();
-}
-
-// === Handle button presses by text ===
-bot.on("message", (msg) => {
-  const txt = msg.text?.toLowerCase();
-  if (!txt) return;
-
-  if (txt.includes("add wallet")) return bot.emit("text", { ...msg, text: "/addwallet" });
-  if (txt.includes("verify"))    return bot.emit("text", { ...msg, text: "/verifyholder" });
-  if (txt.includes("change"))    return bot.emit("text", { ...msg, text: "/changewallet" });
-  if (txt.includes("remove"))    return bot.emit("text", { ...msg, text: "/removewallet" });
-  if (txt.includes("leader"))    return bot.emit("text", { ...msg, text: "/leaderboard" });
-  if (txt.includes("event"))     return bot.emit("text", { ...msg, text: "/event" });
-});
-
-/* ============================
-   FRONTEND ENDPOINTS
-   ============================ */
-
-// PUBLIC: current event payload used by play.html
-app.get("/event", async (req, res) => {
+// Event & Leaderboards for frontend
+app.get("/event", async (_req, res) => {
   try {
     const meta = await getEventMeta();
-    res.json({
-      title: meta.title,
-      info: meta.info,
-      startDate: meta.startDate,
-      endDate: meta.endDate,
-      timezone: meta.timezone,
-    });
-  } catch (err) {
-    res.status(500).json({ ok: false, message: "Failed to load event" });
-  }
+    res.json({ title: meta.title, info: meta.info, startDate: meta.startDate, endDate: meta.endDate, timezone: meta.timezone });
+  } catch (_) { res.status(500).json({ ok:false, message:"Failed to load event" }); }
+});
+app.get("/eventtop10", async (_req, res) => {
+  try { res.json(await getVerifiedEventTop(10)); }
+  catch (_) { res.status(500).json({ ok:false, message:"Failed to load event top10" }); }
+});
+app.get("/eventtop50", async (_req, res) => {
+  try { res.json(await getVerifiedEventTop(50)); }
+  catch (_) { res.status(500).json({ ok:false, message:"Failed to load event top50" }); }
 });
 
-// PUBLIC: eventtop10/50 for frontend — verified holders only
-app.get("/eventtop10", async (req, res) => {
-  try {
-    const arr = await getVerifiedEventTop(10);
-    res.json(arr);
-  } catch (err) {
-    res.status(500).json({ ok: false, message: "Failed to load event top10" });
-  }
-});
-
-app.get("/eventtop50", async (req, res) => {
-  try {
-    const arr = await getVerifiedEventTop(50);
-    res.json(arr);
-  } catch (err) {
-    res.status(500).json({ ok: false, message: "Failed to load event top50" });
-  }
-});
-
-// /submit (same protection as before)
+// Submit scores (main + event)
 app.post("/submit", async (req, res) => {
   try {
     const { username, score, target } = req.body;
     const adminKey = req.headers["x-admin-key"];
     const isAdmin = adminKey && adminKey === RESET_KEY;
+    if (!username || typeof score !== "number") return res.status(400).json({ error:"Invalid data" });
 
-    if (!username || typeof score !== "number") {
-      return res.status(400).json({ error: "Invalid data" });
-    }
-
-    // load event meta
+    // Check event window
     let eventMeta = {};
     try {
-      const resp = await axios.get(`${META_BIN_URL}/latest`, {
-        headers: { "X-Master-Key": JSONBIN_KEY },
-      });
-      eventMeta = resp.data.record || {};
-    } catch (err) {
-      console.warn("⚠️ Failed to load event meta:", err.message);
-    }
-
+      const r = await axios.get(`${META_BIN_URL}/latest`, { headers:{ "X-Master-Key": JSONBIN_KEY } });
+      eventMeta = r.data.record || {};
+    } catch (err) { console.warn("⚠️ load event meta:", err?.message); }
     const now = DateTime.now().toUTC();
     const end = eventMeta.endDate ? DateTime.fromISO(eventMeta.endDate) : null;
     const eventActive = end ? now < end : false;
 
     if (!eventActive && !isAdmin && target !== "main") {
-      return res.json({
-        success: false,
-        message:
-          "⚠️ Event has ended. Stay tuned for the next UnStable Challenge.",
-        eventActive: false,
-        endDate: eventMeta.endDate || null,
-      });
+      return res.json({ success:false, message:"⚠️ Event has ended.", eventActive:false, endDate:eventMeta.endDate || null });
     }
 
     // MAIN
@@ -1678,107 +816,69 @@ app.post("/submit", async (req, res) => {
       }
     }
 
-    res.json({
-      success: true,
-      message: "✅ Score submitted.",
-      eventActive,
-      endDate: eventMeta.endDate || null,
-    });
+    res.json({ success:true, message:"✅ Score submitted.", eventActive, endDate:eventMeta.endDate || null });
   } catch (err) {
-    console.error("❌ Submit failed:", err.message || err);
-    res.status(500).json({ error: "Failed to submit score" });
+    console.error("submit:", err?.message || err);
+    res.status(500).json({ error:"Failed to submit score" });
   }
 });
 
-// ============================
-// A.T.H. STORAGE HELPERS
-// ============================
+// ATH storage
 async function getAthMap() {
   const raw = (await readBin(ATH_BIN_URL)) || {};
   return typeof raw === "object" && raw ? raw : {};
 }
-async function saveAthMap(map) {
-  await writeBin(ATH_BIN_URL, map);
-  return true;
-}
+async function saveAthMap(map) { await writeBin(ATH_BIN_URL, map); return true; }
 
-// ============================
-// /share — includes ATH mode with new caption style
-// ============================
+// Share endpoint (ATH mode supported)
 app.post("/share", async (req, res) => {
   try {
     const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
-    if (!username || typeof score === "undefined") {
-      return res
-        .status(400)
-        .json({ ok: false, message: "Missing username or score" });
-    }
+    if (!username || typeof score === "undefined") return res.status(400).json({ ok:false, message:"Missing username or score" });
 
-    // Holder-gated posting config
     const cfg = await getConfig();
     const holders = await getHoldersMapFromArray();
-
     if (!cfg.allowPostingWithoutHold) {
       const rec = holders[username];
-      if (!rec) {
-        return res
-          .status(403)
-          .json({ ok: false, message: "User not a verified holder. Posting blocked." });
-      }
+      if (!rec) return res.status(403).json({ ok:false, message:"User not a verified holder. Posting blocked." });
     }
 
-    // A.T.H.
     if (String(mode).toLowerCase() === "ath") {
       const athMap = await getAthMap();
       const rec = athMap[username] || { ath: 0, lastSentScore: null, milestones: [] };
       const oldAth = +rec.ath || 0;
-
-      if (!ATH_TEST_MODE) {
-        if (!(score > oldAth)) {
-          return res
-            .status(400)
-            .json({ ok: false, message: `Score must beat your A.T.H. of ${oldAth}` });
-        }
-      } else {
-        console.log(`🧪 ATH_TEST_MODE active: allowing repeat sends for ${username}`);
+      if (!ATH_TEST_MODE && !(score > oldAth)) {
+        return res.status(400).json({ ok:false, message:`Score must beat your A.T.H. of ${oldAth}` });
       }
-
       const isNewAth = score > oldAth;
       if (isNewAth) rec.ath = score;
 
       const banner = await composeAthBanner(curveImage || imageBase64 || null, username, score);
       const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
 
-      // format mcap
-      function formatMCap(v) {
-        if (!v || isNaN(v)) return "0k";
-        if (v >= 1_000_000)
-          return (v / 1_000_000).toFixed(3).replace(/\.?0+$/, "") + "M";
-        if (v >= 1000) return (v / 1000).toFixed(3).replace(/\.?0+$/, "") + "k";
-        return (+v).toFixed(3).replace(/\.?0+$/, "");
-      }
-
-      // current rank (main)
+      // Position in main leaderboard (optional)
       let positionText = "unranked";
       try {
-        const mainData = await getLeaderboard();
-        const sorted = Object.entries(mainData).sort((a, b) => b[1] - a[1]);
+        const main = await getLeaderboard();
+        const sorted = Object.entries(main).sort((a,b)=>b[1]-a[1]);
         const index = sorted.findIndex(([u]) => u === username);
         if (index >= 0) positionText = `#${index + 1}`;
-      } catch (err) {
-        console.warn("⚠️ Failed to compute leaderboard position:", err?.message);
-      }
+      } catch (_) {}
 
-      const formattedScore = formatMCap(score);
+      const formatMCap = (v) => {
+        if (!v || isNaN(v)) return "0k";
+        if (v >= 1_000_000) return (v/1_000_000).toFixed(3).replace(/\.?0+$/,"")+"M";
+        if (v >= 1000) return (v/1000).toFixed(3).replace(/\.?0+$/,"")+"k";
+        return (+v).toFixed(3).replace(/\.?0+$/,"");
+      };
       const caption =
         `${escapeXml(username)} sent a strong signal. ⚡\n` +
-        `New A.T.H. logged at ${formattedScore}.\n` +
+        `New A.T.H. logged at ${formatMCap(score)}.\n` +
         `Current rank: ${positionText}.\n` +
         `We aim for Win-Win`;
 
       await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
 
-      // save record
       const nowIso = new Date().toISOString();
       rec.lastSentScore = score;
       rec.lastSentAt = nowIso;
@@ -1787,84 +887,62 @@ app.post("/share", async (req, res) => {
       athMap[username] = rec;
       await saveAthMap(athMap);
 
-      return res.json({ ok: true, message: "Posted A.T.H. banner" });
+      return res.json({ ok:true, message:"Posted A.T.H. banner" });
     }
 
-    // Default (non-ATH)
-    const imgBuf = await composeShareImage(imageBase64, username, score);
+    // non-ATH share
+    const buf = await composeShareImage(imageBase64, username, score);
     const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
-    const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(
-      String(score)
-    )}\nShared from UnStableCoin FUD Dodge`;
-    await bot.sendPhoto(targetChatId, imgBuf, { caption, parse_mode: "HTML" });
+    const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(String(score))}\nShared from UnStableCoin FUD Dodge`;
+    await bot.sendPhoto(targetChatId, buf, { caption, parse_mode: "HTML" });
+    res.json({ ok:true, message:"Posted to Telegram" });
 
-    res.json({ ok: true, message: "Posted to Telegram" });
   } catch (err) {
-    console.error("❌ /share error:", err?.message || err);
-    res.status(500).json({ ok: false, message: err?.message || "Share failed" });
+    console.error("share:", err?.message || err);
+    res.status(500).json({ ok:false, message: err?.message || "Share failed" });
   }
 });
 
-// Preview endpoint for A.T.H. banner (frontend can show before posting)
+// ATH preview (returns PNG)
 app.post("/athbannerpreview", async (req, res) => {
   try {
     const { username, score, curveImage } = req.body;
-    if (!username || typeof score === "undefined") {
-      return res
-        .status(400)
-        .json({ ok: false, message: "Missing username or score" });
-    }
+    if (!username || typeof score === "undefined") return res.status(400).json({ ok:false, message:"Missing username or score" });
     const banner = await composeAthBanner(curveImage || null, username, score);
     res.setHeader("Content-Type", "image/png");
     res.send(banner);
   } catch (err) {
-    console.error("❌ /athbannerpreview error:", err?.message || err);
-    res.status(500).json({ ok: false, message: "Failed to compose preview" });
+    console.error("athbannerpreview:", err?.message || err);
+    res.status(500).json({ ok:false, message:"Failed to compose preview" });
   }
 });
 
-// A.T.H. leaders — simple aggregation by milestones count
-app.get("/athleaders", async (req, res) => {
+// ATH leaders (by milestones)
+app.get("/athleaders", async (_req, res) => {
   try {
     const map = await getAthMap();
-    const rows = Object.keys(map).map((u) => ({
+    const rows = Object.keys(map).map(u => ({
       username: u,
       ath: map[u]?.ath || 0,
-      milestones: Array.isArray(map[u]?.milestones)
-        ? map[u].milestones.length
-        : 0,
+      milestones: Array.isArray(map[u]?.milestones) ? map[u].milestones.length : 0,
       lastSentAt: map[u]?.lastSentAt || null,
     }));
-    rows.sort((a, b) => b.milestones - a.milestones || b.ath - a.ath);
+    rows.sort((a,b)=> b.milestones - a.milestones || b.ath - a.ath);
     res.json(rows);
-  } catch (err) {
-    res.status(500).json({ ok: false, message: "Failed to load A.T.H. leaders" });
-  }
+  } catch (err) { res.status(500).json({ ok:false, message:"Failed to load A.T.H. leaders" }); }
+});
+app.get("/athrecords", async (_req, res) => {
+  try { res.json(await getAthMap()); }
+  catch (err) { res.status(500).json({ ok:false, message:"Failed to load A.T.H. records" }); }
 });
 
-// A.T.H. raw records dump
-app.get("/athrecords", async (req, res) => {
+//
+// 16) SERVER START
+//
+app.listen(PORT, async () => {
+  console.log(`🚀 UnStableCoin Bot v3.2 running on ${PORT}`);
   try {
-    const map = await getAthMap();
-    res.json(map);
-  } catch (err) {
-    res.status(500).json({ ok: false, message: "Failed to load A.T.H. records" });
-  }
-});
-
-/* ============================
-   START SERVER
-   ============================ */
-app.listen(PORT, () => {
-  console.log(`🚀 UnStableCoinBot running on port ${PORT}`);
-  (async () => {
-    try {
-      const cfg = await getConfig();
-      console.log("✅ Config loaded:", {
-        tokenMint: cfg.tokenMint,
-        minHoldAmount: cfg.minHoldAmount,
-        network: cfg.network,
-      });
-    } catch (_) {}
-  })();
+    const cfg = await getConfig();
+    console.log("✅ Config:", { tokenMint: cfg.tokenMint, minHoldAmount: cfg.minHoldAmount, network: cfg.network });
+  } catch (_) {}
 });
