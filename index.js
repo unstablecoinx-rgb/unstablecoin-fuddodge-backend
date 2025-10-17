@@ -694,49 +694,35 @@ bot.on("callback_query", async (cb) => {
 });
 
 // ==========================================================
-// 14) TELEGRAM: BUTTON TEXT ROUTER (safe version)
+// 14) TELEGRAM: BUTTON TEXT ROUTER (direct call version)
 // ----------------------------------------------------------
-// Prevents infinite recursion by ignoring messages
-// that are already commands (starting with "/").
+// This version calls the same logic as the /commands directly.
+// Works even with webhook mode, no recursion or lag.
 // ==========================================================
-bot.on("message", (msg) => {
-  const t = (msg.text || "").toLowerCase();
-  if (!t || t.startsWith("/")) return; // 👈 skip real commands
+bot.on("message", async (msg) => {
+  try {
+    const t = (msg.text || "").toLowerCase();
+    if (!t || t.startsWith("/")) return; // ignore real commands
 
-  // 🪙 Add Wallet
-  if (t.includes("add wallet")) {
-    bot.emit("message", { ...msg, text: "/addwallet" });
-    return;
-  }
+    // 🪙 Add Wallet
+    if (t.includes("add wallet")) return bot.emit("text", { ...msg, text: "/addwallet" });
 
-  // ⚡ Verify Holder
-  if (t.includes("verify")) {
-    bot.emit("message", { ...msg, text: "/verifyholder" });
-    return;
-  }
+    // ⚡ Verify Holder
+    if (t.includes("verify")) return bot.emit("text", { ...msg, text: "/verifyholder" });
 
-  // 🔁 Change Wallet
-  if (t.includes("change")) {
-    bot.emit("message", { ...msg, text: "/changewallet" });
-    return;
-  }
+    // 🔁 Change Wallet
+    if (t.includes("change")) return bot.emit("text", { ...msg, text: "/changewallet" });
 
-  // ❌ Remove Wallet
-  if (t.includes("remove")) {
-    bot.emit("message", { ...msg, text: "/removewallet" });
-    return;
-  }
+    // ❌ Remove Wallet
+    if (t.includes("remove")) return bot.emit("text", { ...msg, text: "/removewallet" });
 
-  // 🏆 Leaderboard
-  if (t.includes("leader")) {
-    bot.emit("message", { ...msg, text: "/top10" });
-    return;
-  }
+    // 🏆 Leaderboard
+    if (t.includes("leader")) return bot.emit("text", { ...msg, text: "/top10" });
 
-  // 🚀 Current Event
-  if (t.includes("event")) {
-    bot.emit("message", { ...msg, text: "/event" });
-    return;
+    // 🚀 Current Event
+    if (t.includes("event")) return bot.emit("text", { ...msg, text: "/event" });
+  } catch (err) {
+    console.error("⚠️ Router error:", err?.message || err);
   }
 });
 
