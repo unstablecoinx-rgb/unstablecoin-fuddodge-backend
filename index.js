@@ -297,11 +297,8 @@ async function composeShareImage(graphBase64, username, score) {
   }
 }
 
-// === A.T.H. Banner Composer (square rocket banner + chart side by side) ===
-const fs = require("fs");
-
 async function composeAthBanner(curveBase64, username, score) {
-  const basePath = "./assets/ath_banner_square.png";  // 🚀 your banner file
+  const basePath = "./assets/ath_banner_square.png";  // your rocket square
   const W = 1200, H = 628;
 
   // Decode chart image if present
@@ -316,39 +313,55 @@ async function composeAthBanner(curveBase64, username, score) {
     console.warn("⚠️ Could not parse curveBase64:", err);
   }
 
-  // Left banner + right chart layout
+  // Layout
   const bannerW = Math.floor(W * 0.55);
-  const chartW  = W - bannerW;
+  const chartW = W - bannerW;
 
-const bannerImgBuf = await sharp(basePath)
-  .resize(bannerW, H, {
-    fit: "contain",
-    background: { r: 0, g: 0, b: 0, alpha: 1 }
-  })
-  .toBuffer();
+  // --- ensure both banner and chart are square before merging ---
+  const squareSize = Math.min(bannerW, H);
+
+  // Left: rocket banner (fit inside square)
+  const bannerImgBuf = await sharp(basePath)
+    .resize(squareSize, squareSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 1 } })
+    .toBuffer();
+
+  // Right: chart, also square
   let chartImgBuf = null;
-if (graphBuf) {
-  // Force the chart to render as a square (no crop, just contain)
-  const squareSize = Math.min(chartW, H);
-  const padX = Math.max(0, (chartW - squareSize) / 2);
-  const padY = Math.max(0, (H - squareSize) / 2);
+  if (graphBuf) {
+    chartImgBuf = await sharp(graphBuf)
+      .resize(squareSize, squareSize, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 1 } })
+      .toBuffer();
+  }
 
-  chartImgBuf = await sharp(graphBuf)
-    .resize(squareSize, squareSize, {
-      fit: "contain",
+  // Composite side by side (centered vertically)
+  const totalW = bannerW + chartW;
+  const canvasH = H;
+
+  const composite = [
+    { input: bannerImgBuf, top: Math.floor((canvasH - squareSize) / 2), left: Math.floor((bannerW - squareSize) / 2) },
+  ];
+
+  if (chartImgBuf) {
+    composite.push({
+      input: chartImgBuf,
+      top: Math.floor((canvasH - squareSize) / 2),
+      left: bannerW + Math.floor((chartW - squareSize) / 2)
+    });
+  }
+
+  return await sharp({
+    create: {
+      width: totalW,
+      height: canvasH,
+      channels: 4,
       background: { r: 0, g: 0, b: 0, alpha: 1 }
-    })
-    .extend({
-      top: padY,
-      bottom: padY,
-      left: padX,
-      right: padX,
-      background: { r: 0, g: 0, b: 0, alpha: 1 }
-    })
+    }
+  })
+    .composite(composite)
     .png()
     .toBuffer();
 }
-  // Divider
+// Divider
   const lineBuf = await sharp({
     create: {
       width: 4,
