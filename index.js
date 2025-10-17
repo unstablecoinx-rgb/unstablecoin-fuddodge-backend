@@ -693,18 +693,53 @@ bot.on("callback_query", async (cb) => {
   }
 });
 
-//
+// ==========================================================
 // 14) TELEGRAM: BUTTON TEXT ROUTER (for white buttons)
-//
+// ----------------------------------------------------------
+// This makes the white main-menu buttons work like real commands.
+// When a user taps "Add Wallet" etc., it sends plain text.
+// We intercept that and re-emit the message as if they typed
+// /addwallet or /verifyholder — so the correct handler fires.
+// ==========================================================
 bot.on("message", (msg) => {
   const t = (msg.text || "").toLowerCase();
   if (!t) return;
-  if (t.includes("add wallet"))    return bot.emit("text", { ...msg, text: "/addwallet" });
-  if (t.includes("verify"))        return bot.emit("text", { ...msg, text: "/verifyholder" });
-  if (t.includes("change"))        return bot.emit("text", { ...msg, text: "/changewallet" });
-  if (t.includes("remove"))        return bot.emit("text", { ...msg, text: "/removewallet" });
-  if (t.includes("leader"))        return bot.emit("text", { ...msg, text: "/top10" });
-  if (t.includes("event"))         return bot.emit("text", { ...msg, text: "/event" });
+
+  // 🪙 Add Wallet
+  if (t.includes("add wallet")) {
+    bot.emit("message", { ...msg, text: "/addwallet" });
+    return;
+  }
+
+  // ⚡ Verify Holder
+  if (t.includes("verify")) {
+    bot.emit("message", { ...msg, text: "/verifyholder" });
+    return;
+  }
+
+  // 🔁 Change Wallet
+  if (t.includes("change")) {
+    bot.emit("message", { ...msg, text: "/changewallet" });
+    return;
+  }
+
+  // ❌ Remove Wallet
+  if (t.includes("remove")) {
+    bot.emit("message", { ...msg, text: "/removewallet" });
+    return;
+  }
+
+  // 🏆 Leaderboard
+  if (t.includes("leader")) {
+    bot.emit("message", { ...msg, text: "/top10" });
+    return;
+  }
+
+  // 🚀 Current Event
+  if (t.includes("event")) {
+    bot.emit("message", { ...msg, text: "/event" });
+    return;
+  }
 });
 
 //
