@@ -694,18 +694,16 @@ bot.on("callback_query", async (cb) => {
 });
 
 // ==========================================================
-// 14) TELEGRAM: BUTTON TEXT ROUTER (loop-safe final version)
-// ----------------------------------------------------------
-// Converts white button text into commands without recursion.
+// 14) TELEGRAM: BUTTON TEXT ROUTER (final loop-proof version)
 // ==========================================================
 bot.on("message", (msg) => {
   try {
-    // skip: no text, already command, or our own synthetic event
+    // ignore: missing text, command message, or our own internal ones
     if (!msg.text || msg.text.startsWith("/") || msg._internal) return;
 
     const t = msg.text.toLowerCase();
-
     let newText = null;
+
     if (t.includes("add wallet")) newText = "/addwallet";
     else if (t.includes("verify")) newText = "/verifyholder";
     else if (t.includes("change")) newText = "/changewallet";
@@ -714,11 +712,26 @@ bot.on("message", (msg) => {
     else if (t.includes("event")) newText = "/event";
 
     if (newText) {
-      // tag it so router ignores it on reentry
-      bot.emit("text", { ...msg, text: newText, _internal: true });
+      bot.emit("internal_command", { ...msg, text: newText, _internal: true });
     }
   } catch (err) {
     console.error("⚠️ Router error:", err?.message || err);
+  }
+});
+
+// ==========================================================
+// 15) INTERNAL COMMAND DISPATCHER (safe + non-recursive)
+// ==========================================================
+bot.on("internal_command", (msg) => {
+  try {
+    if (!msg._internal) return;
+    // use unique update type so it doesn’t loop through 'message'
+    bot.processUpdate({
+      update_id: Date.now(),
+      message: Object.assign({}, msg, { _internal: true }),
+    });
+  } catch (err) {
+    console.error("⚠️ Dispatcher error:", err?.message || err);
   }
 });
 
