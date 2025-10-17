@@ -1344,6 +1344,19 @@ Use the buttons below to manage your wallet or join the current event.`,
   );
 });
 
+// === Handle button text presses ===
+bot.on("message", (msg) => {
+  const txt = msg.text?.toLowerCase();
+  if (!txt) return;
+
+  if (txt.includes("add wallet")) return bot.emit("text", { ...msg, text: "/addwallet" });
+  if (txt.includes("verify"))    return bot.emit("text", { ...msg, text: "/verifyholder" });
+  if (txt.includes("change"))    return bot.emit("text", { ...msg, text: "/changewallet" });
+  if (txt.includes("remove"))    return bot.emit("text", { ...msg, text: "/removewallet" });
+  if (txt.includes("leader"))    return bot.emit("text", { ...msg, text: "/leaderboard" });
+  if (txt.includes("event"))     return bot.emit("text", { ...msg, text: "/event" });
+});
+
 // === Helper to show menu again automatically ===
 async function returnToMenu(chatId, delayMs = 2000) {
   setTimeout(() => {
