@@ -694,52 +694,61 @@ bot.on("callback_query", async (cb) => {
 });
 
 // ==========================================================
-// 14) TELEGRAM: BUTTON TEXT ROUTER (FINAL LOOP-PROOF VERSION)
+// 14) TELEGRAM: BUTTON TEXT ROUTER (FINAL NO-LOOP VERSION)
 // ==========================================================
-bot.on("message", (msg) => {
+bot.on("message", async (msg) => {
   try {
-    // Ignore commands (/...), missing text, or our own internal calls
-    if (!msg.text || msg.text.startsWith("/") || msg._internal) return;
+    if (!msg.text || msg.text.startsWith("/")) return; // skip commands
 
     const t = msg.text.toLowerCase();
-    let newText = null;
+    let command = null;
 
-    if (t.includes("add wallet")) newText = "/addwallet";
-    else if (t.includes("verify")) newText = "/verifyholder";
-    else if (t.includes("change")) newText = "/changewallet";
-    else if (t.includes("remove")) newText = "/removewallet";
-    else if (t.includes("leader")) newText = "/top10";
-    else if (t.includes("event")) newText = "/event";
-    else return; // nothing to trigger
+    if (t.includes("add wallet")) command = "/addwallet";
+    else if (t.includes("verify")) command = "/verifyholder";
+    else if (t.includes("change")) command = "/changewallet";
+    else if (t.includes("remove")) command = "/removewallet";
+    else if (t.includes("leader")) command = "/top10";
+    else if (t.includes("event")) command = "/event";
+    else return;
 
-    // 🔒 Extra guard: prevent infinite recursion
-    if (msg._internal) return;
-
-    // Emit internal command so it never re-enters the main 'message' flow
-    bot.emit("internal_command", { ...msg, text: newText, _internal: true });
+    // 🔹 Instead of re-emitting to Telegram’s message system,
+    // just trigger the corresponding command handler directly.
+    bot.emit("manual_command", { ...msg, text: command });
   } catch (err) {
     console.error("⚠️ Router error:", err?.message || err);
   }
 });
 
 // ==========================================================
-// 15) INTERNAL COMMAND DISPATCHER (SAFE + NON-RECURSIVE)
+// 15) INTERNAL MANUAL COMMAND HANDLER (no recursion ever)
 // ==========================================================
-bot.on("internal_command", (msg) => {
+bot.on("manual_command", async (msg) => {
   try {
-    // Only process internally tagged messages
-    if (!msg._internal) return;
+    const text = msg.text?.trim();
+    if (!text) return;
 
-    bot.processUpdate({
-      update_id: Date.now(),
-      // message type marked as internal so router ignores it
-      message: { ...msg, _internal: true },
-    });
+    // Map to each existing command
+    if (text === "/addwallet") return bot.emitTextCommand("/addwallet", msg);
+    if (text === "/verifyholder") return bot.emitTextCommand("/verifyholder", msg);
+    if (text === "/changewallet") return bot.emitTextCommand("/changewallet", msg);
+    if (text === "/removewallet") return bot.emitTextCommand("/removewallet", msg);
+    if (text === "/top10") return bot.emitTextCommand("/top10", msg);
+    if (text === "/event") return bot.emitTextCommand("/event", msg);
   } catch (err) {
-    console.error("⚠️ Dispatcher error:", err?.message || err);
+    console.error("⚠️ Manual command handler error:", err?.message || err);
   }
 });
 
+// ==========================================================
+// 16) Helper to call existing onText() handlers safely
+// ==========================================================
+bot.emitTextCommand = (pattern, msg) => {
+  // Re-use existing registered /command handlers by simulating their regex match
+  const handlers = bot._textRegexpCallbacks || [];
+  for (const { regexp, callback } of handlers) {
+    if (regexp.test(pattern)) return callback(msg, pattern.match(regexp));
+  }
+};
 // ==========================================================
 // 15) INTERNAL TEXT → REAL COMMAND DISPATCHER (safe)
 // ----------------------------------------------------------
