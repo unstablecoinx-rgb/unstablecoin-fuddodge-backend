@@ -955,6 +955,11 @@ app.get("/athrecords", async (_req, res) => {
   catch (err) { res.status(500).json({ ok:false, message:"Failed to load A.T.H. records" }); }
 });
 
+// Allow internal bot.emit("text") events to be treated as real messages
+bot.on("text", (msg) => {
+  bot.processUpdate({ message: msg });
+});
+
 //
 // 16) SERVER START
 //
