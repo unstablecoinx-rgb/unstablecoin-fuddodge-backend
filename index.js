@@ -1046,6 +1046,9 @@ async function saveAthMap(map) {
 // ============================
 // /share — includes ATH mode
 // ============================
+// ============================
+// /share — includes ATH mode with new caption style
+// ============================
 app.post("/share", async (req, res) => {
   try {
     const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
@@ -1064,44 +1067,61 @@ app.post("/share", async (req, res) => {
       }
     }
 
-    // A.T.H. mode
+    // A.T.H. MODE
     if (String(mode).toLowerCase() === "ath") {
       const athMap = await getAthMap();
       const rec = athMap[username] || { ath: 0, lastSentScore: null, milestones: [] };
       const oldAth = +rec.ath || 0;
 
-if (!ATH_TEST_MODE) {
-  // Production mode: only allow new ATH
-  if (!(score > oldAth)) {
-    return res.status(400).json({ ok: false, message: `Score must beat your A.T.H. of ${oldAth}` });
-  }
-} else {
-  // Test mode: always allow sending
-  console.log(`🧪 ATH_TEST_MODE active: allowing repeat sends for ${username}`);
-}
+      if (!ATH_TEST_MODE) {
+        // Production: only allow if new ATH
+        if (!(score > oldAth)) {
+          return res.status(400).json({ ok: false, message: `Score must beat your A.T.H. of ${oldAth}` });
+        }
+      } else {
+        console.log(`🧪 ATH_TEST_MODE active: allowing repeat sends for ${username}`);
+      }
 
-      // If it is a new ATH, update state
       const isNewAth = score > oldAth;
       if (isNewAth) rec.ath = score;
 
-      // Compose banner
+      // === Compose image (rocket + chart) ===
       const banner = await composeAthBanner(curveImage || imageBase64 || null, username, score);
 
-      // Target chat
+      // === Determine target chat ===
       const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
 
-   // === Format MCap nicely (k / M) ===
-function formatMCap(v) {
-  if (!v || isNaN(v)) return "0k";
-  if (v >= 1_000_000) return (v / 1_000_000).toFixed(3).replace(/\.?0+$/, "") + "M";
-  if (v >= 1000) return (v / 1000).toFixed(3).replace(/\.?0+$/, "") + "k";
-  return v.toFixed(3).replace(/\.?0+$/, "");
-}
+      // === Format MCap nicely ===
+      function formatMCap(v) {
+        if (!v || isNaN(v)) return "0k";
+        if (v >= 1_000_000) return (v / 1_000_000).toFixed(3).replace(/\.?0+$/, "") + "M";
+        if (v >= 1000) return (v / 1000).toFixed(3).replace(/\.?0+$/, "") + "k";
+        return v.toFixed(3).replace(/\.?0+$/, "");
+      }
 
-// Send photo to Telegram
-const caption = `<b>${escapeXml(username)}</b>\nA.T.H. MCap: ${formatMCap(score)}\nShared from UnStableCoin FUD Dodge`;
-await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
-      // Save record
+      // === Get current leaderboard position ===
+      let positionText = "unranked";
+      try {
+        const mainData = await getLeaderboard();
+        const sorted = Object.entries(mainData).sort((a, b) => b[1] - a[1]);
+        const index = sorted.findIndex(([u]) => u === username);
+        if (index >= 0) positionText = `#${index + 1}`;
+      } catch (err) {
+        console.warn("⚠️ Failed to compute leaderboard position:", err?.message);
+      }
+
+      // === Build caption ===
+      const formattedScore = formatMCap(score);
+      const caption =
+        `${escapeXml(username)} sent a strong signal. ⚡\n` +
+        `New A.T.H. logged at ${formattedScore}.\n` +
+        `Current rank: ${positionText}.\n` +
+        `We aim for Win-Win`;
+
+      // === Send to Telegram ===
+      await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
+
+      // === Save record to ATH bin ===
       const nowIso = new Date().toISOString();
       rec.lastSentScore = score;
       rec.lastSentAt = nowIso;
@@ -1113,7 +1133,7 @@ await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
       return res.json({ ok: true, message: "Posted A.T.H. banner" });
     }
 
-    // Default share branch (non-ATH)
+    // === Default (non-ATH) share branch ===
     const imgBuf = await composeShareImage(imageBase64, username, score);
     const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
     const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(String(score))}\nShared from UnStableCoin FUD Dodge`;
