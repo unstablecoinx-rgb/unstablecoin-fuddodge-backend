@@ -735,108 +735,105 @@ bot.onText(/\/eventtop50/, async (msg) => {
   }
 });
 
-// Helpers for verified event listings
-async function getVerifiedEventTop(n) {
-  const { scores } = await getEventData();
-  const holdersMap = await getHoldersMapFromArray();
-  return Object.entries(scores)
-    .filter(([u]) => !u.startsWith("_") && holdersMap[u] && holdersMap[u].verifiedAt)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, n)
-    .map(([username, score]) => ({ username, score }));
+/* ==========================================
+   🔄 CHANGE / REMOVE WALLET HANDLERS
+   ========================================== */
+
+// --- Helpers ---
+function normalizeName(u) {
+  if (!u) return "";
+  return u.trim().replace(/^@+/, "").toLowerCase();
 }
 
-/* ============================
-   Admin: setholdingreq, winners, validatewinners, resetevent, setevent
-   ============================ */
+function findUserRecord(username, holders) {
+  const norm = normalizeName(username);
+  let rec = holders.find(h => normalizeName(h.username) === norm);
+  if (!rec) {
+    // fallback: partial or close match
+    rec = holders.find(h => normalizeName(h.username).includes(norm));
+  }
+  return rec;
+}
 
-// /setholdingreq <amount>
-bot.onText(/\/setholdingreq ?(.+)?/, async (msg, match) => {
+// --- Change Wallet Command ---
+bot.onText(/\/changewallet/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const realUser = msg.from.username;
+
+  if (!realUser) {
+    return bot.sendMessage(chatId, "⚠️ No Telegram username found. Please set one in your Telegram settings first.");
+  }
+
   try {
-    const from = (msg.from.username || "").toLowerCase();
-    if (!ADMIN_USERS.includes(from))
-      return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
+    const res = await axios.get(`${MAIN_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    const holders = res.data?.record || [];
 
-    const param = match && match[1] ? match[1].trim() : null;
-    if (!param || isNaN(parseInt(param))) {
-      return sendSafeMessage(
-        msg.chat.id,
-        `Usage: /setholdingreq <whole_tokens>\nExample: /setholdingreq 500000`
-      );
+    let record = findUserRecord(realUser, holders);
+
+    if (!record) {
+      return bot.sendMessage(chatId, "⚠️ User not recognized.\nIf you verified only inside the game, please re-verify once more there.");
     }
-    const amount = parseInt(param, 10);
-    await updateConfig({ minHoldAmount: amount });
-    await sendSafeMessage(
-      msg.chat.id,
-      `✅ Holding requirement updated to ${amount} whole tokens.`
-    );
+
+    // Ask for new wallet
+    bot.sendMessage(chatId, `🪙 Hi @${realUser}, please send your new Solana wallet address to update your record.`, {
+      reply_markup: { force_reply: true }
+    }).then(sent => {
+      bot.onReplyToMessage(sent.chat.id, sent.message_id, async reply => {
+        const newWallet = reply.text.trim();
+
+        if (!newWallet || newWallet.length < 30) {
+          return bot.sendMessage(chatId, "⚠️ That doesn’t look like a valid wallet address.");
+        }
+
+        record.wallet = newWallet;
+
+        await axios.put(MAIN_BIN_URL, { record: holders }, {
+          headers: { "X-Master-Key": JSONBIN_KEY }
+        });
+
+        bot.sendMessage(chatId, `✅ Wallet updated successfully!\n\n@${realUser} → ${newWallet}`);
+      });
+    });
+
   } catch (err) {
-    console.error("❌ /setholdingreq error:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to update config.");
+    console.error("Change wallet error:", err.message);
+    bot.sendMessage(chatId, "❌ Error updating wallet. Please try again later.");
   }
 });
 
-// /winners [n] — must be holders for the full event period
-bot.onText(/\/winners ?(.*)?/, async (msg, match) => {
+// --- Remove Wallet Command ---
+bot.onText(/\/removewallet/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const realUser = msg.from.username;
+
+  if (!realUser) {
+    return bot.sendMessage(chatId, "⚠️ No Telegram username found. Please set one in your Telegram settings first.");
+  }
+
   try {
-    const from = (msg.from.username || "").toLowerCase();
-    if (!ADMIN_USERS.includes(from))
-      return sendSafeMessage(msg.chat.id, "🚫 Not authorized.");
+    const res = await axios.get(`${MAIN_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    const holders = res.data?.record || [];
 
-    const nParam = match && match[1] ? parseInt(match[1].trim()) : 10;
-    const n = isNaN(nParam) ? 10 : nParam;
+    const record = findUserRecord(realUser, holders);
 
-    const meta = await getEventMeta();
-    const { scores } = await getEventData();
-    const holders = await getHoldersArray();
-    const cfg = await getConfig();
-
-    if (!meta.startDate || !meta.endDate) {
-      return sendSafeMessage(
-        msg.chat.id,
-        "⚠️ Event must have start and end dates set."
-      );
+    if (!record) {
+      return bot.sendMessage(chatId, "⚠️ No wallet found linked to your username.");
     }
 
-    const startUtc = DateTime.fromISO(meta.startDate).toUTC();
+    const filtered = holders.filter(h => normalizeName(h.username) !== normalizeName(realUser));
 
-    async function isFullPeriodHolder(u) {
-      const rec = holders.find((h) => h.username === u);
-      if (!rec || !rec.verifiedAt || !rec.wallet) return false;
-      const verifiedAt = DateTime.fromISO(rec.verifiedAt).toUTC();
-      if (!(verifiedAt <= startUtc)) return false;
-      const onChain = await checkSolanaHolding(
-        rec.wallet,
-        cfg.minHoldAmount || 0
-      );
-      return !!onChain.ok;
-    }
+    await axios.put(MAIN_BIN_URL, { record: filtered }, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
 
-    const sorted = Object.entries(scores)
-      .filter(([u]) => !u.startsWith("_"))
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 200);
-
-    const out = [];
-    for (const [u, s] of sorted) {
-      if (await isFullPeriodHolder(u)) out.push({ u, s });
-      if (out.length >= n) break;
-    }
-
-    if (!out.length)
-      return sendSafeMessage(
-        msg.chat.id,
-        "No winners that match full-period holding."
-      );
-
-    const lines = out.map((row, idx) => `${idx + 1}. ${row.u} — ${row.s}`);
-    const header = `<b>🏁 Confirmed Winners</b>\nMust be holders from start to end.\nEvent: ${escapeXml(
-      meta.title
-    )}\n`;
-    sendChunked(msg.chat.id, header + "\n", lines);
+    bot.sendMessage(chatId, `🧹 Wallet removed successfully.\nYou're free to verify again anytime, @${realUser}.`);
   } catch (err) {
-    console.error("❌ /winners error:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to compute winners.");
+    console.error("Remove wallet error:", err.message);
+    bot.sendMessage(chatId, "❌ Error removing wallet. Please try again later.");
   }
 });
 
