@@ -694,16 +694,14 @@ bot.on("callback_query", async (cb) => {
 });
 
 // ==========================================================
-// 14) TELEGRAM: BUTTON TEXT ROUTER (for white buttons)
+// 14) TELEGRAM: BUTTON TEXT ROUTER (safe version)
 // ----------------------------------------------------------
-// This makes the white main-menu buttons work like real commands.
-// When a user taps "Add Wallet" etc., it sends plain text.
-// We intercept that and re-emit the message as if they typed
-// /addwallet or /verifyholder — so the correct handler fires.
+// Prevents infinite recursion by ignoring messages
+// that are already commands (starting with "/").
 // ==========================================================
 bot.on("message", (msg) => {
   const t = (msg.text || "").toLowerCase();
-  if (!t) return;
+  if (!t || t.startsWith("/")) return; // 👈 skip real commands
 
   // 🪙 Add Wallet
   if (t.includes("add wallet")) {
