@@ -694,11 +694,11 @@ bot.on("callback_query", async (cb) => {
 });
 
 // ==========================================================
-// 14) TELEGRAM: BUTTON TEXT ROUTER (final loop-proof version)
+// 14) TELEGRAM: BUTTON TEXT ROUTER (FINAL LOOP-PROOF VERSION)
 // ==========================================================
 bot.on("message", (msg) => {
   try {
-    // ignore: missing text, command message, or our own internal ones
+    // Ignore commands (/...), missing text, or our own internal calls
     if (!msg.text || msg.text.startsWith("/") || msg._internal) return;
 
     const t = msg.text.toLowerCase();
@@ -710,25 +710,30 @@ bot.on("message", (msg) => {
     else if (t.includes("remove")) newText = "/removewallet";
     else if (t.includes("leader")) newText = "/top10";
     else if (t.includes("event")) newText = "/event";
+    else return; // nothing to trigger
 
-    if (newText) {
-      bot.emit("internal_command", { ...msg, text: newText, _internal: true });
-    }
+    // 🔒 Extra guard: prevent infinite recursion
+    if (msg._internal) return;
+
+    // Emit internal command so it never re-enters the main 'message' flow
+    bot.emit("internal_command", { ...msg, text: newText, _internal: true });
   } catch (err) {
     console.error("⚠️ Router error:", err?.message || err);
   }
 });
 
 // ==========================================================
-// 15) INTERNAL COMMAND DISPATCHER (safe + non-recursive)
+// 15) INTERNAL COMMAND DISPATCHER (SAFE + NON-RECURSIVE)
 // ==========================================================
 bot.on("internal_command", (msg) => {
   try {
+    // Only process internally tagged messages
     if (!msg._internal) return;
-    // use unique update type so it doesn’t loop through 'message'
+
     bot.processUpdate({
       update_id: Date.now(),
-      message: Object.assign({}, msg, { _internal: true }),
+      // message type marked as internal so router ignores it
+      message: { ...msg, _internal: true },
     });
   } catch (err) {
     console.error("⚠️ Dispatcher error:", err?.message || err);
