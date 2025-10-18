@@ -172,19 +172,27 @@ async function readBin(url, tries = 3) {
 async function writeBin(url, payload, tries = 3) {
   for (let i = 0; i < tries; i++) {
     try {
-      const resp = await axios.put(url, payload, {
-        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
+      // ✅ JSONBin v3 requires { record: ... } wrapper for both arrays and objects
+      const dataToSend = { record: payload };
+
+      const resp = await axios.put(url, dataToSend, {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": JSONBIN_KEY,
+        },
       });
       return resp.data;
     } catch (err) {
       const code = err?.response?.status;
-      if (code === 429 && i < tries - 1) { await sleep(250 * (i + 1)); continue; }
+      if (code === 429 && i < tries - 1) {
+        await sleep(250 * (i + 1));
+        continue;
+      }
       console.error("❌ writeBin:", err?.message || err);
       throw err;
     }
   }
 }
-
 //
 // 6) CONFIG & HOLDERS
 //
