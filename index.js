@@ -651,15 +651,29 @@ bot.on("callback_query", async (cb) => {
   const realUser = cb.from.username;
 
   try {
-    if (cb.data === "confirm_change_yes") {
-      await bot.answerCallbackQuery(cb.id, { text: "Proceeding..." });
-      await bot.sendMessage(chatId, "Paste your new Solana wallet address:");
-      bot.once("message", async (m2) => {
-        const wallet = (m2.text||"").trim();
-        if (!isLikelySolanaAddress(wallet)) {
-          await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /changewallet.");
-          return;
-        }
+if (cb.data === "confirm_remove_yes") {
+  await bot.answerCallbackQuery(cb.id, { text: "Removing..." });
+  const username = realUser ? "@" + realUser.replace(/^@+/, "") : null;
+  if (!username) {
+    await bot.sendMessage(chatId, "⚠️ No Telegram username found. Can't remove wallet.");
+    return;
+  }
+
+  let holders = await getHoldersArray();
+  const before = holders.length;
+  holders = holders.filter(h => normalizeName(h.username) !== normalizeName(username));
+
+  if (holders.length === before) {
+    await bot.sendMessage(chatId, `⚠️ No wallet found for @${realUser}.`);
+    return;
+  }
+
+  await saveHoldersArray(holders);
+  delete _cache[HOLDER_BIN_URL]; // 🔹 clear cache so removal takes effect immediately
+  console.log(`🧹 Removed wallet for ${username}`);
+  await bot.sendMessage(chatId, `🧹 Wallet removed for @${realUser}. You can verify again any time.`);
+  return;
+}
         // Optional: on-chain pre-check (comment out if you prefer verify later)
         const cfg = await getConfig();
         const check = await checkSolanaHolding(wallet, cfg.minHoldAmount || 0);
