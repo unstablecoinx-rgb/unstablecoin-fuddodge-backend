@@ -842,6 +842,21 @@ app.get("/eventtop50", async (_req, res) => {
   catch (_) { res.status(500).json({ ok:false, message:"Failed to load event top50" }); }
 });
 
+// === MAIN LEADERBOARD for frontend (used by splash) ===
+app.get("/leaderboard", async (_req, res) => {
+  try {
+    const data = await getLeaderboard();
+    // convert map → array
+    const arr = Object.entries(data)
+      .map(([username, score]) => ({ username, score }))
+      .sort((a, b) => b.score - a.score);
+    res.json(arr);
+  } catch (err) {
+    console.error("leaderboard:", err?.message || err);
+    res.status(500).json({ ok: false, message: "Failed to load leaderboard" });
+  }
+});
+
 // Submit scores (main + event)
 app.post("/submit", async (req, res) => {
   try {
