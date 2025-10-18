@@ -650,8 +650,7 @@ bot.on("callback_query", async (cb) => {
   const chatId = cb.message.chat.id;
   const realUser = cb.from.username;
 
-  try {
-if (cb.data === "confirm_remove_yes") {
+  try {if (cb.data === "confirm_remove_yes") {
   await bot.answerCallbackQuery(cb.id, { text: "Removing..." });
   const username = realUser ? "@" + realUser.replace(/^@+/, "") : null;
   if (!username) {
