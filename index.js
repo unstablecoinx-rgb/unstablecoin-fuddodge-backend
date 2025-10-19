@@ -364,122 +364,90 @@ async function composeAthBanner(curveBase64, username, score) {
 }
 
 // ==========================================================
-// 9) LEADERBOARDS & EVENT DATA (robust bin parsing)
+// 9) LEADERBOARDS & EVENT DATA (Unified & Debugged Version)
 // ==========================================================
 
-/** Normalize @usernames and keep only numeric values */
+/** Normalize usernames and keep only numeric scores */
 function _normalizeScoreMap(obj) {
   const out = {};
   if (!obj || typeof obj !== "object") return out;
   for (const [k, v] of Object.entries(obj)) {
     const n = Number(v);
-    if (!Number.isNaN(n)) out[normalizeUsername(k)] = n;
+    if (!Number.isNaN(n)) {
+      const name = k.startsWith("@") ? k : "@" + k;
+      out[name] = n;
+    }
   }
   return out;
 }
 
-/** Robustly extract scores from any JSONBin shape */
+/** Safely unwrap and normalize any JSONBin leaderboard structure */
 function _extractScoresFromBin(raw) {
-  // Start from whatever we got back
   let data = raw;
 
-  // If axios got the /b/{id} shape, it looks like: { record: {...}, metadata: {...} }
   if (data && data.record && typeof data.record === "object") data = data.record;
-
-  // Some bins end up as { record: { record: { ...scores... }, "@User": 123 } }
-  // Unwrap nested "record" objects but keep sibling numeric keys.
   while (data && typeof data === "object" && data.record && typeof data.record === "object") {
     const siblings = {};
     for (const [k, v] of Object.entries(data)) {
-      if (k === "record") continue;
-      siblings[k] = v;
+      if (k !== "record") siblings[k] = v;
     }
-    // Merge: inner record wins, but keep numeric siblings
     data = Object.assign({}, siblings, data.record);
   }
-
-  // Old shape: { scores: { ... } }
   if (data && data.scores && typeof data.scores === "object") data = data.scores;
 
-  return _normalizeScoreMap(data || {});
+  return _normalizeScoreMap(data);
 }
 
-// ==========================================================
-// ✅ RESTORED VERIFIED LEADERBOARD (original stable logic)
-// ==========================================================
-// ==========================================================
-// 🔍 DEBUGGING VERSION — shows exactly what JSONBin returns
-// ==========================================================
+/** 🔍 Read and log main leaderboard bin */
 async function getLeaderboard() {
   try {
-    const url = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}/latest`;
-    const res = await axios.get(url, { headers: { "X-Master-Key": process.env.JSONBIN_KEY } });
+    const res = await axios.get(`${MAIN_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
 
     console.log("🟡 RAW FROM BIN:", JSON.stringify(res.data, null, 2));
 
-    let data = res.data?.record || {};
-    if (data.record && typeof data.record === "object") data = data.record;
-    if (data.record && typeof data.record === "object") data = data.record;
-    if (data.scores && typeof data.scores === "object") data = data.scores;
-
-    console.log("🟢 AFTER UNWRAP:", data);
-
-    const clean = {};
-    for (const [u, v] of Object.entries(data)) {
-      const n = Number(v);
-      if (!isNaN(n)) clean[u.startsWith("@") ? u : "@" + u] = n;
-    }
-
-    console.log("🏁 FINAL CLEAN LEADERBOARD:", clean);
-    return clean;
+    const data = _extractScoresFromBin(res.data);
+    console.log("🏁 FINAL CLEAN LEADERBOARD:", data);
+    return data;
   } catch (err) {
     console.error("❌ getLeaderboard:", err?.message || err);
     return {};
   }
 }
 
-app.get("/leaderboard", async (_req, res) => {
-  try {
-    const data = await getLeaderboard();
-    const arr = Object.entries(data)
-      .map(([username, score]) => ({ username, score }))
-      .sort((a, b) => b.score - a.score);
-    res.json(arr);
-  } catch (err) {
-    console.error("❌ /leaderboard:", err?.message || err);
-    res.status(500).json({ ok: false, message: "Failed to load leaderboard" });
-  }
-});
-
+/** 🔍 Read and log event leaderboard bin */
 async function getEventData() {
   try {
-    // Event bin can be { record: { scores: {...} } } or { record: {...} } or even { scores: {...} }
-    const raw = await readBin(EVENT_BIN_URL);
-    let data = raw;
+    const res = await axios.get(`${EVENT_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
 
-    if (data && data.record && typeof data.record === "object") data = data.record;
-    while (data && typeof data === "object" && data.record && typeof data.record === "object") {
-      data = data.record;
-    }
-    if (data && data.scores && typeof data.scores === "object") data = data.scores;
+    console.log("🟣 RAW EVENT BIN:", JSON.stringify(res.data, null, 2));
 
-    return { scores: _normalizeScoreMap(data || {}) };
+    const data = _extractScoresFromBin(res.data);
+    console.log("🏁 FINAL CLEAN EVENT SCORES:", data);
+
+    return { scores: data };
   } catch (err) {
     console.error("❌ getEventData:", err?.message || err);
     return { scores: {} };
   }
 }
 
+/** Retrieve event metadata */
 async function getEventMeta() {
   try {
-    const res = await axios.get(`${META_BIN_URL}/latest`, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    const res = await axios.get(`${META_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
     const p = res.data.record || res.data || {};
     return {
       title: p.title || p.name || "Current Event",
-      info:  p.info  || p.description || "",
+      info: p.info || p.description || "",
       startDate: p.startDate || null,
-      endDate:   p.endDate   || null,
-      timezone:  p.timezone  || "Europe/Stockholm",
+      endDate: p.endDate || null,
+      timezone: p.timezone || "Europe/Stockholm",
       updatedAt: p.updatedAt || res.data?.metadata?.modifiedAt || new Date().toISOString(),
       raw: p,
     };
@@ -497,6 +465,7 @@ async function getEventMeta() {
   }
 }
 
+/** Filter top verified holders */
 async function getVerifiedEventTop(n = 10) {
   const { scores } = await getEventData();
   const holdersMap = await getHoldersMapFromArray();
@@ -515,6 +484,81 @@ async function getVerifiedEventTop(n = 10) {
   return out;
 }
 
+// ==========================================================
+// 🌐 EXPRESS ENDPOINTS
+// ==========================================================
+app.get("/leaderboard", async (_req, res) => {
+  try {
+    const data = await getLeaderboard();
+    const arr = Object.entries(data)
+      .map(([username, score]) => ({ username, score }))
+      .sort((a, b) => b.score - a.score);
+    res.json(arr);
+  } catch (err) {
+    console.error("❌ /leaderboard:", err?.message || err);
+    res.status(500).json({ ok: false, message: "Failed to load leaderboard" });
+  }
+});
+
+// ==========================================================
+// 🤖 TELEGRAM COMMANDS
+// ==========================================================
+
+// --- MAIN TOP 10 ---
+bot.onText(/^\/top10$/, async (msg) => {
+  try {
+    const data = await getLeaderboard();
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    if (!sorted.length) return sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
+    const lines = sorted.slice(0, 10).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+    sendChunked(msg.chat.id, "<b>🏆 Top 10</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /top10:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 10 leaderboard.");
+  }
+});
+
+// --- MAIN TOP 50 ---
+bot.onText(/^\/top50$/, async (msg) => {
+  try {
+    const data = await getLeaderboard();
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    if (!sorted.length) return sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
+    const lines = sorted.slice(0, 50).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+    sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /top50:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 50 leaderboard.");
+  }
+});
+
+// --- EVENT TOP 10 ---
+bot.onText(/^\/eventtop10$/, async (msg) => {
+  try {
+    const verified = await getVerifiedEventTop(10);
+    if (!verified.length)
+      return sendSafeMessage(msg.chat.id, "📭 No verified holders found for this event.");
+    const lines = verified.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
+    sendChunked(msg.chat.id, "<b>🥇 Event Top 10 (verified holders)</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /eventtop10:", err?.message || err);
+    sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
+  }
+});
+
+// --- EVENT TOP 50 ---
+bot.onText(/^\/eventtop50$/, async (msg) => {
+  try {
+    const verified = await getVerifiedEventTop(50);
+    if (!verified.length)
+      return sendSafeMessage(msg.chat.id, "📭 No verified holders found for this event.");
+    const lines = verified.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
+    sendChunked(msg.chat.id, "<b>🥇 Event Top 50 (verified holders)</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /eventtop50:", err?.message || err);
+    sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top50.");
+  }
+});
 //
 // 10) TELEGRAM SAFE SEND HELPERS
 //
