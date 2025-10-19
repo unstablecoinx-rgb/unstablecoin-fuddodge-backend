@@ -573,96 +573,193 @@ bot.onText(/\/eventtop50/, async (msg) => {
   }
 });
 
-// === SECTION 13: ADD / CHANGE WALLET ===
-bot.onText(/\/addwallet|\/changewallet/, async (msg) => {
+// ==========================================================
+// 13) TELEGRAM: WALLET FLOWS (FOOL-PROOF VERSION)
+// ==========================================================
+bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
   const chatId = msg.chat.id;
-  const realUser = normalizeName(msg.from.username || msg.from.first_name);
+  const realUser = msg.from?.username;
+  if (!realUser)
+    return bot.sendMessage(chatId, "❌ You need a Telegram username (Settings → Username).");
+
   const holders = await getHoldersArray();
-  const existing = holders.find((h) => normalizeName(h.username) === realUser);
-
-  const label = msg.text === "/changewallet" ? "Change" : "Add";
-  await bot.sendMessage(chatId, `🪙 ${label} wallet – please paste your Solana wallet address:`);
-
-  bot.once("message", async (m2) => {
-    const wallet = (m2.text || "").trim();
-    if (!isLikelySolanaAddress(wallet)) {
-      await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /addwallet.");
-      return bot.sendMessage(chatId, "‎", mainMenu); // invisible safe refresh
-    }
-
-    const cfg = await getConfig();
-
-    // save immediately
-    if (existing) existing.wallet = wallet;
-    else holders.push({ username: "@" + realUser, wallet, verifiedAt: null });
-
-    await saveHoldersArray(holders);
-    delete _cache[HOLDER_BIN_URL];
-
-    await bot.sendMessage(chatId, `✅ Wallet saved for @${realUser}. Checking holdings...`);
-
-    // run verification asynchronously
-    (async () => {
-      try {
-        const check = await checkSolanaHolding(wallet, cfg.minHoldAmount || 0);
-        const all = await getHoldersArray();
-        const user = all.find((h) => normalizeName(h.username) === realUser);
-
-        if (check.ok) {
-          if (user) user.verifiedAt = new Date().toISOString();
-          await saveHoldersArray(all);
-          await bot.sendMessage(chatId, `✅ Verified successfully for @${realUser}!`, mainMenu);
-        } else {
-          await bot.sendMessage(
-            chatId,
-            `⚠️ Wallet saved but doesn’t meet minimum ${cfg.minHoldAmount} $US.`,
-            mainMenu
-          );
-        }
-      } catch (err) {
-        console.error("Verification error:", err.message);
-        await bot.sendMessage(
-          chatId,
-          "⚠️ Wallet saved, but verification could not complete. Try /verify later.",
-          mainMenu
-        );
-      }
-    })();
-  });
-});
-
-// === SECTION 14: VERIFY WALLET ===
-bot.onText(/\/verify/, async (msg) => {
-  const chatId = msg.chat.id;
-  const realUser = normalizeName(msg.from.username || msg.from.first_name);
-  const holders = await getHoldersArray();
-  const user = holders.find((h) => normalizeName(h.username) === realUser);
-
-  if (!user) {
-    await bot.sendMessage(chatId, "❌ No wallet found. Add one with /addwallet first.");
-    return bot.sendMessage(chatId, "‎", mainMenu);
-  }
-
-  const cfg = await getConfig();
-  await bot.sendMessage(chatId, "🔍 Checking on-chain balance...");
+  const existing = holders.find((h) => normalizeName(h.username) === normalizeName(realUser));
 
   try {
-    const check = await checkSolanaHolding(user.wallet, cfg.minHoldAmount || 0);
-    if (check.ok) {
-      user.verifiedAt = new Date().toISOString();
-      await saveHoldersArray(holders);
-      delete _cache[HOLDER_BIN_URL];
-      await bot.sendMessage(chatId, `✅ Verified successfully for @${realUser}!`, mainMenu);
-    } else {
-      await bot.sendMessage(
-        chatId,
-        `⚠️ Balance too low. Needs ${cfg.minHoldAmount} $US or more.`,
-        mainMenu
+    const lower = msg.text.toLowerCase();
+
+    // === ADD WALLET ===
+    if (lower.includes("addwallet")) {
+      if (existing) {
+        await bot.sendMessage(
+          chatId,
+          `⚠️ You already have a wallet saved, @${realUser}.\nUse /changewallet instead.`,
+          mainMenu
+        );
+        return;
+      }
+
+      await bot.sendMessage(chatId, "🪙 Add wallet – please paste your Solana wallet address:");
+      bot.once("message", async (m2) => {
+        const wallet = (m2.text || "").trim();
+        if (!isLikelySolanaAddress(wallet)) {
+          await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /addwallet.", mainMenu);
+          return;
+        }
+        holders.push({ username: "@" + realUser, wallet, verifiedAt: null });
+        await saveHoldersArray(holders);
+        delete _cache[HOLDER_BIN_URL];
+        await bot.sendMessage(chatId, `✅ Wallet added for @${realUser}! Use /verifyholder to confirm holdings.`, mainMenu);
+      });
+      return;
+    }
+
+    // === CHANGE WALLET ===
+    if (lower.includes("changewallet")) {
+      if (!existing) {
+        await bot.sendMessage(
+          chatId,
+          `⚠️ You don’t have any wallet saved yet, @${realUser}.\nUse /addwallet first.`,
+          mainMenu
+        );
+        return;
+      }
+
+      await bot.sendMessage(chatId, "Do you really want to change your wallet?", {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✅ Yes, change it", callback_data: "confirm_change_yes" },
+              { text: "❌ Cancel", callback_data: "confirm_change_no" },
+            ],
+          ],
+        },
+      });
+      return;
+    }
+
+    // === REMOVE WALLET ===
+    if (lower.includes("removewallet")) {
+      if (!existing) {
+        await bot.sendMessage(
+          chatId,
+          `⚠️ You don’t have any wallet saved yet, @${realUser}.`,
+          mainMenu
+        );
+        return;
+      }
+      await bot.sendMessage(chatId, "Are you sure you want to remove your wallet?", {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✅ Yes, remove", callback_data: "confirm_remove_yes" },
+              { text: "❌ Cancel", callback_data: "confirm_remove_no" },
+            ],
+          ],
+        },
+      });
+      return;
+    }
+
+    // === VERIFY HOLDER ===
+    if (lower.includes("verifyholder")) {
+      if (!existing?.wallet) {
+        await bot.sendMessage(chatId, "⚠️ No wallet on file. Use /addwallet first.", mainMenu);
+        return;
+      }
+
+      await bot.sendMessage(chatId, "🔍 Checking on-chain balance...");
+      const res = await axios.post(
+        `https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`,
+        { username: "@" + realUser, wallet: existing.wallet }
       );
+
+      if (res.data.ok)
+        await bot.sendMessage(chatId, `✅ Verified successfully for @${realUser}!`, mainMenu);
+      else
+        await bot.sendMessage(
+          chatId,
+          `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`,
+          mainMenu
+        );
+      return;
     }
   } catch (err) {
-    console.error("Verify error:", err.message);
-    await bot.sendMessage(chatId, "⚠️ Verification failed. Try again later.", mainMenu);
+    console.error("⚠️ Wallet flow error:", err?.message || err);
+    await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.", mainMenu);
+  }
+});
+
+// === CALLBACK CONFIRMATIONS (Change / Remove) ===
+bot.on("callback_query", async (cb) => {
+  const chatId = cb.message.chat.id;
+  const realUser = cb.from.username;
+
+  try {
+    const holders = await getHoldersArray();
+    const existing = holders.find((h) => normalizeName(h.username) === normalizeName(realUser));
+
+    // === CHANGE CONFIRM ===
+    if (cb.data === "confirm_change_yes") {
+      await bot.answerCallbackQuery(cb.id, { text: "Proceeding..." });
+      await bot.sendMessage(chatId, "Paste your new Solana wallet address:");
+      bot.once("message", async (m2) => {
+        const wallet = (m2.text || "").trim();
+        if (!isLikelySolanaAddress(wallet)) {
+          await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /changewallet.", mainMenu);
+          return;
+        }
+        const cfg = await getConfig();
+        const check = await checkSolanaHolding(wallet, cfg.minHoldAmount || 0);
+        if (!check.ok) {
+          await bot.sendMessage(chatId, `❌ Wallet doesn’t meet minimum ${cfg.minHoldAmount} token requirement.`, mainMenu);
+          return;
+        }
+        existing.prevWallet = existing.wallet || null;
+        existing.wallet = wallet;
+        existing.verifiedAt = new Date().toISOString();
+        existing.changedAt = new Date().toISOString();
+        await saveHoldersArray(holders);
+        delete _cache[HOLDER_BIN_URL];
+        await bot.sendMessage(
+          chatId,
+          `✅ Wallet updated for @${realUser}.\n<code>${wallet}</code>`,
+          { parse_mode: "HTML", ...mainMenu }
+        );
+      });
+      return;
+    }
+
+    if (cb.data === "confirm_change_no") {
+      await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
+      await bot.sendMessage(chatId, "❌ Wallet change cancelled.", mainMenu);
+      return;
+    }
+
+    // === REMOVE CONFIRM ===
+    if (cb.data === "confirm_remove_yes") {
+      await bot.answerCallbackQuery(cb.id, { text: "Removing..." });
+      if (!existing) {
+        await bot.sendMessage(chatId, "⚠️ No wallet to remove.", mainMenu);
+        return;
+      }
+      const updated = holders.filter((h) => normalizeName(h.username) !== normalizeName(realUser));
+      await saveHoldersArray(updated);
+      delete _cache[HOLDER_BIN_URL];
+      console.log(`🧹 Removed wallet for @${realUser}`);
+      await bot.sendMessage(chatId, `🧹 Wallet removed for @${realUser}.`, mainMenu);
+      return;
+    }
+
+    if (cb.data === "confirm_remove_no") {
+      await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
+      await bot.sendMessage(chatId, "❌ Wallet removal cancelled.", mainMenu);
+      return;
+    }
+
+  } catch (err) {
+    console.error("callback_query:", err?.message || err);
+    await bot.answerCallbackQuery(cb.id, { text: "Error. Try again later." });
   }
 });
 // ==========================================================
