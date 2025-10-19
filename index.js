@@ -642,6 +642,37 @@ bot.onText(/^\/eventtop50$/, async (msg) => {
 });
 
 // ==========================================================
+// 🏁 ADMIN COMMAND — /winners
+// ==========================================================
+bot.onText(/^\/winners(?:\s+(\d+))?/, async (msg, match) => {
+  const username = (msg.from?.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(username)) {
+    return sendSafeMessage(msg.chat.id, "⚠️ Only admins can run this command.");
+  }
+
+  try {
+    const limit = parseInt(match[1], 10) || 10;
+    const winners = await getVerifiedEventTop(limit);
+
+    if (!winners.length) {
+      await sendSafeMessage(msg.chat.id, "📭 No verified event winners yet.");
+      return;
+    }
+
+    const lines = winners.map((w, i) => `${i + 1}. <b>${w.username}</b> – ${w.score}`);
+    sendChunked(
+      msg.chat.id,
+      `<b>🏁 Current Verified Winners (Top ${limit})</b>\n\n`,
+      lines
+    );
+  } catch (err) {
+    console.error("❌ /winners:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load winners.");
+  }
+});
+
+
+// ==========================================================
 // 13) TELEGRAM: WALLET FLOWS (FOOL-PROOF VERSION)
 // ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
