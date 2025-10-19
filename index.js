@@ -507,17 +507,42 @@ app.get("/leaderboard", async (_req, res) => {
 });
 
 // ==========================================================
-// 🤖 TELEGRAM COMMANDS
+// 🏆 LEADERBOARD COMMANDS — CLEAN SINGLE-VERSION
 // ==========================================================
+
+// --- FIXED CHUNKED SEND HELPER (no duplicates, only chunks if needed) ---
+async function sendChunked(chatId, header, lines, maxLen = 3500) {
+  const full = header + lines.join("\n");
+  if (full.length <= maxLen) {
+    await sendSafeMessage(chatId, full.trim());
+    return;
+  }
+  let buf = header;
+  for (const line of lines) {
+    if ((buf + line + "\n").length > maxLen) {
+      await sendSafeMessage(chatId, buf.trim());
+      buf = header + line + "\n";
+    } else buf += line + "\n";
+  }
+  if (buf.trim()) await sendSafeMessage(chatId, buf.trim());
+}
 
 // --- MAIN TOP 10 ---
 bot.onText(/^\/top10$/, async (msg) => {
   try {
     const data = await getLeaderboard();
-    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
-    if (!sorted.length) return sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
-    const lines = sorted.slice(0, 10).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
-    sendChunked(msg.chat.id, "<b>🏆 Top 10</b>\n\n", lines);
+    const sorted = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
+
+    if (!sorted.length) {
+      await sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
+      return;
+    }
+
+    const lines = sorted
+      .slice(0, 10)
+      .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+
+    await sendChunked(msg.chat.id, "<b>🏆 Top 10</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top10:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 10 leaderboard.");
@@ -528,41 +553,21 @@ bot.onText(/^\/top10$/, async (msg) => {
 bot.onText(/^\/top50$/, async (msg) => {
   try {
     const data = await getLeaderboard();
-    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
-    if (!sorted.length) return sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
-    const lines = sorted.slice(0, 50).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
-    sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
+    const sorted = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
+
+    if (!sorted.length) {
+      await sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
+      return;
+    }
+
+    const lines = sorted
+      .slice(0, 50)
+      .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+
+    await sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top50:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 50 leaderboard.");
-  }
-});
-
-// --- EVENT TOP 10 ---
-bot.onText(/^\/eventtop10$/, async (msg) => {
-  try {
-    const verified = await getVerifiedEventTop(10);
-    if (!verified.length)
-      return sendSafeMessage(msg.chat.id, "📭 No verified holders found for this event.");
-    const lines = verified.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(msg.chat.id, "<b>🥇 Event Top 10 (verified holders)</b>\n\n", lines);
-  } catch (err) {
-    console.error("❌ /eventtop10:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
-  }
-});
-
-// --- EVENT TOP 50 ---
-bot.onText(/^\/eventtop50$/, async (msg) => {
-  try {
-    const verified = await getVerifiedEventTop(50);
-    if (!verified.length)
-      return sendSafeMessage(msg.chat.id, "📭 No verified holders found for this event.");
-    const lines = verified.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(msg.chat.id, "<b>🥇 Event Top 50 (verified holders)</b>\n\n", lines);
-  } catch (err) {
-    console.error("❌ /eventtop50:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top50.");
   }
 });
 //
