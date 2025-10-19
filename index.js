@@ -407,32 +407,39 @@ function _extractScoresFromBin(raw) {
 // ==========================================================
 // ✅ RESTORED VERIFIED LEADERBOARD (original stable logic)
 // ==========================================================
+// ==========================================================
+// ✅ FINAL FIXED LEADERBOARD (handles nested record)
+// ==========================================================
 async function getLeaderboard() {
   try {
-    const res = await axios.get(MAIN_BIN_URL, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
-    });
+    const res = await axios.get(
+      `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}/latest`,
+      { headers: { "X-Master-Key": process.env.JSONBIN_KEY } }
+    );
 
-    // --- full flatten of nested record layers ---
-    let data = res.data?.record || res.data || {};
-    if (data.record) data = data.record;
-    if (data.record) data = data.record; // handles double-nesting
+    console.log("🟡 RAW FROM BIN:", JSON.stringify(res.data, null, 2));
+
+    let data = res.data?.record || {};
+    // unwrap both layers if needed
+    if (data.record && typeof data.record === "object") data = data.record;
+    if (data.record && typeof data.record === "object") data = data.record;
     if (data.scores) data = data.scores;
 
-    // --- normalize usernames + numeric values ---
+    console.log("🟢 AFTER UNWRAP:", data);
+
     const clean = {};
-    for (const [u, v] of Object.entries(data || {})) {
+    for (const [u, v] of Object.entries(data)) {
       const n = Number(v);
       if (!isNaN(n)) clean[u.startsWith("@") ? u : "@" + u] = n;
     }
+    console.log("✅ CLEAN LEADERBOARD:", clean);
     return clean;
   } catch (err) {
-    console.error("❌ getLeaderboard:", err?.message || err);
+    console.error("❌ getLeaderboard error:", err?.message || err);
     return {};
   }
 }
 
-// === MAIN LEADERBOARD ENDPOINT (used by splash & bot) ===
 app.get("/leaderboard", async (_req, res) => {
   try {
     const data = await getLeaderboard();
@@ -441,7 +448,7 @@ app.get("/leaderboard", async (_req, res) => {
       .sort((a, b) => b.score - a.score);
     res.json(arr);
   } catch (err) {
-    console.error("leaderboard:", err?.message || err);
+    console.error("❌ /leaderboard:", err?.message || err);
     res.status(500).json({ ok: false, message: "Failed to load leaderboard" });
   }
 });
