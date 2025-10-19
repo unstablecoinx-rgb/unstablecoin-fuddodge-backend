@@ -408,22 +408,19 @@ function _extractScoresFromBin(raw) {
 // ✅ RESTORED VERIFIED LEADERBOARD (original stable logic)
 // ==========================================================
 // ==========================================================
-// ✅ FINAL FIXED LEADERBOARD (handles nested record)
+// 🔍 DEBUGGING VERSION — shows exactly what JSONBin returns
 // ==========================================================
 async function getLeaderboard() {
   try {
-    const res = await axios.get(
-      `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}/latest`,
-      { headers: { "X-Master-Key": process.env.JSONBIN_KEY } }
-    );
+    const url = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}/latest`;
+    const res = await axios.get(url, { headers: { "X-Master-Key": process.env.JSONBIN_KEY } });
 
     console.log("🟡 RAW FROM BIN:", JSON.stringify(res.data, null, 2));
 
     let data = res.data?.record || {};
-    // unwrap both layers if needed
     if (data.record && typeof data.record === "object") data = data.record;
     if (data.record && typeof data.record === "object") data = data.record;
-    if (data.scores) data = data.scores;
+    if (data.scores && typeof data.scores === "object") data = data.scores;
 
     console.log("🟢 AFTER UNWRAP:", data);
 
@@ -432,11 +429,11 @@ async function getLeaderboard() {
       const n = Number(v);
       if (!isNaN(n)) clean[u.startsWith("@") ? u : "@" + u] = n;
     }
-    console.log("✅ CLEAN LEADERBOARD:", clean);
+
     console.log("🏁 FINAL CLEAN LEADERBOARD:", clean);
-      return clean;
+    return clean;
   } catch (err) {
-    console.error("❌ getLeaderboard error:", err?.message || err);
+    console.error("❌ getLeaderboard:", err?.message || err);
     return {};
   }
 }
