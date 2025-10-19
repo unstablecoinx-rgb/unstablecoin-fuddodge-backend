@@ -364,27 +364,57 @@ async function composeAthBanner(curveBase64, username, score) {
 }
 
 // ==========================================================
-// 9) LEADERBOARDS & EVENT DATA (FULL RESTORE)
+// 9) LEADERBOARDS & EVENT DATA (robust bin parsing)
 // ==========================================================
+
+/** Normalize @usernames and keep only numeric values */
+function _normalizeScoreMap(obj) {
+  const out = {};
+  if (!obj || typeof obj !== "object") return out;
+  for (const [k, v] of Object.entries(obj)) {
+    const n = Number(v);
+    if (!Number.isNaN(n)) out[normalizeUsername(k)] = n;
+  }
+  return out;
+}
+
+/** Robustly extract scores from any JSONBin shape */
+function _extractScoresFromBin(raw) {
+  // Start from whatever we got back
+  let data = raw;
+
+  // If axios got the /b/{id} shape, it looks like: { record: {...}, metadata: {...} }
+  if (data && data.record && typeof data.record === "object") data = data.record;
+
+  // Some bins end up as { record: { record: { ...scores... }, "@User": 123 } }
+  // Unwrap nested "record" objects but keep sibling numeric keys.
+  while (data && typeof data === "object" && data.record && typeof data.record === "object") {
+    const siblings = {};
+    for (const [k, v] of Object.entries(data)) {
+      if (k === "record") continue;
+      siblings[k] = v;
+    }
+    // Merge: inner record wins, but keep numeric siblings
+    data = Object.assign({}, siblings, data.record);
+  }
+
+  // Old shape: { scores: { ... } }
+  if (data && data.scores && typeof data.scores === "object") data = data.scores;
+
+  return _normalizeScoreMap(data || {});
+}
+
 async function getLeaderboard() {
   try {
-    const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    let data = res.data.record || {};
-    if (data.scores && typeof data.scores === "object") data = data.scores;
-
-    const clean = {};
-    for (const [u, v] of Object.entries(data)) {
-      const n = +v;
-      if (!Number.isNaN(n)) clean[u] = n;
-    }
-    return clean;
+    const raw = await readBin(MAIN_BIN_URL); // this already hits /b/{id}
+    return _extractScoresFromBin(raw);
   } catch (err) {
     console.error("❌ getLeaderboard:", err?.message || err);
     return {};
   }
 }
 
-// === MAIN LEADERBOARD ENDPOINT (used by splash) ===
+// === MAIN LEADERBOARD (JSON for splash/frontend) ===
 app.get("/leaderboard", async (_req, res) => {
   try {
     const data = await getLeaderboard();
@@ -397,23 +427,29 @@ app.get("/leaderboard", async (_req, res) => {
     res.status(500).json({ ok: false, message: "Failed to load leaderboard" });
   }
 });
+
 async function getEventData() {
   try {
-    const res = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    let data = res.data.record || {};
-    if (data.scores?.scores) data = data.scores.scores;
-    else if (data.scores) data = data.scores;
-    const clean = {};
-    for (const [u, v] of Object.entries(data)) { const n = +v; if (!Number.isNaN(n)) clean[u] = n; }
-    return { scores: clean };
+    // Event bin can be { record: { scores: {...} } } or { record: {...} } or even { scores: {...} }
+    const raw = await readBin(EVENT_BIN_URL);
+    let data = raw;
+
+    if (data && data.record && typeof data.record === "object") data = data.record;
+    while (data && typeof data === "object" && data.record && typeof data.record === "object") {
+      data = data.record;
+    }
+    if (data && data.scores && typeof data.scores === "object") data = data.scores;
+
+    return { scores: _normalizeScoreMap(data || {}) };
   } catch (err) {
     console.error("❌ getEventData:", err?.message || err);
     return { scores: {} };
   }
 }
+
 async function getEventMeta() {
   try {
-    const res = await axios.get(`${META_BIN_URL}/latest`, { headers: { "X-Master-Key": JSONBIN_KEY }});
+    const res = await axios.get(`${META_BIN_URL}/latest`, { headers: { "X-Master-Key": JSONBIN_KEY } });
     const p = res.data.record || res.data || {};
     return {
       title: p.title || p.name || "Current Event",
@@ -426,21 +462,29 @@ async function getEventMeta() {
     };
   } catch (err) {
     console.error("❌ getEventMeta:", err?.message || err);
-    return { title:"No active event", info:"", startDate:null, endDate:null, timezone:"Europe/Stockholm", updatedAt:new Date().toISOString(), raw:{} };
+    return {
+      title: "No active event",
+      info: "",
+      startDate: null,
+      endDate: null,
+      timezone: "Europe/Stockholm",
+      updatedAt: new Date().toISOString(),
+      raw: {},
+    };
   }
 }
+
 async function getVerifiedEventTop(n = 10) {
   const { scores } = await getEventData();
   const holdersMap = await getHoldersMapFromArray();
   const cfg = await getConfig();
   const minHold = cfg.minHoldAmount || 0;
 
-  const sorted = Object.entries(scores).sort((a,b)=>b[1]-a[1]);
+  const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
   const out = [];
   for (const [uname, score] of sorted) {
     const rec = holdersMap[uname];
     if (!rec?.wallet) continue;
-    // Assume user was verified earlier; we can trust record OR do an additional on-chain check if needed:
     const check = await checkSolanaHolding(rec.wallet, minHold);
     if (check.ok) out.push({ username: uname, score });
     if (out.length >= n) break;
