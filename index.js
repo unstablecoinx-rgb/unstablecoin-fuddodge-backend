@@ -598,11 +598,28 @@ bot.onText(/\/top50/, async (msg) => {
     await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 50 leaderboard.");
   }
 });
-bot.onText(/\/eventtop50/, async (msg) => {
+// === Verified Event Leaderboards ===
+bot.onText(/^\/eventtop10$/, async (msg) => {
+  try {
+    const arr = await getVerifiedEventTop(10);
+    if (!arr.length) {
+      return sendSafeMessage(msg.chat.id, "⚠️ No verified event scores yet.");
+    }
+    const lines = arr.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
+    sendChunked(msg.chat.id, "<b>🥇 Event Top 10 (verified)</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /eventtop10:", err?.message || err);
+    sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
+  }
+});
+
+bot.onText(/^\/eventtop50$/, async (msg) => {
   try {
     const arr = await getVerifiedEventTop(50);
-    if (!arr.length) return sendSafeMessage(msg.chat.id, "No event scores yet.");
-    const lines = arr.map((p,i)=>`${i+1}. <b>${p.username}</b> – ${p.score}`);
+    if (!arr.length) {
+      return sendSafeMessage(msg.chat.id, "⚠️ No verified event scores yet.");
+    }
+    const lines = arr.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
     sendChunked(msg.chat.id, "<b>🥇 Event Top 50 (verified)</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop50:", err?.message || err);
