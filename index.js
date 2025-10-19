@@ -514,27 +514,33 @@ bot.onText(/\/event$/, async (msg) => {
   try {
     const meta = await getEventMeta();
     let body = `<b>${escapeXml(meta.title)}</b>\n\n${escapeXml(meta.info)}`;
+
+    const tz = meta.timezone || "Europe/Stockholm";
+    const now = DateTime.now().setZone(tz);
+
     if (meta.startDate) {
-      const start = DateTime.fromISO(meta.startDate).setZone(meta.timezone || "Europe/Stockholm");
+      const start = DateTime.fromISO(meta.startDate).setZone(tz);
       body += `\n🟢 Starts: ${start.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
     }
     if (meta.endDate) {
-      const end = DateTime.fromISO(meta.endDate).setZone(meta.timezone || "Europe/Stockholm");
-      const now = DateTime.now().setZone(meta.timezone || "Europe/Stockholm");
+      const end = DateTime.fromISO(meta.endDate).setZone(tz);
+      const diff = end.diff(now, ["days","hours","minutes"]).toObject();
+
       if (now < end) {
-        const diff = end.diff(now, ["days","hours","minutes"]).toObject();
-        const remain = `${diff.days?Math.floor(diff.days)+"d ":""}${diff.hours?Math.floor(diff.hours)+"h ":""}${diff.minutes?Math.floor(diff.minutes)+"m":""}`.trim();
+        const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
         body += `\n⏳ Ends in ${remain}`;
+      } else {
+        body += `\n🔴 Event ended ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
+        body += `\n📜 Stay tuned for next event.`;
       }
-      body += `\n🛑 Ends: ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
     }
+
     await sendSafeMessage(msg.chat.id, body);
   } catch (err) {
     console.error("❌ /event:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
 });
-
 bot.onText(/\/top10/, async (msg) => {
   const data = await getLeaderboard();
   const sorted = Object.entries(data).sort((a,b)=>b[1]-a[1]);
