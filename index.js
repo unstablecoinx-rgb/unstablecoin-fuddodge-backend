@@ -404,17 +404,35 @@ function _extractScoresFromBin(raw) {
   return _normalizeScoreMap(data || {});
 }
 
+// ==========================================================
+// ✅ RESTORED VERIFIED LEADERBOARD (original stable logic)
+// ==========================================================
 async function getLeaderboard() {
   try {
-    const raw = await readBin(MAIN_BIN_URL); // this already hits /b/{id}
-    return _extractScoresFromBin(raw);
+    const res = await axios.get(MAIN_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+
+    // --- full flatten of nested record layers ---
+    let data = res.data?.record || res.data || {};
+    if (data.record) data = data.record;
+    if (data.record) data = data.record; // handles double-nesting
+    if (data.scores) data = data.scores;
+
+    // --- normalize usernames + numeric values ---
+    const clean = {};
+    for (const [u, v] of Object.entries(data || {})) {
+      const n = Number(v);
+      if (!isNaN(n)) clean[u.startsWith("@") ? u : "@" + u] = n;
+    }
+    return clean;
   } catch (err) {
     console.error("❌ getLeaderboard:", err?.message || err);
     return {};
   }
 }
 
-// === MAIN LEADERBOARD (JSON for splash/frontend) ===
+// === MAIN LEADERBOARD ENDPOINT (used by splash & bot) ===
 app.get("/leaderboard", async (_req, res) => {
   try {
     const data = await getLeaderboard();
