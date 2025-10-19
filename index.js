@@ -1076,7 +1076,9 @@ async function getAthMap() {
 }
 async function saveAthMap(map) { await writeBin(ATH_BIN_URL, map); return true; }
 
-// Share endpoint (ATH mode supported)
+// ==========================================================
+// 📤 SHARE ENDPOINT (Unified A.T.H. + Normal Mode)
+// ==========================================================
 app.post("/share", async (req, res) => {
   try {
     const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
@@ -1085,88 +1087,109 @@ app.post("/share", async (req, res) => {
     const cfg = await getConfig();
     const holders = await getHoldersMapFromArray();
     if (!cfg.allowPostingWithoutHold) {
-      const rec = holders[username];
-      if (!rec) return res.status(403).json({ ok: false, message: "User not a verified holder. Posting blocked." });
+      const rec = holders[username] || holders[normalizeUsername(username)];
+      if (!rec)
+        return res.status(403).json({ ok: false, message: "User not a verified holder. Posting blocked." });
     }
 
     const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
+    const isAth = String(mode).toLowerCase() === "ath";
 
-    // === ATH MODE ===
-    if (String(mode).toLowerCase() === "ath") {
+    // ----------------------------------------------------------
+    // 🧠 Load the single source of truth (main leaderboard bin)
+    // ----------------------------------------------------------
+    let data = {};
+    try {
+      const r = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+      data = r.data.record || r.data || {};
+      if (data.scores && typeof data.scores === "object") data = data.scores;
+    } catch (err) {
+      console.error("share: failed to read leaderboard bin:", err?.message || err);
+    }
+
+    // Helper for tolerant username match
+    const lookupUserScore = (map, name) => {
+      if (!map || !name) return 0;
+      const want = name.replace(/^@/, "").toLowerCase();
+      for (const [k, v] of Object.entries(map)) {
+        const clean = k.replace(/^@/, "").toLowerCase();
+        if (clean === want) return Number(v) || 0;
+      }
+      return 0;
+    };
+
+    // ----------------------------------------------------------
+    // 🚀 A.T.H. MODE
+    // ----------------------------------------------------------
+    if (isAth) {
       try {
-        const leaderboard = await getLeaderboard();
-        const athMap = await getAthMap();
-        const mainBest = leaderboard[username] || 0;
-        const lastPosted = athMap[username]?.lastSentScore || 0;
-        const trueAth = mainBest;
+        const currentBoardScore = lookupUserScore(data, username);
+        const incoming = Number(score) || 0;
 
-        // prevent duplicates unless test mode
-        if (trueAth <= lastPosted && !ATH_TEST_MODE)
-          return res.json({ ok: false, message: "No new A.T.H. to post", ath: trueAth });
+        // True A.T.H. comes from whichever is higher
+        const athToShow = Math.max(currentBoardScore, incoming);
 
-        // try to build banner
-        let banner = null;
-        try {
-          banner = await composeAthBanner(curveImage || imageBase64 || null, username, trueAth);
-        } catch (imgErr) {
-          console.warn("⚠️ composeAthBanner failed:", imgErr?.message || imgErr);
+        // Update the bin if incoming > stored
+        if (incoming > currentBoardScore) {
+          const updated = Object.assign({}, data, { [normalizeUsername(username)]: incoming });
+          await writeBin(MAIN_BIN_URL, updated);
         }
 
-        // rank
+        // Compose banner
+        const banner = await composeAthBanner(curveImage || imageBase64 || null, username, athToShow);
+
+        // Find position in leaderboard
         let positionText = "unranked";
         try {
-          const sorted = Object.entries(leaderboard).sort((a, b) => b[1] - a[1]);
-          const index = sorted.findIndex(([u]) => u === username);
-          if (index >= 0) positionText = `#${index + 1}`;
+          const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+          const idx = sorted.findIndex(
+            ([u]) => u.replace(/^@/, "").toLowerCase() === username.replace(/^@/, "").toLowerCase()
+          );
+          if (idx >= 0) positionText = `#${idx + 1}`;
         } catch (_) {}
 
         const formatMCap = (v) => {
-          if (!v || isNaN(v)) return "0";
-          if (v >= 1_000_000) return (v / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
-          if (v >= 1_000) return (v / 1_000).toFixed(2).replace(/\.?0+$/, "") + "k";
-          return (+v).toFixed(2);
+          const n = Number(v) || 0;
+          if (n >= 1_000_000) return (n / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
+          if (n >= 1_000) return (n / 1_000).toFixed(2).replace(/\.?0+$/, "") + "k";
+          return n.toFixed(2).replace(/\.?0+$/, "");
         };
 
         const caption =
-          `${escapeXml(username)} reached a new All-Time-High. ⚡\n` +
-          `A.T.H. MCap: ${formatMCap(trueAth)}\n` +
+          `${escapeXml(normalizeUsername(username))} reached a new All-Time-High. ⚡\n` +
+          `A.T.H. MCap: ${formatMCap(athToShow)}\n` +
           `Current rank: ${positionText}\n` +
           `We aim for Win-Win.`;
 
-        if (banner) {
-          await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
-        } else {
-          await bot.sendMessage(targetChatId, caption, { parse_mode: "HTML" });
-        }
-
-        athMap[username] = { lastSentScore: trueAth, lastSentAt: new Date().toISOString() };
-        await saveAthMap(athMap);
-
-        return res.json({ ok: true, message: "Posted A.T.H. banner", ath: trueAth });
+        await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
+        return res.json({ ok: true, message: "Posted A.T.H. banner", ath: athToShow });
       } catch (err) {
-        console.error("❌ share (ATH):", err);
-        return res.status(500).json({ ok: false, message: err?.message || "Failed to post A.T.H. banner." });
+        console.error("share (ATH):", err?.message || err);
+        return res.status(500).json({ ok: false, message: "Failed to post A.T.H. banner." });
       }
     }
 
-    // === NON-ATH SHARE ===
+    // ----------------------------------------------------------
+    // 🟡 NORMAL SHARE (non-ATH)
+    // ----------------------------------------------------------
     try {
-      const buf = await composeShareImage(imageBase64, username, score);
+      const buf = await composeShareImage(imageBase64, username, Number(score) || 0);
       const caption =
-        `<b>${escapeXml(String(username))}</b>\n` +
-        `MCap: ${escapeXml(String(score))}\n` +
+        `<b>${escapeXml(normalizeUsername(String(username)))}</b>\n` +
+        `MCap: ${escapeXml(String(Number(score) || 0))}\n` +
         `Shared from UnStableCoin FUD Dodge`;
       await bot.sendPhoto(targetChatId, buf, { caption, parse_mode: "HTML" });
-      res.json({ ok: true, message: "Posted to Telegram" });
+      return res.json({ ok: true, message: "Posted to Telegram" });
     } catch (err) {
       console.error("share (non-ATH):", err?.message || err);
-      res.status(500).json({ ok: false, message: "Share failed" });
+      return res.status(500).json({ ok: false, message: "Share failed" });
     }
   } catch (err) {
-    console.error("share (global):", err?.message || err);
-    res.status(500).json({ ok: false, message: "Share endpoint crashed" });
+    console.error("share:", err?.message || err);
+    return res.status(500).json({ ok: false, message: err?.message || "Share failed" });
   }
-}); // ✅ closes /share cleanly
+});
+// ✅ closes /share cleanly
 // ATH preview (returns PNG)
 app.post("/athbannerpreview", async (req, res) => {
   try {
