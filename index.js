@@ -1148,7 +1148,7 @@ if (String(mode).toLowerCase() === "ath") {
     console.error("share (ATH):", err?.message || err);
     return res.status(500).json({ ok: false, message: "Failed to post A.T.H. banner." });
   }
-});
+}
 
 // === NON-ATH SHARE ===
 try {
@@ -1159,7 +1159,7 @@ try {
 } catch (err) {
   console.error("share (non-ATH):", err?.message || err);
   res.status(500).json({ ok: false, message: "Share failed" });
-}
+});
 
 // ATH preview (returns PNG)
 app.post("/athbannerpreview", async (req, res) => {
