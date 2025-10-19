@@ -182,7 +182,7 @@ async function readBin(url, tries = 3) {
 }
 
 async function writeBin(url, payload, tries = 3) {
-  // 🧩 Always flatten accidental nested "record" layers before saving
+  // 🧹 Flatten any nested 'record' layers before saving
   let flat = payload;
   while (flat && flat.record && typeof flat.record === "object") {
     flat = flat.record;
@@ -208,6 +208,7 @@ async function writeBin(url, payload, tries = 3) {
     }
   }
 }
+
 //
 // 6) CONFIG & HOLDERS
 //
