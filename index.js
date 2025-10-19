@@ -243,6 +243,21 @@ async function saveHoldersArray(arr) {
     return false;
   }
 }
+// --- Add this back ---
+async function getHoldersMapFromArray() {
+  try {
+    const arr = await getHoldersArray();
+    const map = {};
+    for (const h of arr) {
+      if (h?.username) map[h.username] = h;
+    }
+    return map;
+  } catch (err) {
+    console.error("⚠️ getHoldersMapFromArray failed:", err?.message || err);
+    return {};
+  }
+}
+
 //
 // 7) SOLANA CHECKS
 //
