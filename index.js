@@ -363,22 +363,40 @@ async function composeAthBanner(curveBase64, username, score) {
   return await base.composite(comps).png().toBuffer();
 }
 
-//
-// 9) LEADERBOARDS & EVENT DATA
-//
+// ==========================================================
+// 9) LEADERBOARDS & EVENT DATA (FULL RESTORE)
+// ==========================================================
 async function getLeaderboard() {
   try {
     const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
     let data = res.data.record || {};
     if (data.scores && typeof data.scores === "object") data = data.scores;
+
     const clean = {};
-    for (const [u, v] of Object.entries(data)) { const n = +v; if (!Number.isNaN(n)) clean[u] = n; }
+    for (const [u, v] of Object.entries(data)) {
+      const n = +v;
+      if (!Number.isNaN(n)) clean[u] = n;
+    }
     return clean;
   } catch (err) {
     console.error("❌ getLeaderboard:", err?.message || err);
     return {};
   }
 }
+
+// === MAIN LEADERBOARD ENDPOINT (used by splash) ===
+app.get("/leaderboard", async (_req, res) => {
+  try {
+    const data = await getLeaderboard();
+    const arr = Object.entries(data)
+      .map(([username, score]) => ({ username, score }))
+      .sort((a, b) => b.score - a.score);
+    res.json(arr);
+  } catch (err) {
+    console.error("leaderboard:", err?.message || err);
+    res.status(500).json({ ok: false, message: "Failed to load leaderboard" });
+  }
+});
 async function getEventData() {
   try {
     const res = await axios.get(EVENT_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
