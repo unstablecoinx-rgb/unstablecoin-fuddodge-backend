@@ -1020,46 +1020,52 @@ app.post("/submit", async (req, res) => {
     const { username, score, target } = req.body;
     const adminKey = req.headers["x-admin-key"];
     const isAdmin = adminKey && adminKey === RESET_KEY;
-    if (!username || typeof score !== "number") return res.status(400).json({ error:"Invalid data" });
 
-    // Check event window
+    if (!username || typeof score !== "number")
+      return res.status(400).json({ error: "Invalid data" });
+
+    // Load event metadata to see if it’s still active
     let eventMeta = {};
     try {
-      const r = await axios.get(`${META_BIN_URL}/latest`, { headers:{ "X-Master-Key": JSONBIN_KEY } });
+      const r = await axios.get(`${META_BIN_URL}/latest`, {
+        headers: { "X-Master-Key": JSONBIN_KEY },
+      });
       eventMeta = r.data.record || {};
-    } catch (err) { console.warn("⚠️ load event meta:", err?.message); }
+    } catch (err) {
+      console.warn("⚠️ load event meta:", err?.message);
+    }
+
     const now = DateTime.now().toUTC();
     const end = eventMeta.endDate ? DateTime.fromISO(eventMeta.endDate) : null;
     const eventActive = end ? now < end : false;
 
-    if (!eventActive && !isAdmin && target !== "main") {
-      return res.json({ success:false, message:"⚠️ Event has ended.", eventActive:false, endDate:eventMeta.endDate || null });
+    // === ✅ Always update main leaderboard with new highs ===
+    const main = await getLeaderboard();
+    const prev = main[username] || 0;
+    if (score > prev || isAdmin) {
+      main[username] = score;
+      await writeBin(MAIN_BIN_URL, main);
     }
 
-    // MAIN
-    if (target !== "event") {
-      const main = await getLeaderboard();
-      const prev = main[username] || 0;
-      if (score > prev || isAdmin) {
-        main[username] = score;
-        await writeBin(MAIN_BIN_URL, main);
-      }
-    }
-
-    // EVENT
-    if (target !== "main") {
+    // === Update event leaderboard only if active or admin ===
+    if ((eventActive || isAdmin) && target !== "main") {
       const { scores } = await getEventData();
-      const prev = scores[username] || 0;
-      if (score > prev || isAdmin) {
+      const prevEvent = scores[username] || 0;
+      if (score > prevEvent || isAdmin) {
         scores[username] = score;
         await writeBin(EVENT_BIN_URL, { scores });
       }
     }
 
-    res.json({ success:true, message:"✅ Score submitted.", eventActive, endDate:eventMeta.endDate || null });
+    res.json({
+      success: true,
+      message: "✅ Score submitted.",
+      eventActive,
+      endDate: eventMeta.endDate || null,
+    });
   } catch (err) {
     console.error("submit:", err?.message || err);
-    res.status(500).json({ error:"Failed to submit score" });
+    res.status(500).json({ error: "Failed to submit score" });
   }
 });
 
