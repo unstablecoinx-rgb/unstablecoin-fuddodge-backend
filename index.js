@@ -584,20 +584,17 @@ async function getLeaderboard() {
       headers: { "X-Master-Key": JSONBIN_KEY },
     });
 
-    // 🧩 Normalize nested structures robustly
-    let data = res.data;
-    if (data?.record) data = data.record;
-    if (data?.record) data = data.record; // unwrap second layer if exists
-    if (data?.scores) data = data.scores;
-    if (data?.scores?.scores) data = data.scores.scores;
+    // ✅ Your JSONBin structure: { record: { "@user": score, "@user2": score } }
+    const raw = res.data?.record || {};
+    if (typeof raw !== "object") return {};
 
-    // 🧹 Filter only valid usernames and numeric scores
     const clean = {};
-    for (const [u, v] of Object.entries(data || {})) {
-      const n = Number(v);
-      if (!isNaN(n)) clean[u] = n;
+    for (const [username, score] of Object.entries(raw)) {
+      const n = Number(score);
+      if (!isNaN(n)) clean[username] = n;
     }
 
+    console.log("📊 Leaderboard loaded:", Object.keys(clean).length, "players");
     return clean;
   } catch (err) {
     console.error("❌ getLeaderboard:", err?.message || err);
