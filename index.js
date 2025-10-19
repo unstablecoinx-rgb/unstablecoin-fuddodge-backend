@@ -1095,22 +1095,24 @@ app.post("/share", async (req, res) => {
     if (String(mode).toLowerCase() === "ath") {
       try {
         const leaderboard = await getLeaderboard();
-        const athMap = await getAthMap(); // tiny log of last posted ATHs
+        const athMap = await getAthMap();
         const mainBest = leaderboard[username] || 0;
         const lastPosted = athMap[username]?.lastSentScore || 0;
-
-        // true ATH is simply the leaderboard high score
         const trueAth = mainBest;
 
-        // skip duplicate posts if same ATH already sent
-        if (trueAth <= lastPosted && !ATH_TEST_MODE) {
+        // prevent duplicates unless test mode
+        if (trueAth <= lastPosted && !ATH_TEST_MODE)
           return res.json({ ok: false, message: "No new A.T.H. to post", ath: trueAth });
+
+        // try to build banner
+        let banner = null;
+        try {
+          banner = await composeAthBanner(curveImage || imageBase64 || null, username, trueAth);
+        } catch (imgErr) {
+          console.warn("⚠️ composeAthBanner failed:", imgErr?.message || imgErr);
         }
 
-        // compose banner and caption
-        const banner = await composeAthBanner(curveImage || imageBase64 || null, username, trueAth);
-
-        // find rank
+        // rank
         let positionText = "unranked";
         try {
           const sorted = Object.entries(leaderboard).sort((a, b) => b[1] - a[1]);
@@ -1131,16 +1133,19 @@ app.post("/share", async (req, res) => {
           `Current rank: ${positionText}\n` +
           `We aim for Win-Win.`;
 
-        await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
+        if (banner) {
+          await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
+        } else {
+          await bot.sendMessage(targetChatId, caption, { parse_mode: "HTML" });
+        }
 
-        // update small ATH log
         athMap[username] = { lastSentScore: trueAth, lastSentAt: new Date().toISOString() };
         await saveAthMap(athMap);
 
         return res.json({ ok: true, message: "Posted A.T.H. banner", ath: trueAth });
       } catch (err) {
-        console.error("share (ATH):", err?.message || err);
-        return res.status(500).json({ ok: false, message: "Failed to post A.T.H. banner." });
+        console.error("❌ share (ATH):", err);
+        return res.status(500).json({ ok: false, message: err?.message || "Failed to post A.T.H. banner." });
       }
     }
 
@@ -1158,7 +1163,7 @@ app.post("/share", async (req, res) => {
       res.status(500).json({ ok: false, message: "Share failed" });
     }
   } catch (err) {
-    console.error("share:", err?.message || err);
+    console.error("share (global):", err?.message || err);
     res.status(500).json({ ok: false, message: "Share endpoint crashed" });
   }
 }); // ✅ closes /share cleanly
