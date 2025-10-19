@@ -605,34 +605,38 @@ async function getLeaderboard() {
   }
 }
 
-// === /top10 ===
+// === MAIN LEADERBOARD: TOP 10 ===
 bot.onText(/^\/top10$/, async (msg) => {
   try {
     const data = await getLeaderboard();
-    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    const sorted = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
 
     if (!sorted.length) {
       return sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
     }
 
+    const limit = Math.min(10, sorted.length);
     const lines = sorted
-      .slice(0, 10)
+      .slice(0, limit)
       .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
-    sendChunked(msg.chat.id, "<b>🏆 Top 10 Players</b>\n\n", lines);
+
+    sendChunked(
+      msg.chat.id,
+      `<b>🏆 Top ${limit} Players</b>\n\n`,
+      lines
+    );
   } catch (err) {
     console.error("❌ /top10:", err?.message || err);
-    await sendSafeMessage(
-      msg.chat.id,
-      "⚠️ Failed to load Top 10 leaderboard."
-    );
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 10 leaderboard.");
   }
 });
 
-// === /top50 ===
+
+// === MAIN LEADERBOARD: TOP 50 ===
 bot.onText(/^\/top50$/, async (msg) => {
   try {
     const data = await getLeaderboard();
-    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    const sorted = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
 
     if (!sorted.length) {
       return sendSafeMessage(
@@ -641,16 +645,19 @@ bot.onText(/^\/top50$/, async (msg) => {
       );
     }
 
+    const limit = Math.min(50, sorted.length);
     const lines = sorted
-      .slice(0, 50)
+      .slice(0, limit)
       .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
-    sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
+
+    sendChunked(
+      msg.chat.id,
+      `<b>📈 Top ${limit} Players</b>\n\n`,
+      lines
+    );
   } catch (err) {
     console.error("❌ /top50:", err?.message || err);
-    await sendSafeMessage(
-      msg.chat.id,
-      "⚠️ Failed to load Top 50 leaderboard."
-    );
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 50 leaderboard.");
   }
 });
 // ==========================================================
