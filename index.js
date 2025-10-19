@@ -182,10 +182,15 @@ async function readBin(url, tries = 3) {
 }
 
 async function writeBin(url, payload, tries = 3) {
+  // 🧩 Always flatten accidental nested "record" layers before saving
+  let flat = payload;
+  while (flat && flat.record && typeof flat.record === "object") {
+    flat = flat.record;
+  }
+
   for (let i = 0; i < tries; i++) {
     try {
-      const dataToSend = { record: payload };
-      const resp = await axios.put(url, dataToSend, {
+      const resp = await axios.put(url, flat, {
         headers: {
           "Content-Type": "application/json",
           "X-Master-Key": JSONBIN_KEY,
