@@ -548,23 +548,39 @@ bot.onText(/\/top10/, async (msg) => {
   const lines = sorted.slice(0,10).map(([u,s],i)=>`${i+1}. <b>${u}</b> – ${s}`);
   sendChunked(msg.chat.id, "<b>🏆 Top 10</b>\n\n", lines);
 });
-bot.onText(/\/top50/, async (msg) => {
-  const data = await getLeaderboard();
-  const sorted = Object.entries(data).sort((a,b)=>b[1]-a[1]);
-  if (!sorted.length) return sendSafeMessage(msg.chat.id, "No scores yet!");
-  const lines = sorted.slice(0,50).map(([u,s],i)=>`${i+1}. <b>${u}</b> – ${s}`);
-  sendChunked(msg.chat.id, "<b>📈 Top 50</b>\n\n", lines);
+bot.onText(/\/top10/, async (msg) => {
+  try {
+    const data = await getLeaderboard();
+    const entries = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
+
+    if (!entries.length) {
+      await sendSafeMessage(msg.chat.id, "⚠️ No scores recorded yet. Be the first to play and claim the leaderboard. 💛⚡");
+      return;
+    }
+
+    const lines = entries.slice(0, 10).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+    sendChunked(msg.chat.id, "<b>🏆 Top 10 Players</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /top10:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 10 leaderboard.");
+  }
 });
 
-bot.onText(/\/eventtop10/, async (msg) => {
+bot.onText(/\/top50/, async (msg) => {
   try {
-    const arr = await getVerifiedEventTop(10);
-    if (!arr.length) return sendSafeMessage(msg.chat.id, "No event scores yet.");
-    const lines = arr.map((p,i)=>`${i+1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(msg.chat.id, "<b>🥇 Event Top 10 (verified)</b>\n\n", lines);
+    const data = await getLeaderboard();
+    const entries = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
+
+    if (!entries.length) {
+      await sendSafeMessage(msg.chat.id, "⚠️ No scores recorded yet. Try playing a few rounds to make history!");
+      return;
+    }
+
+    const lines = entries.slice(0, 50).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+    sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
   } catch (err) {
-    console.error("❌ /eventtop10:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
+    console.error("❌ /top50:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 50 leaderboard.");
   }
 });
 bot.onText(/\/eventtop50/, async (msg) => {
