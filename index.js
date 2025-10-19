@@ -1091,70 +1091,75 @@ app.post("/share", async (req, res) => {
 
     const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
 
-    // === ATH MODE ===
-    if (String(mode).toLowerCase() === "ath") {
-      const athMap = await getAthMap();
-      const rec = athMap[username] || { ath: 0, milestones: [] };
-      const storedAth = +rec.ath || 0;
+// === ATH MODE ===
+if (String(mode).toLowerCase() === "ath") {
+  try {
+    // Load both sources of truth
+    const athMap = await getAthMap();
+    const mainBoard = await getLeaderboard();
 
-      // If incoming score > stored ATH → update
-      let athToShow = storedAth;
-      if (score && score > storedAth) {
-        rec.ath = score;
-        athToShow = score;
-      }
+    const mainBest = mainBoard[username] || 0;
+    const rec = athMap[username] || { ath: 0, milestones: [] };
+    const storedAth = +rec.ath || 0;
 
-      // Compose image and caption
-      const banner = await composeAthBanner(curveImage || imageBase64 || null, username, athToShow);
+    // Find the true highest score
+    const currentTop = Math.max(mainBest, storedAth, score || 0);
+    let athToShow = currentTop;
 
-      // Find leaderboard position
-      let positionText = "unranked";
-      try {
-        const main = await getLeaderboard();
-        const sorted = Object.entries(main).sort((a, b) => b[1] - a[1]);
-        const index = sorted.findIndex(([u]) => u === username);
-        if (index >= 0) positionText = `#${index + 1}`;
-      } catch (_) {}
-
-      const formatMCap = (v) => {
-        if (!v || isNaN(v)) return "0";
-        if (v >= 1_000_000) return (v / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
-        if (v >= 1_000) return (v / 1_000).toFixed(2).replace(/\.?0+$/, "") + "k";
-        return (+v).toFixed(2);
-      };
-
-      const caption =
-        `${escapeXml(username)} reached a new All-Time-High. ⚡\n` +
-        `A.T.H. MCap: ${formatMCap(athToShow)}\n` +
-        `Current rank: ${positionText}\n` +
-        `We aim for Win-Win.`;
-
-      await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
-
-      // Save record if updated
-      if (score && score > storedAth) {
-        const nowIso = new Date().toISOString();
-        rec.lastSentAt = nowIso;
-        rec.milestones = Array.isArray(rec.milestones) ? rec.milestones : [];
-        rec.milestones.push({ score, date: nowIso, sent: true });
-        athMap[username] = rec;
-        await saveAthMap(athMap);
-      }
-
-      return res.json({ ok: true, message: "Posted A.T.H. banner", ath: athToShow });
+    // Update record if new A.T.H. reached
+    if (score > storedAth) {
+      rec.ath = score;
+      const nowIso = new Date().toISOString();
+      rec.lastSentAt = nowIso;
+      rec.milestones = Array.isArray(rec.milestones) ? rec.milestones : [];
+      rec.milestones.push({ score, date: nowIso, sent: true });
+      athMap[username] = rec;
+      await saveAthMap(athMap);
     }
 
-    // === NON-ATH SHARE ===
-    const buf = await composeShareImage(imageBase64, username, score);
-    const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(String(score))}\nShared from UnStableCoin FUD Dodge`;
-    await bot.sendPhoto(targetChatId, buf, { caption, parse_mode: "HTML" });
-    res.json({ ok: true, message: "Posted to Telegram" });
+    // Compose image and caption with real A.T.H.
+    const banner = await composeAthBanner(curveImage || imageBase64 || null, username, athToShow);
 
+    // Find leaderboard position
+    let positionText = "unranked";
+    try {
+      const sorted = Object.entries(mainBoard).sort((a, b) => b[1] - a[1]);
+      const index = sorted.findIndex(([u]) => u === username);
+      if (index >= 0) positionText = `#${index + 1}`;
+    } catch (_) {}
+
+    const formatMCap = (v) => {
+      if (!v || isNaN(v)) return "0";
+      if (v >= 1_000_000) return (v / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
+      if (v >= 1_000) return (v / 1_000).toFixed(2).replace(/\.?0+$/, "") + "k";
+      return (+v).toFixed(2);
+    };
+
+    const caption =
+      `${escapeXml(username)} reached a new All-Time-High. ⚡\n` +
+      `A.T.H. MCap: ${formatMCap(athToShow)}\n` +
+      `Current rank: ${positionText}\n` +
+      `We aim for Win-Win.`;
+
+    await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
+
+    return res.json({ ok: true, message: "Posted A.T.H. banner", ath: athToShow });
   } catch (err) {
-    console.error("share:", err?.message || err);
-    res.status(500).json({ ok: false, message: err?.message || "Share failed" });
+    console.error("share (ATH):", err?.message || err);
+    return res.status(500).json({ ok: false, message: "Failed to post A.T.H. banner." });
   }
-});
+}
+
+// === NON-ATH SHARE ===
+try {
+  const buf = await composeShareImage(imageBase64, username, score);
+  const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(String(score))}\nShared from UnStableCoin FUD Dodge`;
+  await bot.sendPhoto(targetChatId, buf, { caption, parse_mode: "HTML" });
+  res.json({ ok: true, message: "Posted to Telegram" });
+} catch (err) {
+  console.error("share (non-ATH):", err?.message || err);
+  res.status(500).json({ ok: false, message: "Share failed" });
+}
 
 // ATH preview (returns PNG)
 app.post("/athbannerpreview", async (req, res) => {
