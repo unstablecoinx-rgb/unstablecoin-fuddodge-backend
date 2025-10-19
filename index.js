@@ -694,15 +694,37 @@ bot.onText(/\/event$/, async (msg) => {
 // ==========================================================
 async function getLeaderboard() {
   try {
-    const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    let data = res.data.record || {};
+    const res = await axios.get(`${MAIN_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+
+    console.log("🟡 RAW FROM BIN:", JSON.stringify(res.data, null, 2));
+
+    // 🧠 Flexible unwrap logic — handles ALL possible shapes
+    let data = res.data;
+    if (data && data.record) data = data.record;
+    if (data && data.record) data = data.record; // double nested
+    if (data && data.record && typeof data.record === "object") data = data.record;
     if (data.scores && typeof data.scores === "object") data = data.scores;
 
-    const clean = {};
-    for (const [u, v] of Object.entries(data)) {
-      const n = +v;
-      if (!Number.isNaN(n)) clean[u] = n;
+    // Handle { record: { record: {...} } } shape directly
+    if (data && data.record && typeof data.record === "object") {
+      data = data.record;
     }
+
+    // Handle JSON like { record: { "@user": 123, "@user2": 456 } }
+    if (!data || typeof data !== "object") data = {};
+
+    console.log("🟢 AFTER UNWRAP:", data);
+
+    // 🧩 Normalize usernames and numeric scores
+    const clean = {};
+    for (const [k, v] of Object.entries(data)) {
+      const n = Number(v);
+      if (!isNaN(n)) clean[k.startsWith("@") ? k : "@" + k] = n;
+    }
+
+    console.log("🏁 FINAL CLEAN LEADERBOARD:", clean);
     return clean;
   } catch (err) {
     console.error("❌ getLeaderboard:", err?.message || err);
