@@ -574,6 +574,7 @@ bot.onText(/\/eventtop50/, async (msg) => {
 });
 
 // ==========================================================
+// ==========================================================
 // 13) TELEGRAM: WALLET FLOWS (ADD / CHANGE / REMOVE / VERIFY)
 // ==========================================================
 bot.onText(/\/addwallet/i, async (msg) => {
@@ -584,12 +585,10 @@ bot.onText(/\/addwallet/i, async (msg) => {
 
   try {
     const holders = await getHoldersArray();
-    const exists = holders.find(
-      (h) => normalizeName(h.username) === normalizeName(realUser)
-    );
+    const exists = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
     if (exists) {
       await bot.sendMessage(chatId, `⚠️ @${realUser}, you’re already registered. Use /changewallet.`);
-      return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+      return bot.sendMessage(chatId, " ", mainMenu);
     }
 
     await bot.sendMessage(chatId, "🪙 Paste your Solana wallet address:");
@@ -597,46 +596,40 @@ bot.onText(/\/addwallet/i, async (msg) => {
       const wallet = (m2.text || "").trim();
       if (!isLikelySolanaAddress(wallet)) {
         await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /addwallet.");
-        return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+        return bot.sendMessage(chatId, " ", mainMenu);
       }
 
       const cfg = await getConfig();
       const check = await checkSolanaHolding(wallet, cfg.minHoldAmount || 0);
       if (!check.ok) {
-        await bot.sendMessage(
-          chatId,
-          `⚠️ This wallet doesn’t hold the minimum ${cfg.minHoldAmount} $US required. Try again later.`
-        );
-        return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+        await bot.sendMessage(chatId, `⚠️ This wallet doesn’t hold the minimum ${cfg.minHoldAmount} $US required.`);
+        return bot.sendMessage(chatId, " ", mainMenu);
       }
 
       holders.push({ username: "@" + realUser, wallet, verifiedAt: new Date().toISOString() });
       await saveHoldersArray(holders);
       delete _cache[HOLDER_BIN_URL];
       await bot.sendMessage(chatId, `✅ Wallet added and verified for @${realUser}!`);
-      return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+      return bot.sendMessage(chatId, " ", mainMenu);
     });
   } catch (err) {
     console.error("⚠️ /addwallet:", err);
     await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.");
-    return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+    return bot.sendMessage(chatId, " ", mainMenu);
   }
 });
 
 bot.onText(/\/changewallet/i, async (msg) => {
   const chatId = msg.chat.id;
   const realUser = msg.from?.username;
-  if (!realUser)
-    return bot.sendMessage(chatId, "❌ You need a Telegram username.");
+  if (!realUser) return bot.sendMessage(chatId, "❌ You need a Telegram username.");
 
   try {
     const holders = await getHoldersArray();
-    const user = holders.find(
-      (h) => normalizeName(h.username) === normalizeName(realUser)
-    );
+    const user = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
     if (!user) {
       await bot.sendMessage(chatId, "⚠️ You’re not registered yet. Use /addwallet first.");
-      return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+      return bot.sendMessage(chatId, " ", mainMenu);
     }
 
     await bot.sendMessage(chatId, "Do you really want to change your wallet?", {
@@ -652,15 +645,14 @@ bot.onText(/\/changewallet/i, async (msg) => {
   } catch (err) {
     console.error("⚠️ /changewallet:", err?.message || err);
     await bot.sendMessage(chatId, "⚠️ Error. Try again later.");
-    return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+    return bot.sendMessage(chatId, " ", mainMenu);
   }
 });
 
 bot.onText(/\/removewallet/i, async (msg) => {
   const chatId = msg.chat.id;
   const realUser = msg.from?.username;
-  if (!realUser)
-    return bot.sendMessage(chatId, "❌ You need a Telegram username.");
+  if (!realUser) return bot.sendMessage(chatId, "❌ You need a Telegram username.");
   await bot.sendMessage(chatId, "Are you sure you want to remove your wallet?", {
     reply_markup: {
       inline_keyboard: [
@@ -676,17 +668,14 @@ bot.onText(/\/removewallet/i, async (msg) => {
 bot.onText(/\/verifyholder/i, async (msg) => {
   const chatId = msg.chat.id;
   const realUser = msg.from?.username;
-  if (!realUser)
-    return bot.sendMessage(chatId, "❌ Set a Telegram username to verify.");
+  if (!realUser) return bot.sendMessage(chatId, "❌ Set a Telegram username to verify.");
 
   try {
     const holders = await getHoldersArray();
-    const rec = holders.find(
-      (h) => normalizeName(h.username) === normalizeName(realUser)
-    );
+    const rec = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
     if (!rec?.wallet) {
       await bot.sendMessage(chatId, "⚠️ No wallet on file. Use /addwallet first.");
-      return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+      return bot.sendMessage(chatId, " ", mainMenu);
     }
 
     const res = await axios.post(
@@ -694,28 +683,19 @@ bot.onText(/\/verifyholder/i, async (msg) => {
       { username: "@" + realUser, wallet: rec.wallet }
     );
 
-    if (res.data.ok) {
-      await bot.sendMessage(
-        chatId,
-        `✅ Verified successfully for @${realUser}!\nWallet: <code>${rec.wallet}</code>`,
-        { parse_mode: "HTML" }
-      );
-    } else {
-      await bot.sendMessage(
-        chatId,
-        `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`
-      );
-    }
+    if (res.data.ok)
+      await bot.sendMessage(chatId, `✅ Verified successfully for @${realUser}!\nWallet:\n<code>${rec.wallet}</code>`, { parse_mode: "HTML" });
+    else
+      await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`);
 
-    return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+    return bot.sendMessage(chatId, " ", mainMenu);
   } catch (err) {
     console.error("verifyHolder:", err?.message || err);
     await bot.sendMessage(chatId, "⚠️ Network or backend error during verification.");
-    return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+    return bot.sendMessage(chatId, " ", mainMenu);
   }
 });
 
-// === Callback confirmations (Change / Remove) ===
 bot.on("callback_query", async (cb) => {
   const chatId = cb.message.chat.id;
   const realUser = cb.from.username;
@@ -728,25 +708,20 @@ bot.on("callback_query", async (cb) => {
         const wallet = (m2.text || "").trim();
         if (!isLikelySolanaAddress(wallet)) {
           await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /changewallet.");
-          return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+          return bot.sendMessage(chatId, " ", mainMenu);
         }
         const cfg = await getConfig();
         const check = await checkSolanaHolding(wallet, cfg.minHoldAmount || 0);
         if (!check.ok) {
-          await bot.sendMessage(
-            chatId,
-            `❌ This wallet doesn’t meet the minimum holding requirement of ${cfg.minHoldAmount} tokens.`
-          );
-          return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+          await bot.sendMessage(chatId, `❌ This wallet doesn’t meet the minimum holding requirement of ${cfg.minHoldAmount} tokens.`);
+          return bot.sendMessage(chatId, " ", mainMenu);
         }
 
         const holders = await getHoldersArray();
-        const user = holders.find(
-          (h) => normalizeName(h.username) === normalizeName(realUser)
-        );
+        const user = holders.find(h => normalizeName(h.username) === normalizeName(realUser));
         if (!user) {
           await bot.sendMessage(chatId, "⚠️ You’re not registered. Use /addwallet first.");
-          return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+          return bot.sendMessage(chatId, " ", mainMenu);
         }
 
         user.prevWallet = user.wallet || null;
@@ -755,12 +730,8 @@ bot.on("callback_query", async (cb) => {
         user.changedAt = new Date().toISOString();
         await saveHoldersArray(holders);
         delete _cache[HOLDER_BIN_URL];
-        await bot.sendMessage(
-          chatId,
-          `✅ Wallet updated for @${realUser}.\nNew wallet:\n<code>${wallet}</code>`,
-          { parse_mode: "HTML" }
-        );
-        return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+        await bot.sendMessage(chatId, `✅ Wallet updated for @${realUser}.\nNew wallet:\n<code>${wallet}</code>`, { parse_mode: "HTML" });
+        return bot.sendMessage(chatId, " ", mainMenu);
       });
       return;
     }
@@ -768,7 +739,7 @@ bot.on("callback_query", async (cb) => {
     if (cb.data === "confirm_change_no") {
       await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
       await bot.sendMessage(chatId, "❌ Wallet change cancelled.");
-      return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+      return bot.sendMessage(chatId, " ", mainMenu);
     }
 
     if (cb.data === "confirm_remove_yes") {
@@ -776,44 +747,39 @@ bot.on("callback_query", async (cb) => {
       const username = realUser ? "@" + realUser.replace(/^@+/, "") : null;
       if (!username) {
         await bot.sendMessage(chatId, "⚠️ No Telegram username found. Can’t remove wallet.");
-        return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+        return bot.sendMessage(chatId, " ", mainMenu);
       }
 
       try {
         let holders = await getHoldersArray();
         const before = holders.length;
-        holders = holders.filter(
-          (h) => normalizeName(h.username) !== normalizeName(username)
-        );
+        holders = holders.filter(h => normalizeName(h.username) !== normalizeName(username));
         if (holders.length === before) {
           await bot.sendMessage(chatId, `⚠️ No wallet found for @${realUser}.`);
-          return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+          return bot.sendMessage(chatId, " ", mainMenu);
         }
 
         await saveHoldersArray(holders);
         delete _cache[HOLDER_BIN_URL];
         console.log(`🧹 Removed wallet for ${username}`);
-        await bot.sendMessage(
-          chatId,
-          `🧹 Wallet removed for @${realUser}. You can verify again any time.`
-        );
-        return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+        await bot.sendMessage(chatId, `🧹 Wallet removed for @${realUser}. You can verify again any time.`);
+        return bot.sendMessage(chatId, " ", mainMenu);
       } catch (err) {
         console.error("❌ Remove wallet error:", err?.message || err);
         await bot.sendMessage(chatId, "⚠️ Error while removing wallet. Try again later.");
-        return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+        return bot.sendMessage(chatId, " ", mainMenu);
       }
     }
 
     if (cb.data === "confirm_remove_no") {
       await bot.answerCallbackQuery(cb.id, { text: "Cancelled." });
       await bot.sendMessage(chatId, "Action cancelled.");
-      return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+      return bot.sendMessage(chatId, " ", mainMenu);
     }
   } catch (err) {
     console.error("callback_query:", err?.message || err);
     await bot.answerCallbackQuery(cb.id, { text: "Error. Try again later." });
-    return bot.sendMessage(chatId, "⬅️ Back to main menu", mainMenu);
+    return bot.sendMessage(chatId, " ", mainMenu);
   }
 });
 // ==========================================================
