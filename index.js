@@ -1074,72 +1074,79 @@ async function saveAthMap(map) { await writeBin(ATH_BIN_URL, map); return true; 
 app.post("/share", async (req, res) => {
   try {
     const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
-    if (!username || typeof score === "undefined") return res.status(400).json({ ok:false, message:"Missing username or score" });
+    if (!username) return res.status(400).json({ ok: false, message: "Missing username" });
 
     const cfg = await getConfig();
     const holders = await getHoldersMapFromArray();
     if (!cfg.allowPostingWithoutHold) {
       const rec = holders[username];
-      if (!rec) return res.status(403).json({ ok:false, message:"User not a verified holder. Posting blocked." });
+      if (!rec) return res.status(403).json({ ok: false, message: "User not a verified holder. Posting blocked." });
     }
 
+    const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
+
+    // === ATH MODE ===
     if (String(mode).toLowerCase() === "ath") {
       const athMap = await getAthMap();
-      const rec = athMap[username] || { ath: 0, lastSentScore: null, milestones: [] };
-      const oldAth = +rec.ath || 0;
-      if (!ATH_TEST_MODE && !(score > oldAth)) {
-        return res.status(400).json({ ok:false, message:`Score must beat your A.T.H. of ${oldAth}` });
+      const rec = athMap[username] || { ath: 0, milestones: [] };
+      const storedAth = +rec.ath || 0;
+
+      // If incoming score > stored ATH → update
+      let athToShow = storedAth;
+      if (score && score > storedAth) {
+        rec.ath = score;
+        athToShow = score;
       }
-      const isNewAth = score > oldAth;
-      if (isNewAth) rec.ath = score;
 
-      const banner = await composeAthBanner(curveImage || imageBase64 || null, username, score);
-      const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
+      // Compose image and caption
+      const banner = await composeAthBanner(curveImage || imageBase64 || null, username, athToShow);
 
-      // Position in main leaderboard (optional)
+      // Find leaderboard position
       let positionText = "unranked";
       try {
         const main = await getLeaderboard();
-        const sorted = Object.entries(main).sort((a,b)=>b[1]-a[1]);
+        const sorted = Object.entries(main).sort((a, b) => b[1] - a[1]);
         const index = sorted.findIndex(([u]) => u === username);
         if (index >= 0) positionText = `#${index + 1}`;
       } catch (_) {}
 
       const formatMCap = (v) => {
-        if (!v || isNaN(v)) return "0k";
-        if (v >= 1_000_000) return (v/1_000_000).toFixed(3).replace(/\.?0+$/,"")+"M";
-        if (v >= 1000) return (v/1000).toFixed(3).replace(/\.?0+$/,"")+"k";
-        return (+v).toFixed(3).replace(/\.?0+$/,"");
+        if (!v || isNaN(v)) return "0";
+        if (v >= 1_000_000) return (v / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
+        if (v >= 1_000) return (v / 1_000).toFixed(2).replace(/\.?0+$/, "") + "k";
+        return (+v).toFixed(2);
       };
+
       const caption =
-        `${escapeXml(username)} sent a strong signal. ⚡\n` +
-        `New A.T.H. logged at ${formatMCap(score)}.\n` +
-        `Current rank: ${positionText}.\n` +
-        `We aim for Win-Win`;
+        `${escapeXml(username)} reached a new All-Time-High. ⚡\n` +
+        `A.T.H. MCap: ${formatMCap(athToShow)}\n` +
+        `Current rank: ${positionText}\n` +
+        `We aim for Win-Win.`;
 
       await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
 
-      const nowIso = new Date().toISOString();
-      rec.lastSentScore = score;
-      rec.lastSentAt = nowIso;
-      rec.milestones = Array.isArray(rec.milestones) ? rec.milestones : [];
-      rec.milestones.push({ score, date: nowIso, sent: true });
-      athMap[username] = rec;
-      await saveAthMap(athMap);
+      // Save record if updated
+      if (score && score > storedAth) {
+        const nowIso = new Date().toISOString();
+        rec.lastSentAt = nowIso;
+        rec.milestones = Array.isArray(rec.milestones) ? rec.milestones : [];
+        rec.milestones.push({ score, date: nowIso, sent: true });
+        athMap[username] = rec;
+        await saveAthMap(athMap);
+      }
 
-      return res.json({ ok:true, message:"Posted A.T.H. banner" });
+      return res.json({ ok: true, message: "Posted A.T.H. banner", ath: athToShow });
     }
 
-    // non-ATH share
+    // === NON-ATH SHARE ===
     const buf = await composeShareImage(imageBase64, username, score);
-    const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
     const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(String(score))}\nShared from UnStableCoin FUD Dodge`;
     await bot.sendPhoto(targetChatId, buf, { caption, parse_mode: "HTML" });
-    res.json({ ok:true, message:"Posted to Telegram" });
+    res.json({ ok: true, message: "Posted to Telegram" });
 
   } catch (err) {
     console.error("share:", err?.message || err);
-    res.status(500).json({ ok:false, message: err?.message || "Share failed" });
+    res.status(500).json({ ok: false, message: err?.message || "Share failed" });
   }
 });
 
