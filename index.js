@@ -908,7 +908,7 @@ bot.on("manual_command", async (msg) => {
 });
 
 // ==========================================================
-// 16) Helper to call existing onText() handlers safely
+// 15) Helper to call existing onText() handlers safely
 // ==========================================================
 bot.emitTextCommand = (pattern, msg) => {
   // Re-use existing registered /command handlers by simulating their regex match
