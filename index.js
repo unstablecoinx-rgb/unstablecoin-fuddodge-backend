@@ -1094,36 +1094,26 @@ app.post("/share", async (req, res) => {
     // === ATH MODE ===
     if (String(mode).toLowerCase() === "ath") {
       try {
-        // Load both sources of truth
-        const athMap = await getAthMap();
-        const mainBoard = await getLeaderboard();
+        const leaderboard = await getLeaderboard();
+        const athMap = await getAthMap(); // tiny log of last posted ATHs
+        const mainBest = leaderboard[username] || 0;
+        const lastPosted = athMap[username]?.lastSentScore || 0;
 
-        const mainBest = mainBoard[username] || 0;
-        const rec = athMap[username] || { ath: 0, milestones: [] };
-        const storedAth = +rec.ath || 0;
+        // true ATH is simply the leaderboard high score
+        const trueAth = mainBest;
 
-        // Find the true highest score
-        const currentTop = Math.max(mainBest, storedAth, score || 0);
-        let athToShow = currentTop;
-
-        // Update record if new A.T.H. reached
-        if (score > storedAth) {
-          rec.ath = score;
-          const nowIso = new Date().toISOString();
-          rec.lastSentAt = nowIso;
-          rec.milestones = Array.isArray(rec.milestones) ? rec.milestones : [];
-          rec.milestones.push({ score, date: nowIso, sent: true });
-          athMap[username] = rec;
-          await saveAthMap(athMap);
+        // skip duplicate posts if same ATH already sent
+        if (trueAth <= lastPosted && !ATH_TEST_MODE) {
+          return res.json({ ok: false, message: "No new A.T.H. to post", ath: trueAth });
         }
 
-        // Compose image and caption with real A.T.H.
-        const banner = await composeAthBanner(curveImage || imageBase64 || null, username, athToShow);
+        // compose banner and caption
+        const banner = await composeAthBanner(curveImage || imageBase64 || null, username, trueAth);
 
-        // Find leaderboard position
+        // find rank
         let positionText = "unranked";
         try {
-          const sorted = Object.entries(mainBoard).sort((a, b) => b[1] - a[1]);
+          const sorted = Object.entries(leaderboard).sort((a, b) => b[1] - a[1]);
           const index = sorted.findIndex(([u]) => u === username);
           if (index >= 0) positionText = `#${index + 1}`;
         } catch (_) {}
@@ -1137,13 +1127,17 @@ app.post("/share", async (req, res) => {
 
         const caption =
           `${escapeXml(username)} reached a new All-Time-High. ⚡\n` +
-          `A.T.H. MCap: ${formatMCap(athToShow)}\n` +
+          `A.T.H. MCap: ${formatMCap(trueAth)}\n` +
           `Current rank: ${positionText}\n` +
           `We aim for Win-Win.`;
 
         await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
 
-        return res.json({ ok: true, message: "Posted A.T.H. banner", ath: athToShow });
+        // update small ATH log
+        athMap[username] = { lastSentScore: trueAth, lastSentAt: new Date().toISOString() };
+        await saveAthMap(athMap);
+
+        return res.json({ ok: true, message: "Posted A.T.H. banner", ath: trueAth });
       } catch (err) {
         console.error("share (ATH):", err?.message || err);
         return res.status(500).json({ ok: false, message: "Failed to post A.T.H. banner." });
@@ -1153,7 +1147,10 @@ app.post("/share", async (req, res) => {
     // === NON-ATH SHARE ===
     try {
       const buf = await composeShareImage(imageBase64, username, score);
-      const caption = `<b>${escapeXml(String(username))}</b>\nMCap: ${escapeXml(String(score))}\nShared from UnStableCoin FUD Dodge`;
+      const caption =
+        `<b>${escapeXml(String(username))}</b>\n` +
+        `MCap: ${escapeXml(String(score))}\n` +
+        `Shared from UnStableCoin FUD Dodge`;
       await bot.sendPhoto(targetChatId, buf, { caption, parse_mode: "HTML" });
       res.json({ ok: true, message: "Posted to Telegram" });
     } catch (err) {
