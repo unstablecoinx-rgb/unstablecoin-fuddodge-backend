@@ -574,67 +574,121 @@ bot.onText(/\/event$/, async (msg) => {
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
 });
-// === MAIN LEADERBOARD: TOP 10 ===
+// ==========================================================
+// 🏆 MAIN LEADERBOARD (compatible with flat record bins)
+// ==========================================================
+
+// --- /top10 ---
 bot.onText(/^\/top10$/, async (msg) => {
   try {
-    const data = await getLeaderboard();
-    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    // Directly read from main JSONBin
+    const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    let data = res.data.record || {};
 
+    // If it ever contains nested 'scores', unwrap automatically
+    if (data.scores && typeof data.scores === "object") data = data.scores;
+    if (data.scores?.scores && typeof data.scores.scores === "object") data = data.scores.scores;
+
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
     if (!sorted.length) {
       return sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
     }
 
-    const lines = sorted
-      .slice(0, 10)
-      .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
-
-    sendChunked(msg.chat.id, "<b>🏆 Top 10</b>\n\n", lines);
+    const lines = sorted.slice(0, 10).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+    sendChunked(msg.chat.id, "<b>🏆 Top 10 Players</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top10:", err?.message || err);
-    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 10 leaderboard.");
+    sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 10 leaderboard.");
   }
 });
 
-bot.onText(/\/top50/, async (msg) => {
+// --- /top50 ---
+bot.onText(/^\/top50$/, async (msg) => {
   try {
-    const data = await getLeaderboard();
-    const entries = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
+    const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    let data = res.data.record || {};
 
-    if (!entries.length) {
-      await sendSafeMessage(msg.chat.id, "⚠️ No scores recorded yet. Try playing a few rounds to make history!");
-      return;
+    if (data.scores && typeof data.scores === "object") data = data.scores;
+    if (data.scores?.scores && typeof data.scores.scores === "object") data = data.scores.scores;
+
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+    if (!sorted.length) {
+      return sendSafeMessage(msg.chat.id, "⚠️ No scores recorded yet. Try playing a few rounds to make history!");
     }
 
-    const lines = entries.slice(0, 50).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+    const lines = sorted.slice(0, 50).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
     sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top50:", err?.message || err);
-    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 50 leaderboard.");
+    sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 50 leaderboard.");
   }
 });
-// === Verified Event Leaderboards ===
+// ==========================================================
+// 🥇 VERIFIED EVENT LEADERBOARDS (auto structure support)
+// ==========================================================
+
+// --- EVENT TOP 10 ---
 bot.onText(/^\/eventtop10$/, async (msg) => {
   try {
-    const arr = await getVerifiedEventTop(10);
-    if (!arr.length) {
-      return sendSafeMessage(msg.chat.id, "⚠️ No verified event scores yet.");
+    const { scores } = await getEventData();
+    if (!scores || !Object.keys(scores).length)
+      return sendSafeMessage(msg.chat.id, "⚠️ No event scores recorded yet.");
+
+    const holdersMap = await getHoldersMapFromArray();
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+
+    // sort descending
+    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+
+    const verified = [];
+    for (const [uname, score] of sorted) {
+      const rec = holdersMap[uname];
+      if (!rec?.wallet) continue;
+      const check = await checkSolanaHolding(rec.wallet, minHold);
+      if (check.ok) verified.push({ username: uname, score });
+      if (verified.length >= 10) break;
     }
-    const lines = arr.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(msg.chat.id, "<b>🥇 Event Top 10 (verified)</b>\n\n", lines);
+
+    if (!verified.length)
+      return sendSafeMessage(msg.chat.id, "📭 No verified holders found in this event.");
+
+    const lines = verified.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
+    sendChunked(msg.chat.id, "<b>🥇 Event Top 10 (verified holders)</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop10:", err?.message || err);
     sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
   }
 });
 
+// --- EVENT TOP 50 ---
 bot.onText(/^\/eventtop50$/, async (msg) => {
   try {
-    const arr = await getVerifiedEventTop(50);
-    if (!arr.length) {
-      return sendSafeMessage(msg.chat.id, "⚠️ No verified event scores yet.");
+    const { scores } = await getEventData();
+    if (!scores || !Object.keys(scores).length)
+      return sendSafeMessage(msg.chat.id, "⚠️ No event scores recorded yet.");
+
+    const holdersMap = await getHoldersMapFromArray();
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+
+    // sort descending
+    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+
+    const verified = [];
+    for (const [uname, score] of sorted) {
+      const rec = holdersMap[uname];
+      if (!rec?.wallet) continue;
+      const check = await checkSolanaHolding(rec.wallet, minHold);
+      if (check.ok) verified.push({ username: uname, score });
+      if (verified.length >= 50) break;
     }
-    const lines = arr.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(msg.chat.id, "<b>🥇 Event Top 50 (verified)</b>\n\n", lines);
+
+    if (!verified.length)
+      return sendSafeMessage(msg.chat.id, "📭 No verified holders found in this event.");
+
+    const lines = verified.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
+    sendChunked(msg.chat.id, "<b>🥇 Event Top 50 (verified holders)</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop50:", err?.message || err);
     sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top50.");
