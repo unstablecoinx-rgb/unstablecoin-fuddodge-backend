@@ -578,25 +578,26 @@ bot.onText(/\/event$/, async (msg) => {
 // 🏆 LEADERBOARD (RESTORED STABLE VERSION)
 // ==========================================================
 
-// === Helper: Get leaderboard from JSONBin ===
 async function getLeaderboard() {
   try {
     const res = await axios.get(MAIN_BIN_URL, {
       headers: { "X-Master-Key": JSONBIN_KEY },
     });
 
-    // Unwrap all possible shapes
-    let data = res.data?.record || res.data || {};
-    if (data.record) data = data.record;             // nested
-    if (data.scores && typeof data.scores === "object")
-      data = data.scores;                            // old "scores" container
+    // 🧩 Normalize nested structures robustly
+    let data = res.data;
+    if (data?.record) data = data.record;
+    if (data?.record) data = data.record; // unwrap second layer if exists
+    if (data?.scores) data = data.scores;
+    if (data?.scores?.scores) data = data.scores.scores;
 
-    // Clean numeric scores only
+    // 🧹 Filter only valid usernames and numeric scores
     const clean = {};
-    for (const [u, v] of Object.entries(data)) {
-      const n = +v;
-      if (!Number.isNaN(n)) clean[u] = n;
+    for (const [u, v] of Object.entries(data || {})) {
+      const n = Number(v);
+      if (!isNaN(n)) clean[u] = n;
     }
+
     return clean;
   } catch (err) {
     console.error("❌ getLeaderboard:", err?.message || err);
