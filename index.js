@@ -144,15 +144,26 @@ function normalizeName(n) {
 // simple in-memory cache for short periods
 const _cache = {};
 
+// ==========================================================
+// 5) JSONBin Helpers (readBin + writeBin)
+// ==========================================================
 async function readBin(url, tries = 3) {
-  // return cached if younger than 30s
+  // Return cached version if <30s old
   const c = _cache[url];
   if (c && Date.now() - c.t < 30_000) return c.data;
 
   for (let i = 0; i < tries; i++) {
     try {
-      const resp = await axios.get(url, { headers: { "X-Master-Key": JSONBIN_KEY } });
-      const data = resp.data.record || resp.data || {};
+      const resp = await axios.get(url, {
+        headers: { "X-Master-Key": JSONBIN_KEY },
+      });
+
+      // 🧩 Normalize all possible response shapes
+      let data = resp.data?.record ?? resp.data ?? {};
+      if (data.record) data = data.record;          // unwrap nested record
+      if (Array.isArray(data.record)) data = data.record; // double nested
+      if (data?.scores) data = data.scores;          // handle old score format
+
       _cache[url] = { t: Date.now(), data };
       return data;
     } catch (err) {
@@ -169,12 +180,11 @@ async function readBin(url, tries = 3) {
   }
   return null;
 }
+
 async function writeBin(url, payload, tries = 3) {
   for (let i = 0; i < tries; i++) {
     try {
-      // ✅ JSONBin v3 requires { record: ... } wrapper for both arrays and objects
       const dataToSend = { record: payload };
-
       const resp = await axios.put(url, dataToSend, {
         headers: {
           "Content-Type": "application/json",
@@ -221,14 +231,18 @@ async function getHoldersArray() {
   const arr = (await readBin(HOLDER_BIN_URL)) || [];
   return Array.isArray(arr) ? arr : [];
 }
-async function saveHoldersArray(arr) { await writeBin(HOLDER_BIN_URL, arr); return true; }
-async function getHoldersMapFromArray() {
-  const arr = await getHoldersArray();
-  const map = {};
-  for (const h of arr) if (h?.username) map[h.username] = h;
-  return map;
+async function saveHoldersArray(arr) {
+  try {
+    // 🧩 Always ensure array format for JSONBin
+    if (!Array.isArray(arr)) arr = [];
+    await writeBin(HOLDER_BIN_URL, [...arr]); // clone to avoid ref issues
+    delete _cache[HOLDER_BIN_URL];
+    return true;
+  } catch (err) {
+    console.error("❌ saveHoldersArray:", err?.message || err);
+    return false;
+  }
 }
-
 //
 // 7) SOLANA CHECKS
 //
