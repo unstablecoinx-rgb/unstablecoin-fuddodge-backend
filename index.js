@@ -556,25 +556,21 @@ bot.onText(/\/event$/, async (msg) => {
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
 });
-bot.onText(/\/top10/, async (msg) => {
-  const data = await getLeaderboard();
-  const sorted = Object.entries(data).sort((a,b)=>b[1]-a[1]);
-  if (!sorted.length) return sendSafeMessage(msg.chat.id, "No scores yet!");
-  const lines = sorted.slice(0,10).map(([u,s],i)=>`${i+1}. <b>${u}</b> – ${s}`);
-  sendChunked(msg.chat.id, "<b>🏆 Top 10</b>\n\n", lines);
-});
-bot.onText(/\/top10/, async (msg) => {
+// === MAIN LEADERBOARD: TOP 10 ===
+bot.onText(/^\/top10$/, async (msg) => {
   try {
     const data = await getLeaderboard();
-    const entries = Object.entries(data || {}).sort((a, b) => b[1] - a[1]);
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
 
-    if (!entries.length) {
-      await sendSafeMessage(msg.chat.id, "⚠️ No scores recorded yet. Be the first to play and claim the leaderboard. 💛⚡");
-      return;
+    if (!sorted.length) {
+      return sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
     }
 
-    const lines = entries.slice(0, 10).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
-    sendChunked(msg.chat.id, "<b>🏆 Top 10 Players</b>\n\n", lines);
+    const lines = sorted
+      .slice(0, 10)
+      .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+
+    sendChunked(msg.chat.id, "<b>🏆 Top 10</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top10:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 10 leaderboard.");
