@@ -1148,7 +1148,7 @@ if (String(mode).toLowerCase() === "ath") {
     console.error("share (ATH):", err?.message || err);
     return res.status(500).json({ ok: false, message: "Failed to post A.T.H. banner." });
   }
-}
+});
 
 // === NON-ATH SHARE ===
 try {
