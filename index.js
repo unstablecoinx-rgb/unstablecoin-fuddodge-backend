@@ -433,7 +433,8 @@ async function getLeaderboard() {
       if (!isNaN(n)) clean[u.startsWith("@") ? u : "@" + u] = n;
     }
     console.log("✅ CLEAN LEADERBOARD:", clean);
-    return clean;
+    console.log("🏁 FINAL CLEAN LEADERBOARD:", clean);
+      return clean;
   } catch (err) {
     console.error("❌ getLeaderboard error:", err?.message || err);
     return {};
