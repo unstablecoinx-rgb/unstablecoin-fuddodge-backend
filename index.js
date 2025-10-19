@@ -575,52 +575,81 @@ bot.onText(/\/event$/, async (msg) => {
   }
 });
 // ==========================================================
-// 🏆 MAIN LEADERBOARD (compatible with flat record bins)
+// 🏆 LEADERBOARD (RESTORED STABLE VERSION)
 // ==========================================================
 
-// --- /top10 ---
+// === Helper: Get leaderboard from JSONBin ===
+async function getLeaderboard() {
+  try {
+    const res = await axios.get(MAIN_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+
+    // Unwrap all possible shapes
+    let data = res.data?.record || res.data || {};
+    if (data.record) data = data.record;             // nested
+    if (data.scores && typeof data.scores === "object")
+      data = data.scores;                            // old "scores" container
+
+    // Clean numeric scores only
+    const clean = {};
+    for (const [u, v] of Object.entries(data)) {
+      const n = +v;
+      if (!Number.isNaN(n)) clean[u] = n;
+    }
+    return clean;
+  } catch (err) {
+    console.error("❌ getLeaderboard:", err?.message || err);
+    return {};
+  }
+}
+
+// === /top10 ===
 bot.onText(/^\/top10$/, async (msg) => {
   try {
-    // Directly read from main JSONBin
-    const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    let data = res.data.record || {};
-
-    // If it ever contains nested 'scores', unwrap automatically
-    if (data.scores && typeof data.scores === "object") data = data.scores;
-    if (data.scores?.scores && typeof data.scores.scores === "object") data = data.scores.scores;
-
+    const data = await getLeaderboard();
     const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+
     if (!sorted.length) {
       return sendSafeMessage(msg.chat.id, "⚠️ No scores yet!");
     }
 
-    const lines = sorted.slice(0, 10).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+    const lines = sorted
+      .slice(0, 10)
+      .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
     sendChunked(msg.chat.id, "<b>🏆 Top 10 Players</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top10:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 10 leaderboard.");
+    await sendSafeMessage(
+      msg.chat.id,
+      "⚠️ Failed to load Top 10 leaderboard."
+    );
   }
 });
 
-// --- /top50 ---
+// === /top50 ===
 bot.onText(/^\/top50$/, async (msg) => {
   try {
-    const res = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    let data = res.data.record || {};
-
-    if (data.scores && typeof data.scores === "object") data = data.scores;
-    if (data.scores?.scores && typeof data.scores.scores === "object") data = data.scores.scores;
-
+    const data = await getLeaderboard();
     const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
+
     if (!sorted.length) {
-      return sendSafeMessage(msg.chat.id, "⚠️ No scores recorded yet. Try playing a few rounds to make history!");
+      return sendSafeMessage(
+        msg.chat.id,
+        "⚠️ No scores recorded yet. Try playing a few rounds to make history!"
+      );
     }
 
-    const lines = sorted.slice(0, 50).map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
+    const lines = sorted
+      .slice(0, 50)
+      .map(([u, s], i) => `${i + 1}. <b>${u}</b> – ${s}`);
     sendChunked(msg.chat.id, "<b>📈 Top 50 Players</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top50:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to load Top 50 leaderboard.");
+    await sendSafeMessage(
+      msg.chat.id,
+      "⚠️ Failed to load Top 50 leaderboard."
+    );
   }
 });
 // ==========================================================
