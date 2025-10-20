@@ -1164,6 +1164,22 @@ app.get("/eventtop50", async (_req, res) => {
   catch (_) { res.status(500).json({ ok:false, message:"Failed to load event top50" }); }
 });
 
+// === FRONTEND CONFIG ENDPOINT (for minHold + settings) ===
+app.get("/config", async (_req, res) => {
+  try {
+    const cfg = await getConfig();
+    console.log("✅ /config served:", {
+      tokenMint: cfg.tokenMint,
+      minHoldAmount: cfg.minHoldAmount,
+      network: cfg.network,
+    });
+    res.json(cfg);
+  } catch (err) {
+    console.error("❌ /config:", err?.message || err);
+    res.status(500).json({ ok: false, message: "Failed to load config" });
+  }
+});
+
 // === MAIN LEADERBOARD for frontend (used by splash) ===
 app.get("/leaderboard", async (_req, res) => {
   try {
