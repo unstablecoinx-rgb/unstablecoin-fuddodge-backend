@@ -700,7 +700,7 @@ bot.onText(/\/event$/, async (msg) => {
 // 🥇 VERIFIED EVENT LEADERBOARDS (auto structure support)
 // ==========================================================
 
-// --- EVENT TOP 10 (live on-chain verification with 6h recheck) ---
+// --- EVENT TOP 10 (live verification + holding requirement shown) ---
 bot.onText(/^\/eventtop10$/, async (msg) => {
   try {
     const { scores } = await getEventData();
@@ -736,7 +736,10 @@ bot.onText(/^\/eventtop10$/, async (msg) => {
       lines.push(`${lines.length + 1}. ${mark} <b>${uname}</b> – ${score}`);
     }
 
-    lines.push("\n✅ = verified holder  |  ⚪ = unverified (live check every 6h)");
+    lines.push(
+      `\n✅ = verified holder | ⚪ = unverified (live check every 6h)`,
+      `Minimum holding requirement: <b>${minHold.toLocaleString()}</b> $US`
+    );
 
     await sendChunked(msg.chat.id, "<b>🥇 Event Top 10</b>\n\n", lines);
   } catch (err) {
@@ -745,7 +748,7 @@ bot.onText(/^\/eventtop10$/, async (msg) => {
   }
 });
 
-// --- EVENT TOP 50 (cached verification with silent refresh) ---
+// --- EVENT TOP 50 (cached verification + holding requirement shown) ---
 bot.onText(/^\/eventtop50$/, async (msg) => {
   try {
     const { scores } = await getEventData();
@@ -780,7 +783,10 @@ bot.onText(/^\/eventtop50$/, async (msg) => {
       lines.push(`${lines.length + 1}. ${mark} <b>${uname}</b> – ${score}`);
     }
 
-    lines.push("\n✅ = verified (cached, rechecked every 6h)  |  ⚪ = not yet verified");
+    lines.push(
+      `\n✅ = verified (cached, rechecked every 6h) | ⚪ = not yet verified`,
+      `Minimum holding requirement: <b>${minHold.toLocaleString()}</b> $US`
+    );
 
     await sendChunked(msg.chat.id, "<b>📈 Event Top 50</b>\n\n", lines);
   } catch (err) {
