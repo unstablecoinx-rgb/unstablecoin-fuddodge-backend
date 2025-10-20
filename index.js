@@ -700,7 +700,7 @@ bot.onText(/\/event$/, async (msg) => {
 // 🥇 VERIFIED EVENT LEADERBOARDS (auto structure support)
 // ==========================================================
 
-// --- EVENT TOP 10 ---
+// --- EVENT TOP 10 (live on-chain verification with 6h recheck) ---
 bot.onText(/^\/eventtop10$/, async (msg) => {
   try {
     const { scores } = await getEventData();
@@ -710,31 +710,42 @@ bot.onText(/^\/eventtop10$/, async (msg) => {
     const holdersMap = await getHoldersMapFromArray();
     const cfg = await getConfig();
     const minHold = cfg.minHoldAmount || 0;
+    const now = Date.now();
 
-    // sort descending
-    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    const sorted = Object.entries(scores)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
 
-    const verified = [];
+    const lines = [];
     for (const [uname, score] of sorted) {
       const rec = holdersMap[uname];
-      if (!rec?.wallet) continue;
-      const check = await checkSolanaHolding(rec.wallet, minHold);
-      if (check.ok) verified.push({ username: uname, score });
-      if (verified.length >= 10) break;
+      let mark = "⚪";
+      if (rec?.wallet) {
+        const lastCheck = rec.verifiedAt ? new Date(rec.verifiedAt).getTime() : 0;
+        const expired = !lastCheck || now - lastCheck > 6 * 60 * 60 * 1000; // 6h
+        if (expired) {
+          const check = await checkSolanaHolding(rec.wallet, minHold);
+          if (check.ok) {
+            mark = "✅";
+            rec.verifiedAt = new Date().toISOString();
+          }
+        } else {
+          mark = "✅";
+        }
+      }
+      lines.push(`${lines.length + 1}. ${mark} <b>${uname}</b> – ${score}`);
     }
 
-    if (!verified.length)
-      return sendSafeMessage(msg.chat.id, "📭 No verified holders found in this event.");
+    lines.push("\n✅ = verified holder  |  ⚪ = unverified (live check every 6h)");
 
-    const lines = verified.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(msg.chat.id, "<b>🥇 Event Top 10 (verified holders)</b>\n\n", lines);
+    await sendChunked(msg.chat.id, "<b>🥇 Event Top 10</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop10:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top10.");
   }
 });
 
-// --- EVENT TOP 50 ---
+// --- EVENT TOP 50 (cached verification with silent refresh) ---
 bot.onText(/^\/eventtop50$/, async (msg) => {
   try {
     const { scores } = await getEventData();
@@ -744,30 +755,39 @@ bot.onText(/^\/eventtop50$/, async (msg) => {
     const holdersMap = await getHoldersMapFromArray();
     const cfg = await getConfig();
     const minHold = cfg.minHoldAmount || 0;
+    const now = Date.now();
 
-    // sort descending
-    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    const sorted = Object.entries(scores)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 50);
 
-    const verified = [];
+    const lines = [];
     for (const [uname, score] of sorted) {
       const rec = holdersMap[uname];
-      if (!rec?.wallet) continue;
-      const check = await checkSolanaHolding(rec.wallet, minHold);
-      if (check.ok) verified.push({ username: uname, score });
-      if (verified.length >= 50) break;
+      let mark = "⚪";
+
+      if (rec?.wallet && rec?.verifiedAt) {
+        const lastCheck = new Date(rec.verifiedAt).getTime();
+        const expired = now - lastCheck > 6 * 60 * 60 * 1000;
+        if (expired) {
+          // silent background refresh (non-blocking)
+          checkSolanaHolding(rec.wallet, minHold).then((check) => {
+            if (check.ok) rec.verifiedAt = new Date().toISOString();
+          });
+        }
+        mark = "✅";
+      }
+      lines.push(`${lines.length + 1}. ${mark} <b>${uname}</b> – ${score}`);
     }
 
-    if (!verified.length)
-      return sendSafeMessage(msg.chat.id, "📭 No verified holders found in this event.");
+    lines.push("\n✅ = verified (cached, rechecked every 6h)  |  ⚪ = not yet verified");
 
-    const lines = verified.map((p, i) => `${i + 1}. <b>${p.username}</b> – ${p.score}`);
-    sendChunked(msg.chat.id, "<b>🥇 Event Top 50 (verified holders)</b>\n\n", lines);
+    await sendChunked(msg.chat.id, "<b>📈 Event Top 50</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop50:", err?.message || err);
-    sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top50.");
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to load event top50.");
   }
 });
-
 // ==========================================================
 // 🏁 ADMIN COMMAND — /winners
 // ==========================================================
