@@ -853,7 +853,7 @@ bot.onText(/^\/winners(?:\s+(\d+))?/, async (msg, match) => {
 });
 
 // ==========================================================
-// 🧹 ADMIN COMMAND — /resetevent
+// 🧹 ADMIN COMMAND — /resetevent (prep for new contest)
 // ==========================================================
 bot.onText(/^\/resetevent$/, async (msg) => {
   const username = (msg.from?.username || "").toLowerCase();
@@ -862,13 +862,19 @@ bot.onText(/^\/resetevent$/, async (msg) => {
   }
 
   try {
+    const payload = { scores: {}, clearedAt: new Date().toISOString() };
+
     await axios.put(
       `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`,
-      {},
+      payload,
       { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } }
     );
-    console.log("🧹 Event leaderboard cleared.");
-    await sendSafeMessage(msg.chat.id, "✅ Event leaderboard has been reset (cleared).");
+
+    console.log("🧹 Event leaderboard cleared (prep for next contest).");
+    await sendSafeMessage(
+      msg.chat.id,
+      "✅ Event leaderboard has been cleared.\nReady for next contest start!"
+    );
   } catch (err) {
     console.error("❌ /resetevent:", err?.response?.data || err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Failed to reset event leaderboard.");
