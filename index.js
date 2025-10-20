@@ -92,46 +92,33 @@ const ATH_BIN_URL   = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
 
 const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot", "pachenko_14"]; // lowercase usernames
 
-// ==========================================================
-// 3) EXPRESS + TELEGRAM WEBHOOK SETUP (Render-safe version)
-// ==========================================================
+// 3) EXPRESS + TELEGRAM WEBHOOK SETUP (stable)
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json({ limit: "15mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// --- Create bot in webhook mode only ---
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 
 (async () => {
   try {
-    // 🧹 Ensure no old webhook leftovers or polling conflicts
-    await bot.deleteWebHook({ drop_pending_updates: true });
-
-    const host = RENDER_EXTERNAL_HOSTNAME || "https://unstablecoin-fuddodge-backend.onrender.com";
+    const host = RENDER_EXTERNAL_HOSTNAME || `https://unstablecoin-fuddodge-backend.onrender.com`;
     const webhookUrl = `${host.replace(/\/$/, "")}/bot${TELEGRAM_BOT_TOKEN}`;
-
     await bot.setWebHook(webhookUrl);
-    console.log(`✅ Webhook active at: ${webhookUrl}`);
+    console.log(`✅ Webhook set: ${webhookUrl}`);
   } catch (err) {
-    console.error("⚠️ setWebHook error:", err?.message || err);
+    console.warn("⚠️ setWebHook warning:", err?.message || err);
   }
 })();
 
-// --- Telegram webhook endpoint (Render receives Telegram POSTs here) ---
+// Telegram webhook endpoint
 app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
-  try {
-    bot.processUpdate(req.body);
-  } catch (err) {
-    console.error("❌ processUpdate:", err?.message || err);
-  }
+  try { bot.processUpdate(req.body); } catch (e) { console.error("❌ processUpdate:", e?.message || e); }
   res.sendStatus(200);
 });
 
-// --- Health check / root endpoint ---
-app.get("/", (_req, res) => {
-  res.send("💛 UnStableCoin Bot v3.2 running (webhook mode active).");
-});
+// Health check
+app.get("/", (_req, res) => res.send("💛 UnStableCoin Bot running (webhook)."));
 
 //
 // 4) SMALL UTILITIES
