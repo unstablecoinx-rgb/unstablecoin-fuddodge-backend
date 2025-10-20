@@ -1146,20 +1146,17 @@ app.get("/event", async (_req, res) => {
 // === FRONTEND EVENT TOP 10 ===
 app.get("/eventtop10", async (_req, res) => {
   try {
-    const raw = await getEventData();          // returns { scores: {...} }
-    const scores = raw?.scores || raw || {};   // unwrap if needed
-
+    const raw = await getEventData();
+    const scores = raw?.scores || raw || {};
     const arr = Object.entries(scores)
-      .filter(([_, v]) => !isNaN(v))
       .map(([username, score]) => ({ username, score }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
-
     console.log("✅ EVENTTOP10 OUTPUT:", arr);
     res.json(arr);
   } catch (err) {
-    console.error("❌ /eventtop10:", err.message || err);
-    res.status(500).json({ ok: false, message: "Failed to load event top10" });
+    console.error("❌ /eventtop10:", err?.message || err);
+    res.json([]); // return empty array instead of 500
   }
 });
 app.get("/eventtop50", async (_req, res) => {
