@@ -1,7 +1,7 @@
-p/*
+/*
 ==========================================================
-🧩 UnStableCoin Bot v3.2 — Full Wallet Flow + Events + ATH
-Build: 2025-10-17  |  TEST MODE: ON
+🧩 UnStableCoin Bot v3.3 — Full Wallet Flow + Events + ATH
+Build: 2025-10-20  |  TEST MODE: ON
 ==========================================================
 📑 TABLE OF CONTENTS (search these headers quickly on phone)
 1)  Imports & Config Defaults
