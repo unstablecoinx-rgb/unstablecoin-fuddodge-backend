@@ -1,4 +1,4 @@
-/*
+p/*
 ==========================================================
 🧩 UnStableCoin Bot v3.2 — Full Wallet Flow + Events + ATH
 Build: 2025-10-17  |  TEST MODE: ON
@@ -193,15 +193,12 @@ async function readBin(url, tries = 3) {
 }
 
 async function writeBin(url, payload, tries = 3) {
-  // 🧹 Flatten any nested 'record' layers before saving
-  let flat = payload;
-  while (flat && flat.record && typeof flat.record === "object") {
-    flat = flat.record;
-  }
+  // 🧠 Always wrap arrays inside { record: [...] } for JSONBin compatibility
+  const body = Array.isArray(payload) ? { record: payload } : payload;
 
   for (let i = 0; i < tries; i++) {
     try {
-      const resp = await axios.put(url, flat, {
+      const resp = await axios.put(url, body, {
         headers: {
           "Content-Type": "application/json",
           "X-Master-Key": JSONBIN_KEY,
@@ -250,10 +247,10 @@ async function getHoldersArray() {
 }
 async function saveHoldersArray(arr) {
   try {
-    // 🧩 Always ensure array format for JSONBin
     if (!Array.isArray(arr)) arr = [];
-    await writeBin(HOLDER_BIN_URL, [...arr]); // clone to avoid ref issues
+    await writeBin(HOLDER_BIN_URL, arr);
     delete _cache[HOLDER_BIN_URL];
+    console.log(`🪣 Saved ${arr.length} holders to JSONBin.`);
     return true;
   } catch (err) {
     console.error("❌ saveHoldersArray:", err?.message || err);
