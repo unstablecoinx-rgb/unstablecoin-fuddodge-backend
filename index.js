@@ -852,6 +852,29 @@ bot.onText(/^\/winners(?:\s+(\d+))?/, async (msg, match) => {
   }
 });
 
+// ==========================================================
+// 🧹 ADMIN COMMAND — /resetevent
+// ==========================================================
+bot.onText(/^\/resetevent$/, async (msg) => {
+  const username = (msg.from?.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(username)) {
+    return sendSafeMessage(msg.chat.id, "⚠️ Only admins can run this command.");
+  }
+
+  try {
+    await axios.put(
+      `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`,
+      {},
+      { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } }
+    );
+    console.log("🧹 Event leaderboard cleared.");
+    await sendSafeMessage(msg.chat.id, "✅ Event leaderboard has been reset (cleared).");
+  } catch (err) {
+    console.error("❌ /resetevent:", err?.response?.data || err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to reset event leaderboard.");
+  }
+});
+
 // === 🧠 Admin-only: Interactive /setevent flow ===
 bot.onText(/^\/setevent$/, async (msg) => {
   const chatId = msg.chat.id;
