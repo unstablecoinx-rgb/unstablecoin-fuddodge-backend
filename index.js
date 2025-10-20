@@ -181,7 +181,7 @@ async function readBin(url, tries = 3) {
 }
 
 async function writeBin(url, payload, tries = 3) {
-  // 🧠 Always wrap arrays inside { record: [...] } for JSONBin compatibility
+  // Arrays → wrap; Objects → send raw
   const body = Array.isArray(payload) ? { record: payload } : payload;
 
   for (let i = 0; i < tries; i++) {
@@ -199,7 +199,7 @@ async function writeBin(url, payload, tries = 3) {
         await sleep(250 * (i + 1));
         continue;
       }
-      console.error("❌ writeBin:", err?.message || err);
+      console.error("❌ writeBin:", err?.response?.data || err?.message || err);
       throw err;
     }
   }
