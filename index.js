@@ -1144,19 +1144,34 @@ app.get("/event", async (_req, res) => {
   } catch (_) { res.status(500).json({ ok:false, message:"Failed to load event" }); }
 });
 // === FRONTEND EVENT TOP 10 ===
-app.get("/eventtop10", async (_req, res) => {
+app.get("/eventtop10", async (req, res) => {
   try {
-    const raw = await getEventData();
-    const scores = raw?.scores || raw || {};
-    const arr = Object.entries(scores)
+    const bin = await readJSON(EVENT_JSONBIN_ID);
+    const data = bin.record || {};
+    const sorted = Object.entries(data)
       .map(([username, score]) => ({ username, score }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
-    console.log("✅ EVENTTOP10 OUTPUT:", arr);
-    res.json(arr);
+
+    // === Add holder verification like Telegram does ===
+    const verifiedResults = await Promise.all(
+      sorted.map(async (p) => {
+        try {
+          const check = await axios.get(`${API_URL}/holderStatus`, {
+            params: { username: p.username },
+          });
+          const verified = check.data?.verified === true;
+          return { ...p, verified };
+        } catch {
+          return { ...p, verified: false };
+        }
+      })
+    );
+
+    res.json(verifiedResults);
   } catch (err) {
-    console.error("❌ /eventtop10:", err?.message || err);
-    res.json([]); // return empty array instead of 500
+    console.error("EventTop10 failed:", err);
+    res.status(500).json({ error: "Failed to load event leaderboard" });
   }
 });
 app.get("/eventtop50", async (_req, res) => {
