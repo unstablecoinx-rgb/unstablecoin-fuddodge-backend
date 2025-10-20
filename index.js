@@ -92,26 +92,26 @@ const ATH_BIN_URL   = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
 
 const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot", "pachenko_14"]; // lowercase usernames
 
-//
-// 3) EXPRESS + TELEGRAM WEBHOOK SETUP
-//
+// ==========================================================
+// 3) EXPRESS + TELEGRAM POLLING SETUP (replaces webhook mode)
+// ==========================================================
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json({ limit: "15mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
+// ✅ Use polling instead of webhook — makes commands respond instantly (no Render timeout)
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 
-(async () => {
-  try {
-    const host = RENDER_EXTERNAL_HOSTNAME || `https://unstablecoin-fuddodge-backend.onrender.com`;
-    const webhookUrl = `${host.replace(/\/$/, "")}/bot${TELEGRAM_BOT_TOKEN}`;
-    await bot.setWebHook(webhookUrl);
-    console.log(`✅ Webhook set: ${webhookUrl}`);
-  } catch (err) {
-    console.warn("⚠️ setWebHook warning:", err?.message || err);
-  }
-})();
+// Log any Telegram polling issues
+bot.on("polling_error", (err) => {
+  console.error("⚠️ Polling error:", err?.message || err);
+});
+
+// Health check endpoint for uptime monitor or manual visits
+app.get("/", (_req, res) => {
+  res.send("💛 UnStableCoin Bot v3.2 running (polling mode active).");
+});
 
 // Telegram webhook endpoint
 app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
