@@ -594,6 +594,7 @@ const mainMenu = {
       [{ text: "🪙 Add Wallet" }, { text: "⚡ Verify Holder" }],
       [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
       [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }],
+      [{ text: "🐞 Report Bug" }],
     ],
     resize_keyboard: true,
     one_time_keyboard: false,
@@ -607,6 +608,30 @@ bot.onText(/\/start|\/menu/i, async (msg) => {
     `💛 Welcome to <b>UnStableCoin</b>\nUse the buttons to manage wallet or join the event.`,
     { ...mainMenu, parse_mode: "HTML" }
   );
+});
+
+// === 🐞 Bug Report Flow ===
+bot.onText(/\/report|bug/i, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, "🐞 Please describe the bug or issue briefly:");
+  bot.once("message", async (m2) => {
+    const report = (m2.text || "").trim();
+    if (!report) {
+      await bot.sendMessage(chatId, "⚠️ Empty report ignored.", mainMenu);
+      return;
+    }
+
+    // Change to your admin chat ID or a private Telegram group
+    const ADMIN_CHAT_ID = "8067310645";
+
+    await bot.sendMessage(
+      ADMIN_CHAT_ID,
+      `🐞 <b>Bug Report</b>\nFrom: @${msg.from.username || "unknown"}\n\n${escapeXml(report)}`,
+      { parse_mode: "HTML" }
+    );
+
+    await bot.sendMessage(chatId, "✅ Thanks! Your report was sent to the devs.", mainMenu);
+  });
 });
 
 //
@@ -1122,6 +1147,7 @@ bot.on("message", async (msg) => {
     else if (t.includes("remove")) command = "/removewallet";
     else if (t.includes("leader")) command = "/top10";
     else if (t.includes("event")) command = "/event";
+    else if (t.includes("bug")) command = "/report";
     else return;
 
     // 🔹 Instead of re-emitting to Telegram’s message system,
