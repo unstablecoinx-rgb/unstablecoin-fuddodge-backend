@@ -93,44 +93,45 @@ const ATH_BIN_URL   = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
 const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot", "pachenko_14"]; // lowercase usernames
 
 // ==========================================================
-// 3) EXPRESS + TELEGRAM POLLING SETUP (replaces webhook mode)
+// 3) EXPRESS + TELEGRAM WEBHOOK SETUP (Render-safe version)
 // ==========================================================
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(bodyParser.json({ limit: "15mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// === One-time cleanup of old webhook ===
+// --- Create bot in webhook mode only ---
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
+
 (async () => {
   try {
-    const tempBot = new TelegramBot(TELEGRAM_BOT_TOKEN);
-    await tempBot.deleteWebHook({ drop_pending_updates: true });
-    console.log("🧹 Old webhook deleted. Ready for polling.");
+    // 🧹 Ensure no old webhook leftovers or polling conflicts
+    await bot.deleteWebHook({ drop_pending_updates: true });
+
+    const host = RENDER_EXTERNAL_HOSTNAME || "https://unstablecoin-fuddodge-backend.onrender.com";
+    const webhookUrl = `${host.replace(/\/$/, "")}/bot${TELEGRAM_BOT_TOKEN}`;
+
+    await bot.setWebHook(webhookUrl);
+    console.log(`✅ Webhook active at: ${webhookUrl}`);
   } catch (err) {
-    console.warn("⚠️ deleteWebHook:", err?.message || err);
+    console.error("⚠️ setWebHook error:", err?.message || err);
   }
 })();
 
-// ✅ Use polling instead of webhook — makes commands respond instantly (no Render timeout)
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
-
-// Log any Telegram polling issues
-bot.on("polling_error", (err) => {
-  console.error("⚠️ Polling error:", err?.message || err);
-});
-
-// Health check endpoint for uptime monitor or manual visits
-app.get("/", (_req, res) => {
-  res.send("💛 UnStableCoin Bot v3.2 running (polling mode active).");
-});
-
-// Telegram webhook endpoint
+// --- Telegram webhook endpoint (Render receives Telegram POSTs here) ---
 app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
-  try { bot.processUpdate(req.body); } catch (e) { console.error("❌ processUpdate:", e?.message || e); }
+  try {
+    bot.processUpdate(req.body);
+  } catch (err) {
+    console.error("❌ processUpdate:", err?.message || err);
+  }
   res.sendStatus(200);
 });
 
-app.get("/", (_req, res) => res.send("💛 UnStableCoin Bot v3.2 running."));
+// --- Health check / root endpoint ---
+app.get("/", (_req, res) => {
+  res.send("💛 UnStableCoin Bot v3.2 running (webhook mode active).");
+});
 
 //
 // 4) SMALL UTILITIES
