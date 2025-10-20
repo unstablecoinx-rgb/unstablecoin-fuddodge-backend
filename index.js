@@ -100,6 +100,17 @@ app.use(cors({ origin: "*" }));
 app.use(bodyParser.json({ limit: "15mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// === One-time cleanup of old webhook ===
+(async () => {
+  try {
+    const tempBot = new TelegramBot(TELEGRAM_BOT_TOKEN);
+    await tempBot.deleteWebHook({ drop_pending_updates: true });
+    console.log("🧹 Old webhook deleted. Ready for polling.");
+  } catch (err) {
+    console.warn("⚠️ deleteWebHook:", err?.message || err);
+  }
+})();
+
 // ✅ Use polling instead of webhook — makes commands respond instantly (no Render timeout)
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 
