@@ -1146,25 +1146,32 @@ app.get("/event", async (_req, res) => {
 // === FRONTEND EVENT TOP 10 ===
 app.get("/eventtop10", async (req, res) => {
   try {
-    const bin = await readJSON(EVENT_JSONBIN_ID);
-    const data = bin.record || {};
+    const data = await readBin(EVENT_BIN_URL); // ✅ use existing helper
     const sorted = Object.entries(data)
       .map(([username, score]) => ({ username, score }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
     // === Add holder verification like Telegram does ===
+    const holdersMap = await getHoldersMapFromArray();
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+    const now = Date.now();
+
     const verifiedResults = await Promise.all(
       sorted.map(async (p) => {
-        try {
-          const check = await axios.get(`${API_URL}/holderStatus`, {
-            params: { username: p.username },
-          });
-          const verified = check.data?.verified === true;
-          return { ...p, verified };
-        } catch {
-          return { ...p, verified: false };
+        const rec = holdersMap[p.username];
+        let verified = false;
+        if (rec?.wallet) {
+          const lastCheck = rec.verifiedAt ? new Date(rec.verifiedAt).getTime() : 0;
+          const expired = !lastCheck || now - lastCheck > 6 * 60 * 60 * 1000;
+          if (expired) {
+            const check = await checkSolanaHolding(rec.wallet, minHold);
+            verified = check.ok;
+            if (verified) rec.verifiedAt = new Date().toISOString();
+          } else verified = true;
         }
+        return { ...p, verified };
       })
     );
 
@@ -1174,6 +1181,8 @@ app.get("/eventtop10", async (req, res) => {
     res.status(500).json({ error: "Failed to load event leaderboard" });
   }
 });
+
+
 app.get("/eventtop50", async (_req, res) => {
   try { res.json(await getVerifiedEventTop(50)); }
   catch (_) { res.status(500).json({ ok:false, message:"Failed to load event top50" }); }
