@@ -831,76 +831,93 @@ bot.onText(/^\/winners(?:\s+(\d+))?/, async (msg, match) => {
   }
 });
 
-// === 🧠 Admin-only: Set event with | separated values ===
-// Example:
-// /setevent Meme Cup | Prepare your best memes | 2025-10-22 | 18:00 | 2025-10-25 | 23:59 | CET
-bot.onText(/^\/setevent (.+)/i, async (msg, match) => {
+// === 🧠 Admin-only: Interactive /setevent flow ===
+bot.onText(/^\/setevent$/, async (msg) => {
   const chatId = msg.chat.id;
   const username = (msg.from.username || "").toLowerCase();
-
   if (!ADMIN_USERS.includes(username)) {
     return bot.sendMessage(chatId, "⛔ You’re not authorized to use this command.");
   }
 
-  try {
-    const parts = match[1].split("|").map((p) => p.trim());
-    const [title, info, startDate, startTime, endDate, endTime, tz] = parts;
+  const steps = [
+    { key: "title", q: "🪩 Enter the event title:" },
+    { key: "info", q: "📝 Enter short info/description (or type '-' to skip):" },
+    { key: "startDate", q: "📅 Enter start date (YYYY-MM-DD):" },
+    { key: "startTime", q: "⏰ Enter start time (HH:mm):" },
+    { key: "endDate", q: "📅 Enter end date (YYYY-MM-DD):" },
+    { key: "endTime", q: "⏰ Enter end time (HH:mm):" },
+    { key: "timezone", q: "🌍 Enter timezone (e.g. CET or Europe/Stockholm):" }
+  ];
 
-    if (!title || !startDate || !endDate) {
-      return bot.sendMessage(
-        chatId,
-        "❌ Invalid format.\n\nUse:\n/setevent Title | Info | StartDate | StartTime | EndDate | EndTime | TZ\n\nExample:\n/setevent Meme Cup | Prepare your best memes | 2025-10-22 | 18:00 | 2025-10-25 | 23:59 | CET"
+  const data = {};
+  let i = 0;
+
+  const askNext = async () => {
+    if (i >= steps.length) return finalize();
+    await bot.sendMessage(chatId, steps[i].q);
+    bot.once("message", handleResponse);
+  };
+
+  const handleResponse = async (m) => {
+    const key = steps[i].key;
+    let val = (m.text || "").trim();
+    if (key === "info" && val === "-") val = "";
+    data[key] = val;
+    i++;
+    askNext();
+  };
+
+  const finalize = async () => {
+    try {
+      const tz = data.timezone || "Europe/Stockholm";
+      const startISO = DateTime.fromISO(`${data.startDate}T${data.startTime || "00:00"}`, { zone: tz }).toUTC().toISO();
+      const endISO = DateTime.fromISO(`${data.endDate}T${data.endTime || "23:59"}`, { zone: tz }).toUTC().toISO();
+
+      const payload = {
+        title: data.title,
+        info: data.info,
+        startDate: startISO,
+        endDate: endISO,
+        timezone: tz,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await axios.put(
+        `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`,
+        payload,
+        { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } }
       );
+
+      const start = DateTime.fromISO(startISO).setZone(tz);
+      const end = DateTime.fromISO(endISO).setZone(tz);
+      const now = DateTime.now().setZone(tz);
+      let note = "";
+
+      if (now < start) {
+        const diff = start.diff(now, ["days", "hours", "minutes"]).toObject();
+        const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
+        note = `🟡 Starts in ${remain}`;
+      } else if (now < end) {
+        const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
+        const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
+        note = `⏳ Ends in ${remain}`;
+      } else {
+        note = "🔴 Event already ended.";
+      }
+
+      await bot.sendMessage(
+        chatId,
+        `✅ Event updated!\n\n<b>${data.title}</b>\n${data.info || ""}\n\n🕓 ${start.toFormat("yyyy-MM-dd HH:mm ZZZZ")} → ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}\n${note}`,
+        { parse_mode: "HTML" }
+      );
+    } catch (err) {
+      console.error("SetEvent error:", err?.response?.data || err?.message);
+      bot.sendMessage(chatId, "⚠️ Failed to update event. Check syntax or keys.");
     }
+  };
 
-    // --- Handle missing times or timezone defaults ---
-    const timezone = tz || "Europe/Stockholm";
-    const startISO = DateTime.fromISO(`${startDate}T${startTime || "00:00"}`, { zone: timezone }).toUTC().toISO();
-    const endISO = DateTime.fromISO(`${endDate}T${endTime || "23:59"}`, { zone: timezone }).toUTC().toISO();
-
-    // --- Build object and save to JSONBin ---
-    const payload = {
-      title,
-      info: info || "",
-      startDate: startISO,
-      endDate: endISO,
-      timezone,
-      updatedAt: new Date().toISOString(),
-    };
-
-    await axios.put(
-      `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`,
-      payload,
-      { headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY } }
-    );
-
-    // --- Confirmation message ---
-    const start = DateTime.fromISO(startISO).setZone(timezone);
-    const end = DateTime.fromISO(endISO).setZone(timezone);
-    const now = DateTime.now().setZone(timezone);
-    let note = "";
-
-    if (now < start) {
-      const diff = start.diff(now, ["days", "hours", "minutes"]).toObject();
-      const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
-      note = `🟡 Starts in ${remain}`;
-    } else if (now < end) {
-      const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
-      const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
-      note = `⏳ Ends in ${remain}`;
-    } else {
-      note = "🔴 Event already ended.";
-    }
-
-    await bot.sendMessage(
-      chatId,
-      `✅ Event updated!\n\n<b>${title}</b>\n${info || ""}\n\n🕓 ${start.toFormat("yyyy-MM-dd HH:mm ZZZZ")} → ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}\n${note}`,
-      { parse_mode: "HTML" }
-    );
-  } catch (err) {
-    console.error("SetEvent error:", err.response?.data || err.message);
-    bot.sendMessage(chatId, "⚠️ Failed to update event. Check syntax or keys.");
-  }
+  await bot.sendMessage(chatId, "🎛 Starting guided event setup. Type 'cancel' anytime to stop.");
+  askNext();
 });
 
 
