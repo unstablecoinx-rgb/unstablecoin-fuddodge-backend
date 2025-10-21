@@ -1443,58 +1443,107 @@ app.get("/leaderboard", async (_req, res) => {
   }
 });
 
-// Submit scores (main + event)
+// ======================================================
+// 🧩 SCORE SUBMISSION (Main + Event) — Final Stable Version
+// ======================================================
 app.post("/submit", async (req, res) => {
   try {
-    const { username, score, target } = req.body;
+    const { username: rawUser, score: rawScore, target } = req.body;
     const adminKey = req.headers["x-admin-key"];
     const isAdmin = adminKey && adminKey === RESET_KEY;
 
-    if (!username || typeof score !== "number")
-      return res.status(400).json({ error: "Invalid data" });
+    // --- Normalize & validate input ---
+    const username = ("@" + String(rawUser || "").trim().replace(/^@+/, "")).slice(0, 40);
+    const score = Number(rawScore);
 
-    // Load event metadata to see if it’s still active
+    if (!username || !Number.isFinite(score) || score <= 0) {
+      return res.status(400).json({ success: false, error: "Invalid username or score" });
+    }
+
+    // Optional safety cap to avoid spam or overflow
+    const SAFE_CAP = 1_000_000_000;
+    if (!isAdmin && score > SAFE_CAP) {
+      return res.status(400).json({ success: false, error: "Score exceeds safe limit" });
+    }
+
+    // =====================================================
+    // 1️⃣ Load Event Meta (startDate / endDate)
+    // =====================================================
     let eventMeta = {};
     try {
-      const r = await axios.get(`${META_BIN_URL}/latest`, {
+      const metaRes = await axios.get(`${META_BIN_URL}/latest`, {
         headers: { "X-Master-Key": JSONBIN_KEY },
       });
-      eventMeta = r.data.record || {};
+      eventMeta = metaRes.data?.record || {};
     } catch (err) {
       console.warn("⚠️ load event meta:", err?.message);
     }
 
     const now = DateTime.now().toUTC();
-    const end = eventMeta.endDate ? DateTime.fromISO(eventMeta.endDate) : null;
-    const eventActive = end ? now < end : false;
+    const start = eventMeta.startDate ? DateTime.fromISO(eventMeta.startDate).toUTC() : null;
+    const end   = eventMeta.endDate   ? DateTime.fromISO(eventMeta.endDate).toUTC()   : null;
 
-    // === ✅ Always update main leaderboard with new highs ===
-    const main = await getLeaderboard();
-    const prev = main[username] || 0;
-    if (score > prev || isAdmin) {
+    const eventNotStarted = !!(start && now < start);
+    const eventEnded      = !!(end && now > end);
+    const eventActive     = !!(!eventNotStarted && !eventEnded && (start || end));
+
+    // =====================================================
+    // 2️⃣ Always update MAIN leaderboard (new highs or admin)
+    // =====================================================
+    const main = await getLeaderboard(); // { [username]: bestScore }
+    const prevMain = main[username] || 0;
+    const mainImproved = score > prevMain || isAdmin;
+
+    if (mainImproved) {
       main[username] = score;
       await writeBin(MAIN_BIN_URL, main);
+      console.log(`🏆 Main updated: ${username} ${prevMain} → ${score}`);
     }
 
-    // === Update event leaderboard only if active or admin ===
-    if ((eventActive || isAdmin) && target !== "main") {
-      const { scores } = await getEventData();
+    // =====================================================
+    // 3️⃣ Event leaderboard update (only if active / admin)
+    // =====================================================
+    let eventUpdated = false;
+    let eventReason = "none";
+
+    if (!eventMeta || (!eventMeta.startDate && !eventMeta.endDate)) {
+      eventReason = "no-event-meta";
+    } else if (target === "main") {
+      eventReason = "forced-main";
+    } else if (isAdmin || eventActive) {
+      const { scores } = await getEventData(); // { scores: { [username]: bestScore } }
       const prevEvent = scores[username] || 0;
       if (score > prevEvent || isAdmin) {
         scores[username] = score;
         await writeBin(EVENT_BIN_URL, { scores });
+        eventUpdated = true;
+        eventReason = "active";
+        console.log(`⚡ Event updated: ${username} ${prevEvent} → ${score}`);
       }
+    } else if (eventNotStarted) {
+      eventReason = "not-started";
+      console.log(`⏳ Event not started yet — score ignored for event.`);
+    } else if (eventEnded) {
+      eventReason = "ended";
+      console.log(`🏁 Event already ended — score ignored for event.`);
     }
 
-    res.json({
+    // =====================================================
+    // 4️⃣ Return clean structured response
+    // =====================================================
+    return res.json({
       success: true,
-      message: "✅ Score submitted.",
+      acceptedToMain: !!mainImproved,
+      acceptedToEvent: !!eventUpdated,
       eventActive,
+      eventReason,
+      startDate: eventMeta.startDate || null,
       endDate: eventMeta.endDate || null,
     });
+
   } catch (err) {
-    console.error("submit:", err?.message || err);
-    res.status(500).json({ error: "Failed to submit score" });
+    console.error("❌ /submit:", err?.message || err);
+    res.status(500).json({ success: false, error: "Failed to submit score" });
   }
 });
 
