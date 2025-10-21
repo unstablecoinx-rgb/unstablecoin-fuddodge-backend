@@ -1416,11 +1416,10 @@ app.get("/config", async (_req, res) => {
       minHoldAmount: cfg.minHoldAmount,
       network: cfg.network,
     });
-    res.json(cfg);
-  } catch (err) {
-    console.error("❌ /config:", err?.message || err);
-    res.status(500).json({ ok: false, message: "Failed to load config" });
-  }
+res.json({
+  minHoldAmount: cfg.minHoldAmount || 0,
+  tokenMint: cfg.tokenMint || "",
+  network: cfg.network || "mainnet-beta",
 });
 
 // === MAIN LEADERBOARD for frontend (used by splash) ===
