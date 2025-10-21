@@ -979,30 +979,46 @@ bot.onText(/^\/setevent$/, async (msg) => {
 // ==========================================================
 // ⚙️ ADMIN COMMAND — /setholdingreq
 // ==========================================================
+// === 🧠 Admin-only: Interactive /setholdingreq ===
 bot.onText(/^\/setholdingreq(?:\s+(\d+))?/, async (msg, match) => {
-  const username = (msg.from?.username || "").toLowerCase();
+  const chatId = msg.chat.id;
+  const username = (msg.from.username || "").toLowerCase();
+
   if (!ADMIN_USERS.includes(username)) {
-    return sendSafeMessage(msg.chat.id, "⚠️ Only admins can run this command.");
+    return bot.sendMessage(chatId, "⛔ You’re not authorized to use this command.");
   }
 
-  const newVal = match[1] ? parseInt(match[1], 10) : null;
-  if (!newVal) {
-    return sendSafeMessage(
-      msg.chat.id,
-      "Usage:\n/setholdingreq <amount>\n\nExample:\n/setholdingreq 500000"
+  // If admin typed an amount directly → e.g. /setholdingreq 250000
+  if (match[1]) {
+    const amount = parseInt(match[1], 10);
+    if (isNaN(amount) || amount <= 0) {
+      return bot.sendMessage(chatId, "⚠️ Invalid number. Example: /setholdingreq 250000");
+    }
+    const cfg = await updateConfig({ minHoldAmount: amount });
+    return bot.sendMessage(
+      chatId,
+      `✅ Minimum holding requirement updated to <b>${escapeXml(cfg.minHoldAmount.toLocaleString())}</b> <code>$US</code>`,
+      { parse_mode: "HTML" }
     );
   }
 
-  try {
-    const cfg = await updateConfig({ minHoldAmount: newVal });
-    await sendSafeMessage(
-      msg.chat.id,
-      `✅ Minimum holding requirement updated to <b>${cfg.minHoldAmount.toLocaleString()}</b> $US`
+  // If no value given, ask interactively
+  await bot.sendMessage(chatId, "💰 Enter new minimum holding requirement (number only):");
+
+  bot.once("message", async (reply) => {
+    const text = (reply.text || "").trim().replace(/[, ]/g, "");
+    const amount = parseInt(text, 10);
+    if (isNaN(amount) || amount <= 0) {
+      return bot.sendMessage(chatId, "⚠️ Invalid number. Please try again with /setholdingreq again.");
+    }
+
+    const cfg = await updateConfig({ minHoldAmount: amount });
+    await bot.sendMessage(
+      chatId,
+      `✅ Minimum holding requirement updated to <b>${escapeXml(cfg.minHoldAmount.toLocaleString())}</b> <code>$US</code>`,
+      { parse_mode: "HTML" }
     );
-  } catch (err) {
-    console.error("❌ /setholdingreq:", err?.message || err);
-    await sendSafeMessage(msg.chat.id, "⚠️ Failed to update holding requirement.");
-  }
+  });
 });
 
 // ==========================================================
