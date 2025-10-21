@@ -1553,7 +1553,6 @@ async function getAthMap() {
   return typeof raw === "object" && raw ? raw : {};
 }
 async function saveAthMap(map) { await writeBin(ATH_BIN_URL, map); return true; }
-
 // ==========================================================
 // 📤 SHARE ENDPOINT (Unified A.T.H. + Normal Mode)
 // ==========================================================
@@ -1574,7 +1573,7 @@ app.post("/share", async (req, res) => {
     const isAth = String(mode).toLowerCase() === "ath";
 
     // ----------------------------------------------------------
-    // 🧠 Load the single source of truth (main leaderboard bin)
+    // 🧠 Load the main leaderboard (source of truth)
     // ----------------------------------------------------------
     let data = {};
     try {
@@ -1603,20 +1602,17 @@ app.post("/share", async (req, res) => {
       try {
         const currentBoardScore = lookupUserScore(data, username);
         const incoming = Number(score) || 0;
-
-        // True A.T.H. comes from whichever is higher
         const athToShow = Math.max(currentBoardScore, incoming);
 
-        // Update the bin if incoming > stored
         if (incoming > currentBoardScore) {
-          const updated = Object.assign({}, data, { [normalizeUsername(username)]: incoming });
+          const updated = { ...data, [normalizeUsername(username)]: incoming };
           await writeBin(MAIN_BIN_URL, updated);
         }
 
-        // Compose banner
+        // 🔹 Use improved banner that includes "MCap Reached" text
         const banner = await composeAthBanner(curveImage || imageBase64 || null, username, athToShow);
 
-        // Find position in leaderboard
+        // Rank position
         let positionText = "unranked";
         try {
           const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
@@ -1648,7 +1644,7 @@ app.post("/share", async (req, res) => {
     }
 
     // ----------------------------------------------------------
-    // 🟡 NORMAL SHARE (non-ATH)
+    // 🟡 NORMAL SHARE
     // ----------------------------------------------------------
     try {
       const buf = await composeShareImage(imageBase64, username, Number(score) || 0);
@@ -1667,40 +1663,41 @@ app.post("/share", async (req, res) => {
     return res.status(500).json({ ok: false, message: err?.message || "Share failed" });
   }
 });
-// ✅ closes /share cleanly
-// ATH preview (returns PNG)
-app.post("/athbannerpreview", async (req, res) => {
-  try {
-    const { username, score, curveImage } = req.body;
-    if (!username || typeof score === "undefined") return res.status(400).json({ ok:false, message:"Missing username or score" });
-    const banner = await composeAthBanner(curveImage || null, username, score);
-    res.setHeader("Content-Type", "image/png");
-    res.send(banner);
-  } catch (err) {
-    console.error("athbannerpreview:", err?.message || err);
-    res.status(500).json({ ok:false, message:"Failed to compose preview" });
+
+// ==========================================================
+// 🖼️ composeAthBanner — includes "MCap Reached" overlay
+// ==========================================================
+async function composeAthBanner(curveImage, username, score) {
+  const { createCanvas, loadImage } = require("canvas");
+  const size = 600;
+  const canvas = createCanvas(size * 2, size);
+  const ctx = canvas.getContext("2d");
+
+  // === Left: base rocket banner ===
+  const banner = await loadImage("assets/ath_left.png"); // your rocket image
+  ctx.drawImage(banner, 0, 0, size, size);
+
+  // === Right: curve chart (if provided) ===
+  if (curveImage) {
+    try {
+      const curve = await loadImage(curveImage);
+      ctx.drawImage(curve, size, 0, size, size);
+
+      // 🟡 Overlay "MCap Reached" label on top-right chart
+      const mcapText = `MCap Reached: ${(score / 1000).toFixed(1)}k`;
+      ctx.font = 'bold 28px "Press Start 2P"';
+      ctx.fillStyle = "#ffd400";
+      ctx.textAlign = "center";
+      ctx.shadowColor = "rgba(0,0,0,0.7)";
+      ctx.shadowBlur = 8;
+      ctx.fillText(mcapText, size + size / 2, 42);
+    } catch (err) {
+      console.warn("composeAthBanner: curveImage load failed", err);
+    }
   }
-});
 
-// ATH leaders (by milestones)
-app.get("/athleaders", async (_req, res) => {
-  try {
-    const map = await getAthMap();
-    const rows = Object.keys(map).map(u => ({
-      username: u,
-      ath: map[u]?.ath || 0,
-      milestones: Array.isArray(map[u]?.milestones) ? map[u].milestones.length : 0,
-      lastSentAt: map[u]?.lastSentAt || null,
-    }));
-    rows.sort((a,b)=> b.milestones - a.milestones || b.ath - a.ath);
-    res.json(rows);
-  } catch (err) { res.status(500).json({ ok:false, message:"Failed to load A.T.H. leaders" }); }
-});
-app.get("/athrecords", async (_req, res) => {
-  try { res.json(await getAthMap()); }
-  catch (err) { res.status(500).json({ ok:false, message:"Failed to load A.T.H. records" }); }
-});
-
+  return canvas.toBuffer("image/png");
+}
 
 //
 // 16) SERVER START
