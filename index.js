@@ -690,6 +690,7 @@ Stay unstable. 💛⚡`;
 bot.onText(/\/event$/, async (msg) => {
   try {
     const meta = await getEventMeta();
+    const cfg = await getConfig();
     const tz = meta.timezone || "Europe/Stockholm";
     const now = DateTime.now().setZone(tz);
 
@@ -718,12 +719,17 @@ bot.onText(/\/event$/, async (msg) => {
       body += `\n⚠️ No active event found.`;
     }
 
+    // 💛 Holding requirement info
+    body += `\n\n<b>Minimum holding:</b> ${cfg.minHoldAmount.toLocaleString()} $US`;
+
     await sendSafeMessage(msg.chat.id, body);
   } catch (err) {
     console.error("❌ /event:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
 });
+
+
 // ==========================================================
 // 🥇 VERIFIED EVENT LEADERBOARDS (auto structure support)
 // ==========================================================
@@ -968,6 +974,56 @@ bot.onText(/^\/setevent$/, async (msg) => {
 
   await bot.sendMessage(chatId, "🎛 Starting guided event setup. Type 'cancel' anytime to stop.");
   askNext();
+});
+
+// ==========================================================
+// ⚙️ ADMIN COMMAND — /setholdingreq
+// ==========================================================
+bot.onText(/^\/setholdingreq(?:\s+(\d+))?/, async (msg, match) => {
+  const username = (msg.from?.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(username)) {
+    return sendSafeMessage(msg.chat.id, "⚠️ Only admins can run this command.");
+  }
+
+  const newVal = match[1] ? parseInt(match[1], 10) : null;
+  if (!newVal) {
+    return sendSafeMessage(
+      msg.chat.id,
+      "Usage:\n/setholdingreq <amount>\n\nExample:\n/setholdingreq 500000"
+    );
+  }
+
+  try {
+    const cfg = await updateConfig({ minHoldAmount: newVal });
+    await sendSafeMessage(
+      msg.chat.id,
+      `✅ Minimum holding requirement updated to <b>${cfg.minHoldAmount.toLocaleString()}</b> $US`
+    );
+  } catch (err) {
+    console.error("❌ /setholdingreq:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to update holding requirement.");
+  }
+});
+
+// ==========================================================
+// ⚙️ ADMIN COMMAND — /getholdingreq
+// ==========================================================
+bot.onText(/^\/getholdingreq$/, async (msg) => {
+  const username = (msg.from?.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(username)) {
+    return sendSafeMessage(msg.chat.id, "⚠️ Only admins can use this command.");
+  }
+
+  try {
+    const cfg = await getConfig();
+    await sendSafeMessage(
+      msg.chat.id,
+      `💰 Current minimum holding requirement: <b>${cfg.minHoldAmount.toLocaleString()}</b> $US`
+    );
+  } catch (err) {
+    console.error("❌ /getholdingreq:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to fetch holding requirement.");
+  }
 });
 
 
