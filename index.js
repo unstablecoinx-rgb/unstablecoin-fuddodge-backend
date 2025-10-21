@@ -1665,38 +1665,92 @@ app.post("/share", async (req, res) => {
 });
 
 // ==========================================================
-// 🖼️ composeAthBanner — includes "MCap Reached" overlay
+// 🖼️ composeAthBanner — Sharp version with “MCap Reached” text
 // ==========================================================
-async function composeAthBanner(curveImage, username, score) {
-  const { createCanvas, loadImage } = require("canvas");
-  const size = 600;
-  const canvas = createCanvas(size * 2, size);
-  const ctx = canvas.getContext("2d");
+async function composeAthBanner(curveBase64, username, score) {
+  const sharp = require("sharp");
+  const rocketPath = "./assets/ath_banner_square.png"; // your rocket/left image
+  const W = 1200, H = 628;
+  const leftW = Math.floor(W * 0.55);
+  const rightW = W - leftW;
+  const square = Math.min(leftW, H);
 
-  // === Left: base rocket banner ===
-  const banner = await loadImage("assets/ath_left.png"); // your rocket image
-  ctx.drawImage(banner, 0, 0, size, size);
-
-  // === Right: curve chart (if provided) ===
-  if (curveImage) {
-    try {
-      const curve = await loadImage(curveImage);
-      ctx.drawImage(curve, size, 0, size, size);
-
-      // 🟡 Overlay "MCap Reached" label on top-right chart
-      const mcapText = `MCap Reached: ${(score / 1000).toFixed(1)}k`;
-      ctx.font = 'bold 28px "Press Start 2P"';
-      ctx.fillStyle = "#ffd400";
-      ctx.textAlign = "center";
-      ctx.shadowColor = "rgba(0,0,0,0.7)";
-      ctx.shadowBlur = 8;
-      ctx.fillText(mcapText, size + size / 2, 42);
-    } catch (err) {
-      console.warn("composeAthBanner: curveImage load failed", err);
+  // --- Decode chart if provided ---
+  let chartBuf = null;
+  try {
+    if (curveBase64) {
+      const m = curveBase64.match(/^data:image\/(png|jpeg);base64,(.*)$/);
+      const b = m ? m[2] : curveBase64;
+      chartBuf = Buffer.from(b, "base64");
     }
-  }
+  } catch (_) {}
 
-  return canvas.toBuffer("image/png");
+  // --- Load rocket / left panel ---
+  const leftImg = await sharp(rocketPath)
+    .resize(square, square, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 1 } })
+    .toBuffer();
+
+  // --- Optional right chart ---
+  let rightImg = null;
+  if (chartBuf)
+    rightImg = await sharp(chartBuf)
+      .resize(square, square, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 1 } })
+      .toBuffer();
+
+  // --- Base black background ---
+  const base = sharp({
+    create: {
+      width: W,
+      height: H,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 1 },
+    },
+  });
+
+  // --- Compose final image ---
+  const comps = [
+    { input: leftImg, top: Math.floor((H - square) / 2), left: Math.floor((leftW - square) / 2) },
+    {
+      input: await sharp({
+        create: {
+          width: 3,
+          height: H,
+          channels: 4,
+          background: { r: 0, g: 255, b: 200, alpha: 0.5 },
+        },
+      })
+        .png()
+        .toBuffer(),
+      top: 0,
+      left: leftW - 2,
+    },
+  ];
+
+  if (rightImg)
+    comps.push({
+      input: rightImg,
+      top: Math.floor((H - square) / 2),
+      left: leftW + Math.floor((rightW - square) / 2),
+    });
+
+  // --- Add “MCap Reached” overlay text ---
+  const textSvg = `
+    <svg width="${W}" height="${H}">
+      <text x="${W - rightW / 2}" y="60"
+        font-family="Press Start 2P, monospace"
+        font-size="28"
+        text-anchor="middle"
+        fill="#ffd400"
+        stroke="black"
+        stroke-width="1.5"
+        paint-order="stroke">
+        MCap Reached: ${(score / 1000).toFixed(1)}k
+      </text>
+    </svg>`;
+
+  comps.push({ input: Buffer.from(textSvg), top: 0, left: 0 });
+
+  return await base.composite(comps).png().toBuffer();
 }
 
 //
