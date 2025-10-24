@@ -1552,9 +1552,10 @@ async function getAthMap() {
   const raw = (await readBin(ATH_BIN_URL)) || {};
   return typeof raw === "object" && raw ? raw : {};
 }
-async function saveAthMap(map) { await writeBin(ATH_BIN_URL, map); return true; }
-// ==========================================================
-// 📤 SHARE ENDPOINT (Unified A.T.H. + Normal Mode)
+async function saveAthMap(map) { await writeBin(ATH_BIN_URL, map); return true;} 
+
+ // ==========================================================
+// 📤 SHARE ENDPOINT (Unified A.T.H. + Normal Mode + Anti-duplicate)
 // ==========================================================
 app.post("/share", async (req, res) => {
   try {
@@ -1563,86 +1564,84 @@ app.post("/share", async (req, res) => {
 
     const cfg = await getConfig();
     const holders = await getHoldersMapFromArray();
+
+    // ✅ Same holder validation as before
     if (!cfg.allowPostingWithoutHold) {
       const rec = holders[username] || holders[normalizeUsername(username)];
       if (!rec)
         return res.status(403).json({ ok: false, message: "User not a verified holder. Posting blocked." });
     }
 
-    const targetChatId = String(chatId || TEST_ATH_CHAT_ID);
+    // === CONFIG ===
+    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    const PRIVATE_CHAT_ID    = process.env.ATH_CHAT_ID;      // 👈 your private Telegram ID
+    const ATH_BIN_URL        = `https://api.jsonbin.io/v3/b/${process.env.ATH_JSONBIN_ID}`;
+    const JSONBIN_KEY        = process.env.JSONBIN_KEY;
+
+    const targetChatId = String(chatId || PRIVATE_CHAT_ID);
     const isAth = String(mode).toLowerCase() === "ath";
 
-    // ----------------------------------------------------------
-    // 🧠 Load the main leaderboard (source of truth)
-    // ----------------------------------------------------------
-    let data = {};
+    // === Load memory of previous shares (same bin structure you already use) ===
+    let shared = {};
     try {
-      const r = await axios.get(MAIN_BIN_URL, { headers: { "X-Master-Key": JSONBIN_KEY } });
-      data = r.data.record || r.data || {};
-      if (data.scores && typeof data.scores === "object") data = data.scores;
+      const r = await axios.get(`${ATH_BIN_URL}/latest`, {
+        headers: { "X-Master-Key": JSONBIN_KEY }
+      });
+      shared = r.data?.record || {};
     } catch (err) {
-      console.error("share: failed to read leaderboard bin:", err?.message || err);
+      console.warn("⚠️ Could not load previous A.T.H. records:", err.message);
     }
 
-    // Helper for tolerant username match
-    const lookupUserScore = (map, name) => {
-      if (!map || !name) return 0;
-      const want = name.replace(/^@/, "").toLowerCase();
-      for (const [k, v] of Object.entries(map)) {
-        const clean = k.replace(/^@/, "").toLowerCase();
-        if (clean === want) return Number(v) || 0;
-      }
-      return 0;
-    };
+    // === Prevent duplicate A.T.H. posts ===
+    const prev = shared[username] || 0;
+    if (isAth && score <= prev) {
+      console.log(`🚫 ${username} already shared same or higher A.T.H. (${prev})`);
+      return res.json({ ok: false, message: "Already shared this or higher A.T.H." });
+    }
 
-    // ----------------------------------------------------------
-    // 🚀 A.T.H. MODE
-    // ----------------------------------------------------------
-    if (isAth) {
-      try {
-        const currentBoardScore = lookupUserScore(data, username);
-        const incoming = Number(score) || 0;
-        const athToShow = Math.max(currentBoardScore, incoming);
+    // === Compose caption and image ===
+    const caption = isAth
+      ? `💛 ${username} just reached a new A.T.H: ${score.toLocaleString()} MCap!\n#UnStableCoin #WAGMI-ish`
+      : `⚡️ ${username} posted a highlight moment!\nScore: ${score.toLocaleString()}`;
+    const photoData = curveImage || imageBase64;
+    if (!photoData) return res.status(400).json({ ok: false, message: "Missing image data" });
 
-        if (incoming > currentBoardScore) {
-          const updated = { ...data, [normalizeUsername(username)]: incoming };
-          await writeBin(MAIN_BIN_URL, updated);
+    // === Send to Telegram ===
+    let tgResp = null;
+    try {
+      tgResp = await axios.post(
+        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
+        {
+          chat_id: targetChatId,
+          caption,
+          photo: photoData,
+          parse_mode: "HTML",
         }
+      );
+      console.log(`📤 Sent ${isAth ? "A.T.H." : "post"} to Telegram:`, tgResp.data?.result?.message_id);
+    } catch (err) {
+      console.error("❌ Telegram post failed:", err.response?.data || err.message);
+    }
 
-        // 🔹 Use improved banner that includes "MCap Reached" text
-        const banner = await composeAthBanner(curveImage || imageBase64 || null, username, athToShow);
-
-        // Rank position
-        let positionText = "unranked";
-        try {
-          const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]);
-          const idx = sorted.findIndex(
-            ([u]) => u.replace(/^@/, "").toLowerCase() === username.replace(/^@/, "").toLowerCase()
-          );
-          if (idx >= 0) positionText = `#${idx + 1}`;
-        } catch (_) {}
-
-        const formatMCap = (v) => {
-          const n = Number(v) || 0;
-          if (n >= 1_000_000) return (n / 1_000_000).toFixed(2).replace(/\.?0+$/, "") + "M";
-          if (n >= 1_000) return (n / 1_000).toFixed(2).replace(/\.?0+$/, "") + "k";
-          return n.toFixed(2).replace(/\.?0+$/, "");
-        };
-
-        const caption =
-          `${escapeXml(normalizeUsername(username))} reached a new All-Time-High. ⚡\n` +
-          `A.T.H. MCap: ${formatMCap(athToShow)}\n` +
-          `Current rank: ${positionText}\n` +
-          `We aim for Win-Win.`;
-
-        await bot.sendPhoto(targetChatId, banner, { caption, parse_mode: "HTML" });
-        return res.json({ ok: true, message: "Posted A.T.H. banner", ath: athToShow });
+    // === Save new A.T.H. record ===
+    if (isAth && score > prev) {
+      shared[username] = score;
+      try {
+        await axios.put(`${ATH_BIN_URL}`, shared, {
+          headers: { "X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json" },
+        });
+        console.log(`✅ A.T.H. recorded for ${username} (${score})`);
       } catch (err) {
-        console.error("share (ATH):", err?.message || err);
-        return res.status(500).json({ ok: false, message: "Failed to post A.T.H. banner." });
+        console.warn("⚠️ Failed to update A.T.H. bin:", err.message);
       }
     }
 
+    res.json({ ok: true, posted: !!tgResp, stored: isAth });
+  } catch (err) {
+    console.error("❌ /share error:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});                               
     // ----------------------------------------------------------
     // 🟡 NORMAL SHARE
     // ----------------------------------------------------------
