@@ -487,22 +487,6 @@ async function getVerifiedEventTop(n = 10) {
 }
 
 // ==========================================================
-// 🌐 EXPRESS ENDPOINTS
-// ==========================================================
-app.get("/leaderboard", async (_req, res) => {
-  try {
-    const data = await getLeaderboard();
-    const arr = Object.entries(data)
-      .map(([username, score]) => ({ username, score }))
-      .sort((a, b) => b.score - a.score);
-    res.json(arr);
-  } catch (err) {
-    console.error("❌ /leaderboard:", err?.message || err);
-    res.status(500).json({ ok: false, message: "Failed to load leaderboard" });
-  }
-});
-
-// ==========================================================
 // 🏆 LEADERBOARD COMMANDS — CLEAN SINGLE-VERSION
 // ==========================================================
 
