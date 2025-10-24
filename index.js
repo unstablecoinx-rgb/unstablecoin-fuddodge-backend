@@ -1642,26 +1642,7 @@ app.post("/share", async (req, res) => {
     res.status(500).json({ ok: false, error: err.message });
   }
 });                               
-    // ----------------------------------------------------------
-    // 🟡 NORMAL SHARE
-    // ----------------------------------------------------------
-    try {
-      const buf = await composeShareImage(imageBase64, username, Number(score) || 0);
-      const caption =
-        `<b>${escapeXml(normalizeUsername(String(username)))}</b>\n` +
-        `MCap: ${escapeXml(String(Number(score) || 0))}\n` +
-        `Shared from UnStableCoin FUD Dodge`;
-      await bot.sendPhoto(targetChatId, buf, { caption, parse_mode: "HTML" });
-      return res.json({ ok: true, message: "Posted to Telegram" });
-    } catch (err) {
-      console.error("share (non-ATH):", err?.message || err);
-      return res.status(500).json({ ok: false, message: "Share failed" });
-    }
-  } catch (err) {
-    console.error("share:", err?.message || err);
-    return res.status(500).json({ ok: false, message: err?.message || "Share failed" });
-  }
-});
+
 
 // ==========================================================
 // 🖼️ composeAthBanner — Sharp version with “MCap Reached” text
