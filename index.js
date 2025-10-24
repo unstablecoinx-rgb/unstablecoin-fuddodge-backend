@@ -1596,7 +1596,7 @@ app.post("/share", async (req, res) => {
     const prev = shared[username] || 0;
     if (isAth && score <= prev) {
       console.log(`🚫 ${username} already shared same or higher A.T.H. (${prev})`);
-      return res.json({ ok: false, message: "Already shared this or higher A.T.H." });
+      return res.json({ok: false, message: "Already shared. Make a new A.T.H. and share that."});
     }
 
     // === Compose caption and image ===
