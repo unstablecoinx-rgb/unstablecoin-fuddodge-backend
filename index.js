@@ -1578,7 +1578,7 @@ app.post("/share", async (req, res) => {
     const ATH_BIN_URL        = `https://api.jsonbin.io/v3/b/${process.env.ATH_JSONBIN_ID}`;
     const JSONBIN_KEY        = process.env.JSONBIN_KEY;
 
-    const targetChatId = String(chatId || PRIVATE_CHAT_ID);
+    const targetChatId = 8067310645;
     const isAth = String(mode).toLowerCase() === "ath";
 
     // === Load memory of previous shares (same bin structure you already use) ===
