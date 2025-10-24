@@ -1592,12 +1592,17 @@ app.post("/share", async (req, res) => {
       console.warn("⚠️ Could not load previous A.T.H. records:", err.message);
     }
 
-    // === Prevent duplicate A.T.H. posts ===
-    const prev = shared[username] || 0;
-    if (isAth && score <= prev) {
-      console.log(`🚫 ${username} already shared same or higher A.T.H. (${prev})`);
-      return res.json({ok: false, message: "Already shared. Make a new A.T.H. and share that."});
-    }
+// === Prevent duplicate A.T.H. posts ===
+const prev = shared[username] || 0;
+if (isAth && score <= prev) {
+  console.log(`🚫 ${username} already shared same or higher A.T.H. (${prev})`);
+  return res.json({
+    ok: true,
+    posted: false,
+    stored: false,
+    message: "Already shared. Make a new A.T.H. and share that."
+  });
+}
 
     // === Compose caption and image ===
     const caption = isAth
