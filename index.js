@@ -744,6 +744,7 @@ bot.onText(/\/winners(?: (\d+))?/i, async (msg, match) => {
   }
 });
 
+// --- FIXED /resetevent (v3.4.1) ---
 bot.onText(/\/resetevent/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
@@ -751,12 +752,30 @@ bot.onText(/\/resetevent/i, async (msg) => {
     return sendSafeMessage(chatId, "⚠️ Admins only.");
 
   try {
-    await writeBin(EVENT_BIN_URL, {});
-    await writeBin(META_BIN_URL, {});
-    sendSafeMessage(chatId, "🧹 Event data and metadata have been reset.");
+    console.log("🧹 /resetevent triggered by", user);
+    console.log("➡️ EVENT_BIN_URL:", EVENT_BIN_URL);
+    console.log("➡️ META_BIN_URL:", META_BIN_URL);
+
+    // JSONBin kräver minst ett fält – därför skickas ett tomt record-objekt
+    const payload = { record: { resetAt: new Date().toISOString() } };
+
+    const eventRes = await writeBin(EVENT_BIN_URL, payload);
+    const metaRes  = await writeBin(META_BIN_URL, payload);
+
+    console.log("✅ EVENT reset response:", eventRes?.metadata || "OK");
+    console.log("✅ META reset response:", metaRes?.metadata || "OK");
+
+    await sendSafeMessage(
+      chatId,
+      "🧹 Event data och metadata har återställts.\n" +
+      "<i>(Bin innehåller nu endast resetAt-fältet)</i>"
+    );
   } catch (err) {
-    console.error("❌ /resetevent:", err.message);
-    sendSafeMessage(chatId, "⚠️ Failed to reset event data.");
+    console.error("❌ /resetevent failed:", err.response?.data || err.message);
+    await sendSafeMessage(
+      chatId,
+      `⚠️ Reset misslyckades: ${err.response?.data?.message || err.message}`
+    );
   }
 });
 
