@@ -912,11 +912,11 @@ bot.onText(/\/setevent/i, async (msg) => {
 });
 
 // ==========================================================
-//  CONFIG MANAGEMENT: /getholding + /setholding
+//  HOLDING REQUIREMENT COMMANDS
 // ==========================================================
 
-// Anyone can view current holding requirement
-bot.onText(/\/getholding/, async (msg) => {
+// /getholdingreq — anyone can view current requirement
+bot.onText(/\/getholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const cfg = await getConfig();
@@ -928,14 +928,12 @@ bot.onText(/\/getholding/, async (msg) => {
       `💰 Minimum holding requirement: ${cfg.minHoldAmount.toLocaleString()} $US`
     );
   } catch (err) {
-    console.error("❌ /getholding:", err?.message || err);
+    console.error("❌ /getholdingreq:", err?.message || err);
     await sendSafeMessage(chatId, "⚠️ Could not load current holding requirement.");
   }
 });
 
-// ==========================================================
-//  /setholdingreq — interactive admin command
-// ==========================================================
+// /setholdingreq — interactive admin update
 bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
@@ -971,17 +969,6 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     }
   });
 });
-
-// ==========================================================
-//  Aliases for Telegram command menu compatibility
-// ==========================================================
-
-// /getholdingreq → same as /getholding
-bot.onText(/\/getholdingreq(@[A-Za-z0-9_]+)?/i, (msg) => {
-  console.log("↪️ Alias triggered: /getholdingreq");
-  bot.emit("text", { ...msg, text: "/getholding" });
-});
-
 
 // ==========================================================
 // 13) TELEGRAM: WALLET FLOWS
