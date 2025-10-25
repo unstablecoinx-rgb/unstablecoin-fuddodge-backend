@@ -779,13 +779,79 @@ bot.onText(/\/resetevent/i, async (msg) => {
   }
 });
 
+// --- FIXED /setevent (v3.4.1 interactive & durable) ---
 bot.onText(/\/setevent/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
   if (!ADMIN_USERS.includes(user))
     return sendSafeMessage(chatId, "⚠️ Admins only.");
 
-  await sendSafeMessage(chatId, "🧩 Interactive event setup not implemented in this build.\nUse JSONBin to edit metadata directly for now.");
+  try {
+    console.log("🧩 /setevent triggered by", user);
+    await sendSafeMessage(
+      chatId,
+      "🧩 Let's create a new event.\n" +
+      "Reply with the event <b>title</b>:",
+      { parse_mode: "HTML" }
+    );
+
+    // 1️⃣ Title
+    bot.once("message", async (m1) => {
+      const title = (m1.text || "").trim();
+      if (!title) return sendSafeMessage(chatId, "⚠️ Title cannot be empty. Try /setevent again.");
+
+      await sendSafeMessage(chatId, "✏️ Now reply with a short <b>description</b> for this event:", { parse_mode: "HTML" });
+
+      // 2️⃣ Info / Description
+      bot.once("message", async (m2) => {
+        const info = (m2.text || "").trim();
+
+        await sendSafeMessage(chatId, "🕓 Start date/time (ISO 8601, e.g. 2025-10-25T12:00):");
+        bot.once("message", async (m3) => {
+          const start = (m3.text || "").trim();
+
+          await sendSafeMessage(chatId, "⏳ End date/time (ISO 8601, e.g. 2025-11-01T12:00):");
+          bot.once("message", async (m4) => {
+            const end = (m4.text || "").trim();
+
+            const payload = {
+              record: {
+                title,
+                info,
+                startDate: start || null,
+                endDate: end || null,
+                timezone: "Europe/Stockholm",
+                updatedAt: new Date().toISOString(),
+                createdBy: "@" + user,
+              },
+            };
+
+            try {
+              console.log("➡️ Writing new event meta:", payload);
+              const res = await writeBin(META_BIN_URL, payload);
+              console.log("✅ Event meta updated:", res?.metadata || "OK");
+
+              await sendSafeMessage(
+                chatId,
+                `✅ <b>New event created!</b>\n\n` +
+                `<b>Title:</b> ${escapeXml(title)}\n` +
+                `<b>Info:</b> ${escapeXml(info)}\n` +
+                `<b>Start:</b> ${escapeXml(start)}\n` +
+                `<b>End:</b> ${escapeXml(end)}`,
+                { parse_mode: "HTML" }
+              );
+            } catch (err) {
+              console.error("❌ /setevent write failed:", err.response?.data || err.message);
+              await sendSafeMessage(chatId, `⚠️ Could not save event: ${err.message}`);
+            }
+          });
+        });
+      });
+    });
+  } catch (err) {
+    console.error("❌ /setevent unexpected error:", err.message);
+    await sendSafeMessage(chatId, "⚠️ Something went wrong creating the event.");
+  }
 });
 
 // ==========================================================
