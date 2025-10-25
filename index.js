@@ -1350,28 +1350,34 @@ app.get("/holderStatus", async (req, res) => {
   }
 });
 
-// 🧩 Updated A.T.H. Share logic (Oct 2025)
+// 🧩 Enhanced /share — with verified-only event sync (v3.4.3)
 app.post("/share", async (req, res) => {
   try {
     const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
-    if (!username) return res.status(400).json({ ok:false, message:"Missing username" });
+    if (!username) return res.status(400).json({ ok: false, message: "Missing username" });
 
     const cfg = await getConfig();
     const holders = await getHoldersMapFromArray();
-
-    if (!cfg.allowPostingWithoutHold) {
-      const rec = holders[username] || holders[normalizeUsername(username)];
-      if (!rec)
-        return res.status(403).json({ ok:false, message:"User not a verified holder. Posting blocked." });
-    }
-
+    const userRec = holders[username] || holders[normalizeUsername(username)];
     const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
     const targetChatId = ATH_CHAT_ID;
     const isAth = String(mode).toLowerCase() === "ath";
 
+    // 🧩 Verify holder before allowing event update or sharing
+    if (!userRec?.wallet) {
+      return res.json({ ok: false, message: "Wallet not verified. Use /verifyholder first." });
+    }
+    const verified = await checkSolanaHolding(userRec.wallet, cfg.minHoldAmount || 0);
+    if (!verified.ok) {
+      return res.json({ ok: false, message: "Holding below required minimum." });
+    }
+
+    // === Step 1: Optional A.T.H. sharing ===
     let shared = {};
     try {
-      const r = await axios.get(`${ATH_BIN_URL}/latest`, { headers: { "X-Master-Key": JSONBIN_KEY } });
+      const r = await axios.get(`${ATH_BIN_URL}/latest`, {
+        headers: { "X-Master-Key": JSONBIN_KEY },
+      });
       shared = r.data?.record || {};
     } catch (err) {
       console.warn("⚠️ Could not load previous A.T.H. records:", err.message);
@@ -1380,14 +1386,20 @@ app.post("/share", async (req, res) => {
     const prev = shared[username] || 0;
     if (isAth && score <= prev && !ATH_TEST_MODE) {
       console.log(`🚫 ${username} already shared same or higher A.T.H. (${prev})`);
-      return res.json({ ok:true, posted:false, stored:false, message:"Already shared. Make a new A.T.H. and share that." });
+      return res.json({
+        ok: true,
+        posted: false,
+        stored: false,
+        message: "Already shared. Make a new A.T.H. and share that.",
+      });
     }
 
+    // === Step 2: Telegram post ===
     const caption = isAth
       ? `💛 ${username} just reached a new A.T.H: ${score.toLocaleString()} MCap!\n#UnStableCoin #WAGMI-ish`
       : `⚡️ ${username} posted a highlight moment!\nScore: ${score.toLocaleString()}`;
     const photoData = curveImage || imageBase64;
-    if (!photoData) return res.status(400).json({ ok:false, message:"Missing image data" });
+    if (!photoData) return res.status(400).json({ ok: false, message: "Missing image data" });
 
     let tgResp = null;
     try {
@@ -1402,11 +1414,15 @@ app.post("/share", async (req, res) => {
       console.error("❌ Telegram post failed:", err.response?.data || err.message);
     }
 
+    // === Step 3: A.T.H. record update ===
     if (isAth && score > prev) {
       shared[username] = score;
       try {
         await axios.put(`${ATH_BIN_URL}`, shared, {
-          headers: { "X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json" },
+          headers: {
+            "X-Master-Key": JSONBIN_KEY,
+            "Content-Type": "application/json",
+          },
         });
         console.log(`✅ A.T.H. recorded for ${username} (${score})`);
       } catch (err) {
@@ -1414,10 +1430,43 @@ app.post("/share", async (req, res) => {
       }
     }
 
-    res.json({ ok:true, posted:!!tgResp, stored:isAth });
+    // === Step 4: Update EVENT leaderboard if active ===
+    try {
+      const meta = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
+      const record = meta?.record?.record || meta?.record || {};
+      const now = new Date();
+      const start = record.startDate ? new Date(record.startDate) : null;
+      const end = record.endDate ? new Date(record.endDate) : null;
+      const isActive = start && end && now >= start && now <= end;
+
+      if (isActive) {
+        const evData = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
+        const scores = evData?.record || evData || {};
+        scores[username] = Math.max(Number(scores[username] || 0), Number(score));
+
+        await axios.put(
+          `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`,
+          { record: scores },
+          {
+            headers: {
+              "X-Master-Key": process.env.JSONBIN_KEY,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        console.log(`⚡ Added verified ${username} (${score}) to active event leaderboard`);
+      } else {
+        console.log("⚠️ No active event — skipping event leaderboard update.");
+      }
+    } catch (err) {
+      console.warn("⚠️ Could not update event leaderboard:", err.message);
+    }
+
+    res.json({ ok: true, posted: !!tgResp, stored: isAth });
   } catch (err) {
     console.error("❌ /share error:", err);
-    res.status(500).json({ ok:false, error:err.message });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
