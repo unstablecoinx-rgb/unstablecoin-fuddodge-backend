@@ -358,32 +358,32 @@ async function composeShareImage(graphBase64, username, score) {
   return await img.png().toBuffer();
 }
 
-async function composeAthBanner(curveBase64, username, score) {
-  const rocketPath = "./assets/ath_banner_square.png";
-  const W = 1200, H = 628, leftW = Math.floor(W*0.55), rightW = W-leftW;
-  const square = Math.min(leftW, H);
+//async function composeAthBanner(curveBase64, username, score) {
+  //const rocketPath = "./assets/ath_banner_square.png";
+ // const W = 1200, H = 628, leftW = Math.floor(W*0.55), rightW = W-leftW;
+ // const square = Math.min(leftW, H);
 
-  let chartBuf = null;
-  try {
-    if (curveBase64) {
-      const m = curveBase64.match(/^data:image\/(png|jpeg);base64,(.*)$/);
-      const b = m ? m[2] : curveBase64;
-      chartBuf = Buffer.from(b, "base64");
-    }
-  } catch (_) {}
+//  let chartBuf = null;
+//  try {
+ //   if (curveBase64) {
+  //    const m = curveBase64.match(/^data:image\/(png|jpeg);base64,(.*)$/);
+     // const b = m ? m[2] : curveBase64;
+   //   chartBuf = Buffer.from(b, "base64");
+// /   }
+//  } catch (_) {}
 
-  const leftImg = await sharp(rocketPath).resize(square, square, { fit:"contain", background: { r:0,g:0,b:0,alpha:1 } }).toBuffer();
-  let rightImg = null;
-  if (chartBuf) rightImg = await sharp(chartBuf).resize(square, square, { fit:"contain", background:{ r:0,g:0,b:0,alpha:1 } }).toBuffer();
+//  const leftImg = await sharp(rocketPath).resize(square, square, { fit:"contain", background: { r:0,g:0,b:0,alpha:1 } }).toBuffer();
+//  let rightImg = null;
+//  if (chartBuf) rightImg = await sharp(chartBuf).resize(square, square, { fit:"contain", background:{ r:0,g:0,b:0,alpha:1 } }).toBuffer();
 
-  const base = sharp({ create: { width: W, height: H, channels: 4, background: { r:0,g:0,b:0,alpha:1 } }});
-  const comps = [
-    { input: leftImg,  top: Math.floor((H-square)/2), left: Math.floor((leftW-square)/2) },
-    { input: await sharp({ create:{ width:3,height:H,channels:4, background:{ r:0,g:255,b:200,alpha:.5 }}}).png().toBuffer(), top:0, left:leftW-2 },
-  ];
-  if (rightImg) comps.push({ input: rightImg, top: Math.floor((H-square)/2), left: leftW + Math.floor((rightW-square)/2) });
-  return await base.composite(comps).png().toBuffer();
-}
+//  const base = sharp({ create: { width: W, height: H, channels: 4, background: { r:0,g:0,b:0,alpha:1 } }});
+//  const comps = [
+//    { input: leftImg,  top: Math.floor((H-square)/2), left: Math.floor((leftW-square)/2) },
+//    { input: await sharp({ create:{ width:3,height:H,channels:4, background:{ r:0,g:255,b:200,alpha:.5 }}}).png().toBuffer(), top:0, left:leftW-2 },
+//  ];
+//  if (rightImg) comps.push({ input: rightImg, top: Math.floor((H-square)/2), left: leftW + Math.floor((rightW-square)/2) });
+//  return await base.composite(comps).png().toBuffer();
+//}
 
 // ==========================================================
 // 9) LEADERBOARDS & EVENT DATA (Unified & Debugged Version)
