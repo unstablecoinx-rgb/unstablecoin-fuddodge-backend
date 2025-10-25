@@ -1447,73 +1447,83 @@ app.get("/leaderboard", async (req, res) => {
   }
 });
 
-// ==========================================================
-// 🌐 EVENT INFO + EVENT LEADERBOARD (same style as /top10)
-// ==========================================================
+// ======================================================
+// 🚀 EVENT META + LEADERBOARD (Unified Logic)
+// ======================================================
 
+// --- EVENT INFO ---
 app.get("/event", async (req, res) => {
   try {
     const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
     const record = data?.record?.record || data?.record || {};
+
+    const now = new Date();
+    const start = record.startDate ? new Date(record.startDate) : null;
+    const end = record.endDate ? new Date(record.endDate) : null;
+
+    let status = "inactive";
+    if (start && end) {
+      if (now < start) status = "upcoming";
+      else if (now >= start && now <= end) status = "active";
+      else if (now > end) status = "ended";
+    }
+
     const safe = {
-      title: record.title || "No active event",
+      status,
+      title: record.title || "UnStable Challenge",
       info: record.info || "",
       startDate: record.startDate || "",
       endDate: record.endDate || "",
-      timezone: record.timezone || "CET",
-      active: true
+      timezone: record.timezone || "CET"
     };
-    console.log("📤 /event response:", safe);
+
+    console.log("📤 /event:", safe);
     res.json(safe);
   } catch (err) {
     console.error("❌ /event error:", err.message);
-    res.status(500).json({});
+    res.status(500).json({ status: "error" });
   }
 });
 
-// ======================================================
-// 🏆 EVENT LEADERBOARD (used by game splash)
-// ======================================================
+
+// --- EVENT LEADERBOARD ---
 app.get("/eventtop10", async (req, res) => {
   try {
-    const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
-    const raw = data?.record || data || {};
+    const meta = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
+    const record = meta?.record?.record || meta?.record || {};
+
+    const now = new Date();
+    const start = record.startDate ? new Date(record.startDate) : null;
+    const end = record.endDate ? new Date(record.endDate) : null;
+    const isActive = start && end && now >= start && now <= end;
+    const isEnded = end && now > end;
+
+    const scores = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
+    const raw = scores?.record || scores || {};
     let arr = [];
 
-    // ✅ Filter & format exactly like Telegram version
     if (typeof raw === "object" && !Array.isArray(raw)) {
       arr = Object.entries(raw)
-        .filter(([key, val]) => {
-          // Only accept numeric scores and skip any meta fields
-          return typeof val === "number" && !["resetAt", "updatedAt", "createdAt"].includes(key);
-        })
-        .map(([username, score]) => ({
-          username,
-          score: Number(score)
-        }));
+        .filter(([key, val]) =>
+          typeof val === "number" && !["resetAt", "updatedAt", "createdAt"].includes(key)
+        )
+        .map(([username, score]) => ({ username, score: Number(score) }));
     }
 
     arr = arr.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    // ✅ Optional fallback to main leaderboard if empty
-    if (!arr.length) {
-      console.log("⚠️ No event scores found, using fallback main leaderboard");
-      const mainData = await readBin(`https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}`);
-      const mainRaw = mainData?.record || mainData || {};
-      arr = Object.entries(mainRaw)
-        .map(([username, score]) => ({ username, score: Number(score) }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
-    }
+    res.json({
+      status: isActive ? "active" : isEnded ? "ended" : "inactive",
+      title: record.title || "UnStable Challenge",
+      entries: arr
+    });
 
-    res.json(arr);
-    console.log(`📤 /eventtop10 sent ${arr.length} entries`);
+    console.log(`📤 /eventtop10: ${arr.length} entries (${isActive ? "active" : isEnded ? "ended" : "inactive"})`);
   } catch (err) {
     console.error("❌ /eventtop10 error:", err.message);
-    res.status(500).json([]);
+    res.status(500).json({ status: "error", entries: [] });
   }
 });
-
 
 // 🧩 META (optional, used for global app state / version info)
 app.get("/meta", async (req, res) => {
