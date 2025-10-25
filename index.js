@@ -974,11 +974,13 @@ bot.onText(/\/setholding$/i, async (msg) => {
 
 // /getholdingreq → same as /getholding
 bot.onText(/\/getholdingreq(@[A-Za-z0-9_]+)?/i, (msg) => {
+  console.log("↪️ Alias triggered: /getholdingreq");
   bot.emit("text", { ...msg, text: "/getholding" });
 });
 
 // /setholdingreq → same as /setholding
 bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?/i, (msg) => {
+  console.log("↪️ Alias triggered: /setholdingreq");
   bot.emit("text", { ...msg, text: "/setholding" });
 });
 
