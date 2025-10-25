@@ -550,8 +550,9 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
   if (buf.trim()) await sendSafeMessage(chatId, buf.trim());
 }
 
+
 // ==========================================================
-// 11) TELEGRAM MAIN MENU — reply keyboard version
+// 11) TELEGRAM MAIN MENU — reply keyboard, direct execution
 // ==========================================================
 const mainMenu = {
   reply_markup: {
@@ -575,112 +576,35 @@ bot.onText(/\/start|\/menu/i, async (msg) => {
 });
 
 // ==========================================================
-//  BUTTON HANDLERS (reply keyboard buttons)
+//  BUTTON HANDLERS — run commands directly (no /echo)
 // ==========================================================
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
 
-  switch (text) {
-    case "🌕 Add Wallet":
-      return bot.sendMessage(chatId, "/addwallet");
-    case "⚡ Verify Holder":
-      return bot.sendMessage(chatId, "/verifyholder");
-    case "🔁 Change Wallet":
-      return bot.sendMessage(chatId, "/changewallet");
-    case "❌ Remove Wallet":
-      return bot.sendMessage(chatId, "/removewallet");
-    case "🏆 Leaderboard":
-      return bot.sendMessage(chatId, "/top10");
-    case "🚀 Current Event":
-      return bot.sendMessage(chatId, "/event");
-    case "🐞 Report Bug":
-      return bot.sendMessage(chatId, "/bugreport");
-    default:
-      break;
-  }
-});
-
-// ==========================================================
-//  INLINE MENU CALLBACK HANDLER — ⚡️ reply feedback + auto-remove
-// ==========================================================
-bot.on("callback_query", async (query) => {
-  const chatId = query.message.chat.id;
-  const data = query.data;
-  const messageId = query.message.message_id;
-
   try {
-    // === Execute the action associated with the pressed button ===
-    switch (data) {
-      case "verify_holder":
-        await bot.sendMessage(chatId, "/verifyholder");
-        break;
-      case "add_wallet":
-        await bot.sendMessage(chatId, "/addwallet");
-        break;
-      case "change_wallet":
-        await bot.sendMessage(chatId, "/changewallet");
-        break;
-      case "remove_wallet":
-        await bot.sendMessage(chatId, "/removewallet");
-        break;
-      case "leaderboard":
-        await bot.sendMessage(chatId, "/top10");
-        break;
-      case "current_event":
-        await bot.sendMessage(chatId, "/event");
-        break;
-      case "report_bug":
-        await bot.sendMessage(chatId, "/bugreport");
-        break;
+    switch (text) {
+      case "🌕 Add Wallet":
+        return await handleAddWallet(msg);
+      case "⚡ Verify Holder":
+        return await handleVerifyHolder(msg);
+      case "🔁 Change Wallet":
+        return await handleChangeWallet(msg);
+      case "❌ Remove Wallet":
+        return await handleRemoveWallet(msg);
+      case "🏆 Leaderboard":
+        return await handleLeaderboard(msg);
+      case "🚀 Current Event":
+        return await handleEvent(msg);
+      case "🐞 Report Bug":
+        return await handleBugReport(msg);
       default:
-        await bot.sendMessage(chatId, "⚠️ Unknown menu action.");
         break;
     }
-
-    // === Re-send the main menu with subtle ⚡️ feedback (reply style) ===
-    const menu = {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🌕 Add Wallet", callback_data: "add_wallet" },
-            { text: "⚡ Verify Holder", callback_data: "verify_holder" }
-          ],
-          [
-            { text: "🔁 Change Wallet", callback_data: "change_wallet" },
-            { text: "❌ Remove Wallet", callback_data: "remove_wallet" }
-          ],
-          [
-            { text: "🏆 Leaderboard", callback_data: "leaderboard" },
-            { text: "🚀 Current Event", callback_data: "current_event" }
-          ],
-          [
-            { text: "🐞 Report Bug", callback_data: "report_bug" }
-          ]
-        ]
-      },
-      parse_mode: "HTML",
-      reply_to_message_id: messageId // attach to last bot message
-    };
-
-    const sent = await bot.sendMessage(chatId, "⚡️", menu);
-
-    // Remove ⚡️ after 3 seconds for a clean look
-    setTimeout(async () => {
-      try {
-        await bot.deleteMessage(chatId, sent.message_id);
-      } catch (_) {
-        // ignore if already removed
-      }
-    }, 3000);
-
   } catch (err) {
-    console.error("❌ callback_query handler:", err.message);
-    await bot.sendMessage(chatId, "⚠️ Something went wrong with that button.");
+    console.error("❌ menu handler:", err.message);
+    await sendSafeMessage(chatId, "⚠️ Something went wrong.");
   }
-
-  // Always answer callback to remove Telegram's spinner
-  bot.answerCallbackQuery(query.id).catch(() => {});
 });
 
 // ==========================================================
