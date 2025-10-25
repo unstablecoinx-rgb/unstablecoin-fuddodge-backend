@@ -736,22 +736,80 @@ bot.onText(/\/eventtop50/i, async (msg) => {
   }
 });
 
-// --- ADMIN COMMANDS ---
-bot.onText(/\/winners(?: (\d+))?/i, async (msg, match) => {
+// ==========================================================
+//  /validatewinners — verify event top wallets on-chain
+// ==========================================================
+bot.onText(/\/validatewinners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
   if (!ADMIN_USERS.includes(user))
     return sendSafeMessage(chatId, "⚠️ Admins only.");
 
-  const n = match && match[1] ? parseInt(match[1]) : 10;
+  await sendSafeMessage(chatId, "🔍 Checking top verified event wallets on-chain...");
+
   try {
-    const top = await getVerifiedEventTop(n);
-    if (!top.length) return sendSafeMessage(chatId, "⚠️ No verified winners yet.");
-    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${x.score}`);
-    await sendChunked(chatId, `🥇 <b>Top ${n} Verified Event Winners</b>\n\n`, lines);
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+    const { scores } = await getEventData();
+    const holdersMap = await getHoldersMapFromArray();
+
+    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 20); // top 20
+    const results = [];
+
+    for (const [uname, score] of sorted) {
+      const holder = holdersMap[uname] || holdersMap[uname.toLowerCase()];
+      if (!holder?.wallet) {
+        results.push(`⚪️ ${uname} — no wallet on file`);
+        continue;
+      }
+
+      const check = await checkSolanaHolding(holder.wallet, minHold);
+      if (check.ok)
+        results.push(`✅ ${uname} — verified (${score})`);
+      else
+        results.push(`❌ ${uname} — insufficient holding (${check.balance || 0})`);
+    }
+
+    const header = `🧩 <b>Validated Top Event Holders</b>\n<code>minHold = ${minHold.toLocaleString()} $US</code>\n\n`;
+    await sendChunked(chatId, header, results, 3800);
   } catch (err) {
-    console.error("❌ /winners:", err.message);
-    sendSafeMessage(chatId, "⚠️ Failed to fetch winners.");
+    console.error("❌ /validatewinners:", err.message);
+    await sendSafeMessage(chatId, `⚠️ Could not validate winners: ${err.message}`);
+  }
+});
+
+// ==========================================================
+//  /winnerscheck — list top 10 event holders + wallets
+// ==========================================================
+bot.onText(/\/winnerscheck(@[A-Za-z0-9_]+)?$/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = (msg.from.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(user))
+    return sendSafeMessage(chatId, "⚠️ Admins only.");
+
+  await sendSafeMessage(chatId, "📊 Fetching top 10 event holders...");
+
+  try {
+    const { scores } = await getEventData();
+    const holdersMap = await getHoldersMapFromArray();
+    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+    if (!sorted.length)
+      return sendSafeMessage(chatId, "⚠️ No event data found.");
+
+    const lines = sorted.map(([uname, score], i) => {
+      const holder = holdersMap[uname] || holdersMap[uname.toLowerCase()];
+      const wallet = holder?.wallet
+        ? holder.wallet.slice(0, 4) + "…" + holder.wallet.slice(-4)
+        : "—";
+      return `${i + 1}. ${uname} — ${score}  |  ${wallet}`;
+    });
+
+    const header = "🏁 <b>Top 10 Event Holders</b>\n\n";
+    await sendChunked(chatId, header, lines, 3800);
+  } catch (err) {
+    console.error("❌ /winnerscheck:", err.message);
+    await sendSafeMessage(chatId, `⚠️ Could not load winners: ${err.message}`);
   }
 });
 
