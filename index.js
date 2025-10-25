@@ -968,6 +968,19 @@ bot.onText(/\/setholding$/i, async (msg) => {
   });
 });
 
+// ==========================================================
+//  Aliases for Telegram command menu compatibility
+// ==========================================================
+
+// /getholdingreq → same as /getholding
+bot.onText(/\/getholdingreq(@[A-Za-z0-9_]+)?/i, (msg) => {
+  bot.emit("text", { ...msg, text: "/getholding" });
+});
+
+// /setholdingreq → same as /setholding
+bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?/i, (msg) => {
+  bot.emit("text", { ...msg, text: "/setholding" });
+});
 
 // ==========================================================
 // 13) TELEGRAM: WALLET FLOWS
