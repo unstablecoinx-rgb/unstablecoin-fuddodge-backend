@@ -551,43 +551,53 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
 }
 
 // ==========================================================
-// 11) TELEGRAM MAIN MENU — inline version with ⚡️ refresh
+// 11) TELEGRAM MAIN MENU — reply keyboard version
 // ==========================================================
+const mainMenu = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "🌕 Add Wallet" }, { text: "⚡ Verify Holder" }],
+      [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
+      [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }],
+      [{ text: "🐞 Report Bug" }],
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false,
+  },
+};
 
-// /start and /menu — show main inline menu
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
-  const text =
-    "💛 <b>Welcome to UnStableCoin</b>\nUse the buttons below to manage wallet or join the event.";
+  const welcome =
+    "💛 <b>Welcome to UnStableCoin</b>\n" +
+    "Use the buttons below to manage your wallet or join the event.";
+  await bot.sendMessage(chatId, welcome, { ...mainMenu, parse_mode: "HTML" });
+});
 
-  const menu = {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "🌕 Add Wallet", callback_data: "add_wallet" },
-          { text: "⚡ Verify Holder", callback_data: "verify_holder" }
-        ],
-        [
-          { text: "🔁 Change Wallet", callback_data: "change_wallet" },
-          { text: "❌ Remove Wallet", callback_data: "remove_wallet" }
-        ],
-        [
-          { text: "🏆 Leaderboard", callback_data: "leaderboard" },
-          { text: "🚀 Current Event", callback_data: "current_event" }
-        ],
-        [
-          { text: "🐞 Report Bug", callback_data: "report_bug" }
-        ]
-      ]
-    },
-    parse_mode: "HTML"
-  };
+// ==========================================================
+//  BUTTON HANDLERS (reply keyboard buttons)
+// ==========================================================
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text?.trim();
 
-  try {
-    await bot.sendMessage(chatId, text, menu);
-  } catch (err) {
-    console.error("❌ /start menu:", err.message);
-    await sendSafeMessage(chatId, "⚠️ Failed to display main menu.");
+  switch (text) {
+    case "🌕 Add Wallet":
+      return bot.sendMessage(chatId, "/addwallet");
+    case "⚡ Verify Holder":
+      return bot.sendMessage(chatId, "/verifyholder");
+    case "🔁 Change Wallet":
+      return bot.sendMessage(chatId, "/changewallet");
+    case "❌ Remove Wallet":
+      return bot.sendMessage(chatId, "/removewallet");
+    case "🏆 Leaderboard":
+      return bot.sendMessage(chatId, "/top10");
+    case "🚀 Current Event":
+      return bot.sendMessage(chatId, "/event");
+    case "🐞 Report Bug":
+      return bot.sendMessage(chatId, "/bugreport");
+    default:
+      break;
   }
 });
 
