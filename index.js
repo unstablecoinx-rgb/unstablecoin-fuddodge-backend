@@ -627,17 +627,28 @@ Stay unstable. 💛⚡`;
   sendSafeMessage(msg.chat.id, text);
 });
 
-bot.onText(/\/event$/, async (msg) => {
+// --- FIXED /event (v3.4.2 compatible with new meta structure) ---
+bot.onText(/\/event$/i, async (msg) => {
   try {
+    const chatId = msg.chat.id;
     const meta = await getEventMeta();
     const cfg = await getConfig();
     const tz = meta.timezone || "Europe/Stockholm";
     const now = DateTime.now().setZone(tz);
-    let body = `<b>${escapeXml(meta.title || "Current Event")}</b>\n\n${escapeXml(meta.info || "")}`;
 
-    if (meta.startDate) {
-      const start = DateTime.fromISO(meta.startDate).setZone(tz);
-      const end = meta.endDate ? DateTime.fromISO(meta.endDate).setZone(tz) : null;
+    // Hantera flera möjliga strukturer
+    const data = meta.raw?.record || meta.raw || meta;
+
+    if (!data.title) {
+      await sendSafeMessage(chatId, "⚠️ No active event found in metadata.");
+      return;
+    }
+
+    let body = `🧩 <b>${escapeXml(data.title)}</b>\n\n${escapeXml(data.info || "")}\n`;
+
+    if (data.startDate) {
+      const start = DateTime.fromISO(data.startDate).setZone(tz);
+      const end = data.endDate ? DateTime.fromISO(data.endDate).setZone(tz) : null;
 
       if (now < start) {
         const diff = start.diff(now, ["days", "hours", "minutes"]).toObject();
@@ -651,14 +662,14 @@ bot.onText(/\/event$/, async (msg) => {
         body += `\n🔴 Event ended ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
         body += `\n📜 Stay tuned for next event.`;
       }
+
       body += `\n🕓 ${start.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
       if (end) body += ` → ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
-    } else {
-      body += `\n⚠️ No active event found.`;
     }
 
-    body += `\n\n<b>Minimum holding:</b> ${cfg.minHoldAmount.toLocaleString()} $US`;
-    await sendSafeMessage(msg.chat.id, body);
+    body += `\n\n<b>Timezone:</b> ${escapeXml(tz)}\n<b>Minimum holding:</b> ${cfg.minHoldAmount.toLocaleString()} $US`;
+
+    await sendSafeMessage(chatId, body, { parse_mode: "HTML" });
   } catch (err) {
     console.error("❌ /event:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
