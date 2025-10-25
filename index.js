@@ -779,7 +779,7 @@ bot.onText(/\/resetevent/i, async (msg) => {
   }
 });
 
-// --- FIXED /setevent (v3.4.1 interactive & durable) ---
+// --- IMPROVED /setevent (v3.4.2) ---
 bot.onText(/\/setevent/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
@@ -788,62 +788,108 @@ bot.onText(/\/setevent/i, async (msg) => {
 
   try {
     console.log("🧩 /setevent triggered by", user);
-    await sendSafeMessage(
-      chatId,
-      "🧩 Let's create a new event.\n" +
-      "Reply with the event <b>title</b>:",
-      { parse_mode: "HTML" }
-    );
+    await sendSafeMessage(chatId, "🧠 Let's set up a new event.\n\nPlease reply with the <b>title</b>:", { parse_mode: "HTML" });
 
     // 1️⃣ Title
     bot.once("message", async (m1) => {
       const title = (m1.text || "").trim();
       if (!title) return sendSafeMessage(chatId, "⚠️ Title cannot be empty. Try /setevent again.");
 
-      await sendSafeMessage(chatId, "✏️ Now reply with a short <b>description</b> for this event:", { parse_mode: "HTML" });
+      await sendSafeMessage(chatId, "✏️ Great! Now send a short <b>description</b> for the event:", { parse_mode: "HTML" });
 
-      // 2️⃣ Info / Description
+      // 2️⃣ Description
       bot.once("message", async (m2) => {
         const info = (m2.text || "").trim();
 
-        await sendSafeMessage(chatId, "🕓 Start date/time (ISO 8601, e.g. 2025-10-25T12:00):");
+        await sendSafeMessage(chatId, "📅 Enter <b>start date</b> (YYYY-MM-DD):", { parse_mode: "HTML" });
         bot.once("message", async (m3) => {
-          const start = (m3.text || "").trim();
+          const startDate = (m3.text || "").trim();
 
-          await sendSafeMessage(chatId, "⏳ End date/time (ISO 8601, e.g. 2025-11-01T12:00):");
+          await sendSafeMessage(chatId, "🕓 Enter <b>start time</b> (HH:MM, 24h):", { parse_mode: "HTML" });
           bot.once("message", async (m4) => {
-            const end = (m4.text || "").trim();
+            const startTime = (m4.text || "").trim();
 
-            const payload = {
-              record: {
-                title,
-                info,
-                startDate: start || null,
-                endDate: end || null,
-                timezone: "Europe/Stockholm",
-                updatedAt: new Date().toISOString(),
-                createdBy: "@" + user,
-              },
-            };
+            await sendSafeMessage(chatId, "📅 Enter <b>end date</b> (YYYY-MM-DD):", { parse_mode: "HTML" });
+            bot.once("message", async (m5) => {
+              const endDate = (m5.text || "").trim();
 
-            try {
-              console.log("➡️ Writing new event meta:", payload);
-              const res = await writeBin(META_BIN_URL, payload);
-              console.log("✅ Event meta updated:", res?.metadata || "OK");
+              await sendSafeMessage(chatId, "⏰ Enter <b>end time</b> (HH:MM, 24h):", { parse_mode: "HTML" });
+              bot.once("message", async (m6) => {
+                const endTime = (m6.text || "").trim();
 
-              await sendSafeMessage(
-                chatId,
-                `✅ <b>New event created!</b>\n\n` +
-                `<b>Title:</b> ${escapeXml(title)}\n` +
-                `<b>Info:</b> ${escapeXml(info)}\n` +
-                `<b>Start:</b> ${escapeXml(start)}\n` +
-                `<b>End:</b> ${escapeXml(end)}`,
-                { parse_mode: "HTML" }
-              );
-            } catch (err) {
-              console.error("❌ /setevent write failed:", err.response?.data || err.message);
-              await sendSafeMessage(chatId, `⚠️ Could not save event: ${err.message}`);
-            }
+                await sendSafeMessage(chatId, "🌍 Enter timezone (default: Europe/Stockholm):");
+                bot.once("message", async (m7) => {
+                  const tzInput = (m7.text || "").trim();
+                  const timezone = tzInput || "Europe/Stockholm";
+
+                  const startISO = `${startDate}T${startTime}`;
+                  const endISO = `${endDate}T${endTime}`;
+
+                  // 🧩 Preview
+                  const preview =
+                    `✅ <b>Review event details:</b>\n\n` +
+                    `<b>Title:</b> ${escapeXml(title)}\n` +
+                    `<b>Info:</b> ${escapeXml(info)}\n` +
+                    `<b>Start:</b> ${escapeXml(startISO)}\n` +
+                    `<b>End:</b> ${escapeXml(endISO)}\n` +
+                    `<b>Timezone:</b> ${escapeXml(timezone)}\n\n` +
+                    `Save this event?`;
+
+                  await bot.sendMessage(chatId, preview, {
+                    parse_mode: "HTML",
+                    reply_markup: {
+                      inline_keyboard: [
+                        [
+                          { text: "✅ Save", callback_data: "confirm_event_save" },
+                          { text: "❌ Cancel", callback_data: "confirm_event_cancel" },
+                        ],
+                      ],
+                    },
+                  });
+
+                  // 8️⃣ Confirmation
+                  bot.once("callback_query", async (cbq) => {
+                    if (cbq.data === "confirm_event_cancel") {
+                      await sendSafeMessage(chatId, "❌ Event creation cancelled.");
+                      return;
+                    }
+
+                    if (cbq.data === "confirm_event_save") {
+                      const payload = {
+                        record: {
+                          title,
+                          info,
+                          startDate: startISO,
+                          endDate: endISO,
+                          timezone,
+                          updatedAt: new Date().toISOString(),
+                          createdBy: "@" + user,
+                        },
+                      };
+
+                      try {
+                        console.log("➡️ Writing event meta:", payload);
+                        const res = await writeBin(META_BIN_URL, payload);
+                        console.log("✅ Event meta updated:", res?.metadata || "OK");
+
+                        await sendSafeMessage(
+                          chatId,
+                          `🎯 <b>Event saved successfully!</b>\n\n` +
+                          `<b>Title:</b> ${escapeXml(title)}\n` +
+                          `<b>Start:</b> ${escapeXml(startISO)}\n` +
+                          `<b>End:</b> ${escapeXml(endISO)}\n` +
+                          `<b>Timezone:</b> ${escapeXml(timezone)}`,
+                          { parse_mode: "HTML" }
+                        );
+                      } catch (err) {
+                        console.error("❌ /setevent write failed:", err.response?.data || err.message);
+                        await sendSafeMessage(chatId, `⚠️ Could not save event: ${err.message}`);
+                      }
+                    }
+                  });
+                });
+              });
+            });
           });
         });
       });
