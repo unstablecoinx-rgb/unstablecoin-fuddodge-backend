@@ -1422,42 +1422,96 @@ app.post("/share", async (req, res) => {
 });
 
 // ==========================================================
-//  WEB APP ENDPOINTS — for game & splash screen
+// 🌐 WEB APP ENDPOINTS — FUD DODGE Splash & Game
 // ==========================================================
 
-// Leaderboard
+// 🏆 MAIN LEADERBOARD (used by splash screen)
 app.get("/leaderboard", async (req, res) => {
   try {
     const data = await readBin(MAIN_BIN_URL);
-    if (!data?.record) return res.json({ scores: {} });
-    res.json(data.record);
+
+    // handle different structures gracefully
+    const arr =
+      data?.record?.scores ||
+      data?.record ||
+      data?.scores ||
+      [];
+
+    if (!Array.isArray(arr)) {
+      console.warn("⚠️ /leaderboard data not array, returning []");
+      return res.json([]);
+    }
+
+    res.json(arr);
   } catch (err) {
-    console.error("❌ /leaderboard:", err.message);
-    res.status(500).json({ error: "Leaderboard fetch failed" });
+    console.error("❌ /leaderboard error:", err.message);
+    res.status(500).json([]);
   }
 });
 
-// Event
+
+// 🚀 CURRENT EVENT INFO (title, info, start/end dates)
 app.get("/event", async (req, res) => {
   try {
-    const data = await readBin(EVENT_BIN_URL);
-    if (!data?.record) return res.json({ scores: {} });
-    res.json(data.record);
+    // event meta can be stored either in EVENT_META_BIN or EVENT_BIN
+    const data = await readBin(EVENT_META_BIN_URL || EVENT_BIN_URL);
+    const record = data?.record || {};
+
+    // ensure required keys exist so splash doesn't break
+    const safe = {
+      title: record.title || "UnStable Challenge",
+      info: record.info || "Survive the chaos and reach your next ATH.",
+      startDate: record.startDate || new Date().toISOString(),
+      endDate: record.endDate || new Date(Date.now() + 86400000).toISOString(),
+      active: record.active ?? true
+    };
+
+    res.json(safe);
   } catch (err) {
-    console.error("❌ /event:", err.message);
-    res.status(500).json({ error: "Event fetch failed" });
+    console.error("❌ /event error:", err.message);
+    res.status(500).json({});
   }
 });
 
-// Event Meta (for splash info)
+
+// 🥇 EVENT LEADERBOARD (Top 10 players)
+app.get("/eventtop10", async (req, res) => {
+  try {
+    const data = await readBin(EVENT_BIN_URL);
+    const arr =
+      data?.record?.scores ||
+      data?.record ||
+      data?.scores ||
+      [];
+
+    if (!Array.isArray(arr)) {
+      console.warn("⚠️ /eventtop10 data not array, returning []");
+      return res.json([]);
+    }
+
+    // return only top 10 entries
+    const top = arr
+      .filter(x => x && typeof x.username === "string" && typeof x.score === "number")
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    res.json(top);
+  } catch (err) {
+    console.error("❌ /eventtop10 error:", err.message);
+    res.status(500).json([]);
+  }
+});
+
+
+// 🧩 META (optional, used for global app state / version info)
 app.get("/meta", async (req, res) => {
   try {
     const data = await readBin(EVENT_META_BIN_URL);
-    if (!data?.record) return res.json({});
-    res.json(data.record);
+    const record = data?.record || {};
+    res.json(record);
   } catch (err) {
-    console.error("❌ /meta:", err.message);
-    res.status(500).json({ error: "Meta fetch failed" });
+    console.error("❌ /meta error:", err.message);
+    res.status(500).json({});
   }
 });
 
