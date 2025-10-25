@@ -912,6 +912,64 @@ bot.onText(/\/setevent/i, async (msg) => {
 });
 
 // ==========================================================
+//  CONFIG MANAGEMENT: /getholding + /setholding
+// ==========================================================
+
+// Anyone can view current holding requirement
+bot.onText(/\/getholding/, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const cfg = await getConfig();
+    if (!cfg || !cfg.minHoldAmount)
+      return sendSafeMessage(chatId, "⚠️ No config found or invalid bin data.");
+
+    await sendSafeMessage(
+      chatId,
+      `💰 Minimum holding requirement: ${cfg.minHoldAmount.toLocaleString()} $US`
+    );
+  } catch (err) {
+    console.error("❌ /getholding:", err?.message || err);
+    await sendSafeMessage(chatId, "⚠️ Could not load current holding requirement.");
+  }
+});
+
+// Admins can update holding requirement interactively
+bot.onText(/\/setholding$/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = (msg.from.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(user))
+    return sendSafeMessage(chatId, "⚠️ Admins only.");
+
+  await sendSafeMessage(chatId, "💬 Enter new minimum holding amount (numbers only):");
+
+  bot.once("message", async (m2) => {
+    const input = (m2.text || "").trim().replace(/[^\d]/g, "");
+    const newVal = parseInt(input, 10);
+    if (isNaN(newVal) || newVal <= 0)
+      return sendSafeMessage(chatId, "⚠️ Invalid number. Try again with /setholding.");
+
+    try {
+      const cfg = await getConfig();
+      cfg.minHoldAmount = newVal;
+      const payload = { record: cfg };
+
+      console.log(`💾 Updating minHoldAmount to ${newVal}`);
+      const res = await writeBin(CONFIG_BIN_URL, payload);
+      console.log("✅ Config updated:", res?.metadata || "OK");
+
+      await sendSafeMessage(
+        chatId,
+        `✅ Minimum holding updated to ${newVal.toLocaleString()} $US`
+      );
+    } catch (err) {
+      console.error("❌ /setholding:", err.response?.data || err.message);
+      await sendSafeMessage(chatId, "⚠️ Failed to update holding requirement.");
+    }
+  });
+});
+
+
+// ==========================================================
 // 13) TELEGRAM: WALLET FLOWS
 // ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
