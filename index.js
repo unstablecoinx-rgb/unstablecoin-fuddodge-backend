@@ -666,6 +666,110 @@ bot.onText(/\/event$/, async (msg) => {
 });
 
 // ==========================================================
+// 🧩 PATCH: Leaderboard + Admin Commands (v3.4.1 restore)
+// ==========================================================
+
+// --- LEADERBOARD COMMANDS ---
+bot.onText(/\/top10/i, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const data = await getLeaderboard();
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (!sorted.length) return sendSafeMessage(chatId, "⚠️ No leaderboard data available.");
+    const lines = sorted.map(([u, v], i) => `${i + 1}. ${u} — ${v}`);
+    await sendChunked(chatId, "🏆 <b>Top 10</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /top10:", err.message);
+    sendSafeMessage(chatId, "⚠️ Failed to load leaderboard.");
+  }
+});
+
+bot.onText(/\/top50/i, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const data = await getLeaderboard();
+    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 50);
+    if (!sorted.length) return sendSafeMessage(chatId, "⚠️ No leaderboard data available.");
+    const lines = sorted.map(([u, v], i) => `${i + 1}. ${u} — ${v}`);
+    await sendChunked(chatId, "📈 <b>Top 50</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /top50:", err.message);
+    sendSafeMessage(chatId, "⚠️ Failed to load leaderboard.");
+  }
+});
+
+// --- EVENT LEADERBOARD COMMANDS ---
+bot.onText(/\/eventtop10/i, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const top = await getVerifiedEventTop(10);
+    if (!top.length) return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
+    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${x.score}`);
+    await sendChunked(chatId, "⚡ <b>Event Top 10 (Verified)</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /eventtop10:", err.message);
+    sendSafeMessage(chatId, "⚠️ Could not load event leaderboard.");
+  }
+});
+
+bot.onText(/\/eventtop50/i, async (msg) => {
+  const chatId = msg.chat.id;
+  try {
+    const top = await getVerifiedEventTop(50);
+    if (!top.length) return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
+    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${x.score}`);
+    await sendChunked(chatId, "⚡ <b>Event Top 50 (Verified)</b>\n\n", lines);
+  } catch (err) {
+    console.error("❌ /eventtop50:", err.message);
+    sendSafeMessage(chatId, "⚠️ Could not load event leaderboard.");
+  }
+});
+
+// --- ADMIN COMMANDS ---
+bot.onText(/\/winners(?: (\d+))?/i, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const user = (msg.from.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(user))
+    return sendSafeMessage(chatId, "⚠️ Admins only.");
+
+  const n = match && match[1] ? parseInt(match[1]) : 10;
+  try {
+    const top = await getVerifiedEventTop(n);
+    if (!top.length) return sendSafeMessage(chatId, "⚠️ No verified winners yet.");
+    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${x.score}`);
+    await sendChunked(chatId, `🥇 <b>Top ${n} Verified Event Winners</b>\n\n`, lines);
+  } catch (err) {
+    console.error("❌ /winners:", err.message);
+    sendSafeMessage(chatId, "⚠️ Failed to fetch winners.");
+  }
+});
+
+bot.onText(/\/resetevent/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = (msg.from.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(user))
+    return sendSafeMessage(chatId, "⚠️ Admins only.");
+
+  try {
+    await writeBin(EVENT_BIN_URL, {});
+    await writeBin(META_BIN_URL, {});
+    sendSafeMessage(chatId, "🧹 Event data and metadata have been reset.");
+  } catch (err) {
+    console.error("❌ /resetevent:", err.message);
+    sendSafeMessage(chatId, "⚠️ Failed to reset event data.");
+  }
+});
+
+bot.onText(/\/setevent/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = (msg.from.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(user))
+    return sendSafeMessage(chatId, "⚠️ Admins only.");
+
+  await sendSafeMessage(chatId, "🧩 Interactive event setup not implemented in this build.\nUse JSONBin to edit metadata directly for now.");
+});
+
+// ==========================================================
 // 13) TELEGRAM: WALLET FLOWS
 // ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
