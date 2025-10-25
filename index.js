@@ -37,8 +37,6 @@ const TelegramBot = require("node-telegram-bot-api");
 const { DateTime } = require("luxon");
 const sharp = require("sharp");
 const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
-// --- Bug reports destination (currently same as A.T.H. chat) ---
-const BUG_REPORT_CHAT_ID = ATH_CHAT_ID; // can later be replaced with your group chat id
 
 const CONFIG_DEFAULTS = {
   tokenMint: "6zzHz3X3s53zhEqyBMmokZLh6Ba5EfC5nP3XURzYpump",
@@ -49,6 +47,10 @@ const CONFIG_DEFAULTS = {
 // 🧩 Feature toggles
 const ATH_TEST_MODE = false; // disable test mode for production
 const ATH_CHAT_ID = process.env.ATH_CHAT_ID || "8067310645";
+// --- Bug reports destination (currently same as A.T.H. chat) ---
+const BUG_REPORT_CHAT_ID = ATH_CHAT_ID; // can later be replaced with your group chat id
+
+
 
 // ==========================================================
 // 2) ENVIRONMENT & CONSTANTS
