@@ -1451,15 +1451,26 @@ app.get("/leaderboard", async (req, res) => {
 // 🚀 EVENT META + LEADERBOARD (Unified Logic)
 // ======================================================
 
-// --- EVENT INFO ---
+// ======================================================
+// 🚀 CURRENT EVENT INFO (Always show info if present)
+// ======================================================
 app.get("/event", async (req, res) => {
   try {
     const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
     const record = data?.record?.record || data?.record || {};
 
+    // handle missing fields gracefully
+    const title = record.title || "UnStable Challenge";
+    const info = record.info || "Stay tuned for upcoming events.";
+    const tz = record.timezone || "Europe/Stockholm";
+
     const now = new Date();
-    const start = record.startDate ? new Date(record.startDate) : null;
-    const end = record.endDate ? new Date(record.endDate) : null;
+    const startRaw = record.startDate || null;
+    const endRaw = record.endDate || null;
+
+    // Ensure proper ISO formatting with Z if missing
+    const start = startRaw ? new Date(startRaw + (startRaw.endsWith("Z") ? "" : "Z")) : null;
+    const end = endRaw ? new Date(endRaw + (endRaw.endsWith("Z") ? "" : "Z")) : null;
 
     let status = "inactive";
     if (start && end) {
@@ -1468,20 +1479,30 @@ app.get("/event", async (req, res) => {
       else if (now > end) status = "ended";
     }
 
+    // Label and display logic
+    const displayInfo =
+      status === "ended"
+        ? `${info} <br><br><span style='color:#777;'>🏁 This event has ended.</span>`
+        : info;
+
     const safe = {
       status,
-      title: record.title || "UnStable Challenge",
-      info: record.info || "",
-      startDate: record.startDate || "",
-      endDate: record.endDate || "",
-      timezone: record.timezone || "CET"
+      title,
+      info: displayInfo,
+      startDate: startRaw || "",
+      endDate: endRaw || "",
+      timezone: tz
     };
 
-    console.log("📤 /event:", safe);
+    console.log(`📤 /event → ${status.toUpperCase()} (${startRaw} → ${endRaw})`);
     res.json(safe);
   } catch (err) {
     console.error("❌ /event error:", err.message);
-    res.status(500).json({ status: "error" });
+    res.status(500).json({
+      status: "error",
+      title: "UnStable Challenge",
+      info: "⚠️ Could not load event data."
+    });
   }
 });
 
