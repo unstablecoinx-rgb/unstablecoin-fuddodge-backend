@@ -73,6 +73,8 @@ const HOLDER_JSONBIN_ID    = process.env.HOLDER_JSONBIN_ID;
 const ATH_JSONBIN_ID       = process.env.ATH_JSONBIN_ID;
 const RENDER_EXTERNAL_HOSTNAME = process.env.RENDER_EXTERNAL_HOSTNAME || null;
 const PORT = process.env.PORT || 10000;
+const EVENT_SNAPSHOT_JSONBIN_ID = process.env.EVENT_SNAPSHOT_JSONBIN_ID;
+const SNAPSHOT_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_SNAPSHOT_JSONBIN_ID}`;
 
 if (
   !TELEGRAM_BOT_TOKEN || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY ||
@@ -202,6 +204,24 @@ async function writeBin(url, payload, tries = 3) {
       console.error("❌ writeBin:", err?.response?.data || err?.message || err);
       throw err;
     }
+  }
+}
+
+// === SNAPSHOT HELPERS ===
+async function getSnapshot() {
+  const snap = await readBin(SNAPSHOT_BIN_URL);
+  return Array.isArray(snap) ? snap : [];
+}
+
+async function saveSnapshot(data) {
+  try {
+    if (!Array.isArray(data)) data = [];
+    await writeBin(SNAPSHOT_BIN_URL, data);
+    console.log(`📸 Snapshot saved (${data.length} holders).`);
+    return true;
+  } catch (err) {
+    console.error("❌ saveSnapshot failed:", err?.message || err);
+    return false;
   }
 }
 
@@ -871,6 +891,45 @@ bot.onText(/^\/resetevent$/, async (msg) => {
   }
 });
 
+// ==========================================================
+// 🧩 ADMIN COMMAND — /snapshotnow (manual event holder snapshot)
+// ==========================================================
+bot.onText(/^\/snapshotnow$/, async (msg) => {
+  const username = (msg.from?.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(username))
+    return sendSafeMessage(msg.chat.id, "⚠️ Only admins can run this command.");
+
+  try {
+    const holders = await getHoldersArray();
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+
+    const verified = [];
+    for (const h of holders) {
+      if (!h?.wallet) continue;
+      const check = await checkSolanaHolding(h.wallet, minHold);
+      if (check.ok) {
+        verified.push({
+          username: h.username,
+          wallet: h.wallet,
+          amount: check.amount,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+
+    await saveSnapshot(verified);
+    await sendSafeMessage(
+      msg.chat.id,
+      `✅ Snapshot created with ${verified.length} verified holders.`
+    );
+  } catch (err) {
+    console.error("❌ snapshotnow:", err?.message || err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Failed to create snapshot.");
+  }
+});
+
+
 // === 🧠 Admin-only: Interactive /setevent flow ===
 bot.onText(/^\/setevent$/, async (msg) => {
   const chatId = msg.chat.id;
@@ -1115,34 +1174,62 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       return;
     }
 
-    // === VERIFY HOLDER ===
-    if (lower.includes("verifyholder")) {
-      if (!existing?.wallet) {
-        await bot.sendMessage(chatId, "⚠️ No wallet on file. Use /addwallet first.", mainMenu);
-        return;
-      }
-
-      await bot.sendMessage(chatId, "🔍 Checking on-chain balance...");
-      const res = await axios.post(
-        `https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`,
-        { username: "@" + realUser, wallet: existing.wallet }
-      );
-
-      if (res.data.ok)
-        await bot.sendMessage(chatId, `✅ Verified successfully for @${realUser}!`, mainMenu);
-      else
-        await bot.sendMessage(
-          chatId,
-          `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`,
-          mainMenu
-        );
-      return;
-    }
-  } catch (err) {
-    console.error("⚠️ Wallet flow error:", err?.message || err);
-    await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.", mainMenu);
+// === VERIFY HOLDER ===
+if (lower.includes("verifyholder")) {
+  if (!existing?.wallet) {
+    await bot.sendMessage(chatId, "⚠️ No wallet on file. Use /addwallet first.", mainMenu);
+    return;
   }
-});
+
+  await bot.sendMessage(chatId, "🔍 Checking on-chain balance...");
+
+  try {
+    // Kontrollera on-chain
+    const res = await axios.post(
+      `https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`,
+      { username: "@" + realUser, wallet: existing.wallet }
+    );
+
+    // Hämta snapshot & config
+    const snapshot = await getSnapshot();
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+
+    const inSnapshot = snapshot.some(
+      s => s.username.toLowerCase() === ("@" + realUser).toLowerCase()
+    );
+
+    const amount = Math.round(res.data.amount || 0);
+    const isHolder = amount >= minHold;
+
+    let level = "🔴 Not verified";
+    let note = "";
+
+    if (isHolder && inSnapshot) {
+      level = "🟢 Verified (snapshot + on-chain)";
+      note = "✅ You were a verified holder at event start and still meet requirements.";
+    } else if (isHolder && !inSnapshot) {
+      level = "🟡 Verified now (late)";
+      note = "⚠️ You hold enough tokens but didn’t exist in the event-start snapshot.";
+    } else {
+      level = "🔴 Not verified";
+      note = "❌ You don’t meet the minimum holding requirement.";
+    }
+
+    const holdInfo = `You hold <b>${amount.toLocaleString()}</b> $US.\nRequired for current event: <b>${minHold.toLocaleString()}</b> $US.`;
+
+    await bot.sendMessage(
+      chatId,
+      `${level}\n\n${note}\n\n${holdInfo}\n\nWallet: <code>${existing.wallet}</code>`,
+      { parse_mode: "HTML", ...mainMenu }
+    );
+  } catch (err) {
+    console.error("⚠️ verifyholder error:", err?.message || err);
+    await bot.sendMessage(chatId, "⚠️ Verification check failed. Try again later.", mainMenu);
+  }
+
+  return;
+}
 
 // === CALLBACK CONFIRMATIONS (Change / Remove) ===
 bot.on("callback_query", async (cb) => {
@@ -1291,34 +1378,62 @@ bot.on("text", (msg) => {
 //
 // 15) HTTP: FRONTEND ENDPOINTS
 //
-// Verify holder (from game)
+// ✅ Enhanced Verify Holder with amount + color levels
 app.post("/verifyHolder", async (req, res) => {
   try {
     let { username, wallet } = req.body;
-    if (!username || !wallet) return res.status(400).json({ ok:false, message:"Missing username or wallet." });
+    if (!username || !wallet)
+      return res.status(400).json({ ok: false, message: "Missing username or wallet." });
+
     username = normalizeUsername(username);
 
-    if (!isLikelySolanaAddress(wallet)) return res.status(400).json({ ok:false, message:"Invalid Solana address format." });
+    if (!isLikelySolanaAddress(wallet))
+      return res.status(400).json({ ok: false, message: "Invalid Solana address format." });
 
     const holders = await getHoldersArray();
-    const already = holders.find(h => h.username.toLowerCase() === username.toLowerCase());
-    const verified = await checkSolanaHolding(wallet, (await getConfig()).minHoldAmount || 0);
+    const already = holders.find((h) => h.username.toLowerCase() === username.toLowerCase());
 
-    if (!verified.ok) return res.json({ ok:false, message:"Wallet balance below minimum requirement." });
+    const config = await getConfig();
+    const verified = await checkSolanaHolding(wallet, config.minHoldAmount || 0);
 
-    if (already) {
-      already.prevWallet = already.wallet || null;
-      already.wallet = wallet;
-      already.verifiedAt = new Date().toISOString();
-      already.changedAt  = new Date().toISOString();
-    } else {
-      holders.push({ username, wallet, verifiedAt: new Date().toISOString() });
+    const amount = Math.round(verified.amount || 0);
+    const required = config.minHoldAmount || 0;
+
+    // 🟢🟡🔴 define color level
+    let level = "red";
+    if (amount >= required) level = "green";
+    else if (amount >= required * 0.5) level = "yellow";
+
+    // Update verified holders only if fully meets requirement
+    if (verified.ok) {
+      if (already) {
+        already.prevWallet = already.wallet || null;
+        already.wallet = wallet;
+        already.verifiedAt = new Date().toISOString();
+        already.changedAt = new Date().toISOString();
+      } else {
+        holders.push({ username, wallet, verifiedAt: new Date().toISOString() });
+      }
+      await saveHoldersArray(holders);
     }
-    await saveHoldersArray(holders);
-    res.json({ ok:true, message:"✅ Holder verified successfully!", username });
+
+    // 🧩 Always respond with details
+    return res.json({
+      ok: verified.ok,
+      level,
+      username,
+      amount,
+      required,
+      message:
+        level === "green"
+          ? `✅ Verified! You hold ${amount.toLocaleString()} $US (required ${required.toLocaleString()}).`
+          : level === "yellow"
+          ? `🟡 Partial holding: ${amount.toLocaleString()} $US (required ${required.toLocaleString()}).`
+          : `🔴 Too low: ${amount.toLocaleString()} $US (required ${required.toLocaleString()}).`,
+    });
   } catch (err) {
     console.error("verifyHolder:", err?.message || err);
-    res.status(500).json({ ok:false, message:"Server error verifying holder." });
+    res.status(500).json({ ok: false, message: "Server error verifying holder." });
   }
 });
 
