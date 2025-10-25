@@ -1422,6 +1422,46 @@ app.post("/share", async (req, res) => {
 });
 
 // ==========================================================
+//  WEB APP ENDPOINTS — for game & splash screen
+// ==========================================================
+
+// Leaderboard
+app.get("/leaderboard", async (req, res) => {
+  try {
+    const data = await readBin(MAIN_BIN_URL);
+    if (!data?.record) return res.json({ scores: {} });
+    res.json(data.record);
+  } catch (err) {
+    console.error("❌ /leaderboard:", err.message);
+    res.status(500).json({ error: "Leaderboard fetch failed" });
+  }
+});
+
+// Event
+app.get("/event", async (req, res) => {
+  try {
+    const data = await readBin(EVENT_BIN_URL);
+    if (!data?.record) return res.json({ scores: {} });
+    res.json(data.record);
+  } catch (err) {
+    console.error("❌ /event:", err.message);
+    res.status(500).json({ error: "Event fetch failed" });
+  }
+});
+
+// Event Meta (for splash info)
+app.get("/meta", async (req, res) => {
+  try {
+    const data = await readBin(EVENT_META_BIN_URL);
+    if (!data?.record) return res.json({});
+    res.json(data.record);
+  } catch (err) {
+    console.error("❌ /meta:", err.message);
+    res.status(500).json({ error: "Meta fetch failed" });
+  }
+});
+
+// ==========================================================
 // 16) SERVER START
 // ==========================================================
 app.listen(PORT, async () => {
