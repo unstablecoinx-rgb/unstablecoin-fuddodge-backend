@@ -933,20 +933,23 @@ bot.onText(/\/getholding/, async (msg) => {
   }
 });
 
-// Admins can update holding requirement interactively
-bot.onText(/\/setholding$/i, async (msg) => {
+// ==========================================================
+//  /setholdingreq — interactive admin command
+// ==========================================================
+bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
   if (!ADMIN_USERS.includes(user))
     return sendSafeMessage(chatId, "⚠️ Admins only.");
 
-  await sendSafeMessage(chatId, "💬 Enter new minimum holding amount (numbers only):");
+  await sendSafeMessage(chatId, "💬 Enter new minimum holding (number only):");
 
   bot.once("message", async (m2) => {
     const input = (m2.text || "").trim().replace(/[^\d]/g, "");
     const newVal = parseInt(input, 10);
+
     if (isNaN(newVal) || newVal <= 0)
-      return sendSafeMessage(chatId, "⚠️ Invalid number. Try again with /setholding.");
+      return sendSafeMessage(chatId, "⚠️ Invalid number. Try again with /setholdingreq.");
 
     try {
       const cfg = await getConfig();
@@ -959,10 +962,11 @@ bot.onText(/\/setholding$/i, async (msg) => {
 
       await sendSafeMessage(
         chatId,
-        `✅ Minimum holding updated to ${newVal.toLocaleString()} $US`
+        `✅ <b>Minimum holding updated</b>\nNew value: ${newVal.toLocaleString()} $US`,
+        { parse_mode: "HTML" }
       );
     } catch (err) {
-      console.error("❌ /setholding:", err.response?.data || err.message);
+      console.error("❌ /setholdingreq:", err.response?.data || err.message);
       await sendSafeMessage(chatId, "⚠️ Failed to update holding requirement.");
     }
   });
@@ -978,11 +982,6 @@ bot.onText(/\/getholdingreq(@[A-Za-z0-9_]+)?/i, (msg) => {
   bot.emit("text", { ...msg, text: "/getholding" });
 });
 
-// /setholdingreq → same as /setholding
-bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?/i, (msg) => {
-  console.log("↪️ Alias triggered: /setholdingreq");
-  bot.emit("text", { ...msg, text: "/setholding" });
-});
 
 // ==========================================================
 // 13) TELEGRAM: WALLET FLOWS
