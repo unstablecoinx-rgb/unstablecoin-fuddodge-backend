@@ -1437,6 +1437,11 @@ app.post("/verifyHolder", async (req, res) => {
   }
 });
 
+// Handle accidental GET requests to /verifyHolder
+app.get("/verifyHolder", async (req, res) =>
+  res.status(405).json({ error: "Use POST method for /verifyHolder" })
+);
+      
 app.get("/holderStatus", async (req, res) => {
   try {
     let username = req.query.username;
