@@ -779,9 +779,9 @@ bot.onText(/\/validatewinners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 // ==========================================================
-//  /winnerscheck — list top 10 event holders + wallets
+//  /winners — list top 10 event holders + wallets
 // ==========================================================
-bot.onText(/\/winnerscheck(@[A-Za-z0-9_]+)?$/i, async (msg) => {
+bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
   if (!ADMIN_USERS.includes(user))
@@ -808,7 +808,7 @@ bot.onText(/\/winnerscheck(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     const header = "🏁 <b>Top 10 Event Holders</b>\n\n";
     await sendChunked(chatId, header, lines, 3800);
   } catch (err) {
-    console.error("❌ /winnerscheck:", err.message);
+    console.error("❌ /winners:", err.message);
     await sendSafeMessage(chatId, `⚠️ Could not load winners: ${err.message}`);
   }
 });
