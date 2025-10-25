@@ -1450,22 +1450,24 @@ app.get("/leaderboard", async (req, res) => {
 });
 
 
-// 🚀 CURRENT EVENT INFO (title, info, start/end dates)
+// ==========================================================
+// 🌐 EVENT INFO + EVENT LEADERBOARD (same style as /top10)
+// ==========================================================
+
+// 🪩 EVENT INFO — for game splash
 app.get("/event", async (req, res) => {
   try {
-    // event meta can be stored either in EVENT_META_BIN or EVENT_BIN
-    const data = await readBin(EVENT_META_BIN_URL || EVENT_BIN_URL);
+    const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
     const record = data?.record || {};
-
-    // ensure required keys exist so splash doesn't break
     const safe = {
-      title: record.title || "UnStable Challenge",
-      info: record.info || "Survive the chaos and reach your next ATH.",
-      startDate: record.startDate || new Date().toISOString(),
-      endDate: record.endDate || new Date(Date.now() + 86400000).toISOString(),
-      active: record.active ?? true
+      title: record.title || "No active event",
+      info: record.info || "",
+      startDate: record.startDate || "",
+      endDate: record.endDate || "",
+      timezone: record.timezone || "CET",
+      active: true
     };
-
+    console.log("📤 /event response:", safe);
     res.json(safe);
   } catch (err) {
     console.error("❌ /event error:", err.message);
@@ -1473,29 +1475,25 @@ app.get("/event", async (req, res) => {
   }
 });
 
-
-// 🥇 EVENT LEADERBOARD (Top 10 players)
+// 🏆 EVENT LEADERBOARD — for splash “Event Top 10”
 app.get("/eventtop10", async (req, res) => {
   try {
-    const data = await readBin(EVENT_BIN_URL);
-    const arr =
-      data?.record?.scores ||
-      data?.record ||
-      data?.scores ||
-      [];
+    const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
+    const raw = data?.record || data || {};
+    let arr = [];
 
-    if (!Array.isArray(arr)) {
-      console.warn("⚠️ /eventtop10 data not array, returning []");
-      return res.json([]);
-    }
+    // convert object like { "@user": score } to array
+    if (Array.isArray(raw)) arr = raw;
+    else if (typeof raw === "object")
+      arr = Object.entries(raw).map(([username, score]) => ({
+        username,
+        score: Number(score)
+      }));
 
-    // return only top 10 entries
-    const top = arr
-      .filter(x => x && typeof x.username === "string" && typeof x.score === "number")
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10);
+    arr = arr.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    res.json(top);
+    console.log(`📤 /eventtop10 sent ${arr.length} entries`);
+    res.json(arr);
   } catch (err) {
     console.error("❌ /eventtop10 error:", err.message);
     res.status(500).json([]);
