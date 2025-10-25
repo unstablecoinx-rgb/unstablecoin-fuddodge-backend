@@ -551,10 +551,9 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
 }
 
 // ==========================================================
-// 11) TELEGRAM MAIN MENU — reply keyboard with direct command execution
+// 11) TELEGRAM MAIN MENU — reply keyboard with direct command calls
 // ==========================================================
 
-// --- Menu layout ---
 const mainMenu = {
   reply_markup: {
     keyboard: [
@@ -568,7 +567,7 @@ const mainMenu = {
   },
 };
 
-// --- Show menu when /start or /menu is used ---
+// --- /start and /menu commands ---
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
   const welcome =
@@ -578,40 +577,36 @@ bot.onText(/\/start|\/menu/i, async (msg) => {
 });
 
 // ==========================================================
-//  BUTTON HANDLERS — directly execute internal logic
+//  MESSAGE HANDLER — map button text to existing command handlers
 // ==========================================================
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
 
   try {
-    switch (text) {
-      case "🌕 Add Wallet":
-        return bot.emit("text", { ...msg, text: "/addwallet" });
-
-      case "⚡ Verify Holder":
-        return bot.emit("text", { ...msg, text: "/verifyholder" });
-
-      case "🔁 Change Wallet":
-        return bot.emit("text", { ...msg, text: "/changewallet" });
-
-      case "❌ Remove Wallet":
-        return bot.emit("text", { ...msg, text: "/removewallet" });
-
-      case "🏆 Leaderboard":
-        return bot.emit("text", { ...msg, text: "/top10" });
-
-      case "🚀 Current Event":
-        return bot.emit("text", { ...msg, text: "/event" });
-
-      case "🐞 Report Bug":
-        return bot.emit("text", { ...msg, text: "/bugreport" });
-
-      default:
-        break;
+    if (text === "🌕 Add Wallet") {
+      return await bot.emit("addwallet_command", msg);
+    }
+    if (text === "⚡ Verify Holder") {
+      return await bot.emit("verifyholder_command", msg);
+    }
+    if (text === "🔁 Change Wallet") {
+      return await bot.emit("changewallet_command", msg);
+    }
+    if (text === "❌ Remove Wallet") {
+      return await bot.emit("removewallet_command", msg);
+    }
+    if (text === "🏆 Leaderboard") {
+      return await bot.emit("leaderboard_command", msg);
+    }
+    if (text === "🚀 Current Event") {
+      return await bot.emit("event_command", msg);
+    }
+    if (text === "🐞 Report Bug") {
+      return await bot.emit("bugreport_command", msg);
     }
   } catch (err) {
-    console.error("❌ menu handler:", err.message);
+    console.error("❌ Menu button handler:", err.message);
     await sendSafeMessage(chatId, "⚠️ Something went wrong while processing your request.");
   }
 });
