@@ -1452,60 +1452,49 @@ app.get("/leaderboard", async (req, res) => {
 // ======================================================
 
 // ======================================================
-// 🚀 CURRENT EVENT INFO (Always show info if present)
+// 🚀 CURRENT EVENT INFO (mirror of Telegram logic)
 // ======================================================
 app.get("/event", async (req, res) => {
   try {
-    const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
-    const record = data?.record?.record || data?.record || {};
+    const meta = await getEventMeta();
+    const cfg = await getConfig();
+    const tz = meta.timezone || "Europe/Stockholm";
+    const now = DateTime.now().setZone(tz);
 
-    // handle missing fields gracefully
-    const title = record.title || "UnStable Challenge";
-    const info = record.info || "Stay tuned for upcoming events.";
-    const tz = record.timezone || "Europe/Stockholm";
-
-    const now = new Date();
-    const startRaw = record.startDate || null;
-    const endRaw = record.endDate || null;
-
-    // Ensure proper ISO formatting with Z if missing
-    const start = startRaw ? new Date(startRaw + (startRaw.endsWith("Z") ? "" : "Z")) : null;
-    const end = endRaw ? new Date(endRaw + (endRaw.endsWith("Z") ? "" : "Z")) : null;
-
-    let status = "inactive";
-    if (start && end) {
-      if (now < start) status = "upcoming";
-      else if (now >= start && now <= end) status = "active";
-      else if (now > end) status = "ended";
-    }
-
-    // Label and display logic
-    const displayInfo =
-      status === "ended"
-        ? `${info} <br><br><span style='color:#777;'>🏁 This event has ended.</span>`
-        : info;
-
-    const safe = {
-      status,
-      title,
-      info: displayInfo,
-      startDate: startRaw || "",
-      endDate: endRaw || "",
-      timezone: tz
+    const data = meta.raw?.record || meta.raw || meta;
+    const result = {
+      title: data.title || "UnStable Challenge",
+      info: data.info || "Stay tuned for upcoming events.",
+      startDate: data.startDate || "",
+      endDate: data.endDate || "",
+      timezone: tz,
+      status: "inactive",
     };
 
-    console.log(`📤 /event → ${status.toUpperCase()} (${startRaw} → ${endRaw})`);
-    res.json(safe);
+    if (data.startDate && data.endDate) {
+      const start = DateTime.fromISO(data.startDate).setZone(tz);
+      const end = DateTime.fromISO(data.endDate).setZone(tz);
+
+      if (now < start) result.status = "upcoming";
+      else if (now >= start && now <= end) result.status = "active";
+      else if (now > end) result.status = "ended";
+    }
+
+    // append helpful text when ended
+    if (result.status === "ended")
+      result.info += "<br><br><span style='color:#777;'>🏁 This event has ended.</span>";
+
+    console.log(`📤 /event → ${result.status.toUpperCase()} (${result.startDate} → ${result.endDate})`);
+    res.json(result);
   } catch (err) {
-    console.error("❌ /event error:", err.message);
+    console.error("❌ /event:", err.message);
     res.status(500).json({
       status: "error",
       title: "UnStable Challenge",
-      info: "⚠️ Could not load event data."
+      info: "⚠️ Could not load event data.",
     });
   }
 });
-
 
 // --- EVENT LEADERBOARD ---
 app.get("/eventtop10", async (req, res) => {
