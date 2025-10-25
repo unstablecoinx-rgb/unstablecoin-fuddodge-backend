@@ -1425,40 +1425,36 @@ app.post("/share", async (req, res) => {
 // 🌐 WEB APP ENDPOINTS — FUD DODGE Splash & Game
 // ==========================================================
 
-// 🏆 MAIN LEADERBOARD (used by splash screen)
 app.get("/leaderboard", async (req, res) => {
   try {
-    const data = await readBin(MAIN_BIN_URL);
+    const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}`);
+    const raw = data?.record || data || {};
+    let arr = [];
 
-    // handle different structures gracefully
-    const arr =
-      data?.record?.scores ||
-      data?.record ||
-      data?.scores ||
-      [];
+    if (Array.isArray(raw)) arr = raw;
+    else if (typeof raw === "object")
+      arr = Object.entries(raw).map(([username, score]) => ({
+        username,
+        score: Number(score)
+      }));
 
-    if (!Array.isArray(arr)) {
-      console.warn("⚠️ /leaderboard data not array, returning []");
-      return res.json([]);
-    }
-
+    arr = arr.sort((a, b) => b.score - a.score).slice(0, 10);
     res.json(arr);
+    console.log(`📤 /leaderboard sent ${arr.length} entries`);
   } catch (err) {
     console.error("❌ /leaderboard error:", err.message);
     res.status(500).json([]);
   }
 });
 
-
 // ==========================================================
 // 🌐 EVENT INFO + EVENT LEADERBOARD (same style as /top10)
 // ==========================================================
 
-// 🪩 EVENT INFO — for game splash
 app.get("/event", async (req, res) => {
   try {
     const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
-    const record = data?.record || {};
+    const record = data?.record?.record || data?.record || {};
     const safe = {
       title: record.title || "No active event",
       info: record.info || "",
@@ -1475,25 +1471,43 @@ app.get("/event", async (req, res) => {
   }
 });
 
-// 🏆 EVENT LEADERBOARD — for splash “Event Top 10”
+// ======================================================
+// 🏆 EVENT LEADERBOARD (used by game splash)
+// ======================================================
 app.get("/eventtop10", async (req, res) => {
   try {
     const data = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
     const raw = data?.record || data || {};
     let arr = [];
 
-    // convert object like { "@user": score } to array
-    if (Array.isArray(raw)) arr = raw;
-    else if (typeof raw === "object")
-      arr = Object.entries(raw).map(([username, score]) => ({
-        username,
-        score: Number(score)
-      }));
+    // ✅ Filter & format exactly like Telegram version
+    if (typeof raw === "object" && !Array.isArray(raw)) {
+      arr = Object.entries(raw)
+        .filter(([key, val]) => {
+          // Only accept numeric scores and skip any meta fields
+          return typeof val === "number" && !["resetAt", "updatedAt", "createdAt"].includes(key);
+        })
+        .map(([username, score]) => ({
+          username,
+          score: Number(score)
+        }));
+    }
 
     arr = arr.sort((a, b) => b.score - a.score).slice(0, 10);
 
-    console.log(`📤 /eventtop10 sent ${arr.length} entries`);
+    // ✅ Optional fallback to main leaderboard if empty
+    if (!arr.length) {
+      console.log("⚠️ No event scores found, using fallback main leaderboard");
+      const mainData = await readBin(`https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}`);
+      const mainRaw = mainData?.record || mainData || {};
+      arr = Object.entries(mainRaw)
+        .map(([username, score]) => ({ username, score: Number(score) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+    }
+
     res.json(arr);
+    console.log(`📤 /eventtop10 sent ${arr.length} entries`);
   } catch (err) {
     console.error("❌ /eventtop10 error:", err.message);
     res.status(500).json([]);
