@@ -1229,6 +1229,58 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
   }
 });
 
+
+// ==========================================================
+// 13) TELEGRAM INLINE BUTTON HANDLER — Stable + Auto Cleanup
+// ==========================================================
+
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id;
+  const data = query.data;
+
+  try {
+    console.log("⚡ Inline button pressed:", data);
+
+    // Always answer Telegram immediately to stop spinner
+    await bot.answerCallbackQuery(query.id);
+
+    switch (data) {
+      // --- Confirm wallet removal ---
+      case "confirm_remove":
+        await removeWallet(chatId);
+        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
+        await sendSafeMessage(chatId, "💛 Your wallet has been removed.");
+        break;
+
+      // --- Confirm wallet change ---
+      case "confirm_change":
+        await changeWallet(chatId);
+        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
+        await sendSafeMessage(chatId, "⚡ Wallet successfully changed.");
+        break;
+
+      // --- Cancel any action ---
+      case "cancel":
+        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
+        await sendSafeMessage(chatId, "❌ Action cancelled.");
+        break;
+
+      // --- Unknown callbacks (ignore silently) ---
+      default:
+        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
+        break;
+    }
+  } catch (err) {
+    console.error("❌ callback_query handler error:", err);
+    try {
+      await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." });
+    } catch (innerErr) {
+      console.error("❌ Failed to answer callback:", innerErr);
+    }
+  }
+});
+
 // ==========================================================
 // 14) TELEGRAM: BUTTON TEXT ROUTER
 // ==========================================================
