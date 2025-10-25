@@ -551,7 +551,7 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
 }
 
 // ==========================================================
-// 11) TELEGRAM MAIN MENU — reply keyboard with direct command calls
+// 11) TELEGRAM MAIN MENU — Stable build (v3.4 compatible)
 // ==========================================================
 
 const mainMenu = {
@@ -567,47 +567,75 @@ const mainMenu = {
   },
 };
 
-// --- /start and /menu commands ---
+// --- Show menu ---
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
   const welcome =
-    "💛 <b>Welcome to UnStableCoin</b>\n" +
-    "Use the buttons below to manage your wallet or join the event.";
-  await bot.sendMessage(chatId, welcome, { ...mainMenu, parse_mode: "HTML" });
+    "💛 <b>Welcome to UnStableCoin</b>\nUse the buttons below to manage wallet or join the event.";
+  await sendSafeMessage(chatId, welcome, { ...mainMenu, parse_mode: "HTML" });
 });
 
 // ==========================================================
-//  MESSAGE HANDLER — map button text to existing command handlers
+//  BUTTON HANDLERS — Interpret button text as bot commands
 // ==========================================================
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim();
 
   try {
-    if (text === "🌕 Add Wallet") {
-      return await bot.emit("addwallet_command", msg);
-    }
-    if (text === "⚡ Verify Holder") {
-      return await bot.emit("verifyholder_command", msg);
-    }
-    if (text === "🔁 Change Wallet") {
-      return await bot.emit("changewallet_command", msg);
-    }
-    if (text === "❌ Remove Wallet") {
-      return await bot.emit("removewallet_command", msg);
-    }
-    if (text === "🏆 Leaderboard") {
-      return await bot.emit("leaderboard_command", msg);
-    }
-    if (text === "🚀 Current Event") {
-      return await bot.emit("event_command", msg);
-    }
-    if (text === "🐞 Report Bug") {
-      return await bot.emit("bugreport_command", msg);
+    switch (text) {
+      case "🌕 Add Wallet":
+        bot.processUpdate({
+          message: { ...msg, text: "/addwallet" },
+        });
+        break;
+
+      case "⚡ Verify Holder":
+        bot.processUpdate({
+          message: { ...msg, text: "/verifyholder" },
+        });
+        break;
+
+      case "🔁 Change Wallet":
+        bot.processUpdate({
+          message: { ...msg, text: "/changewallet" },
+        });
+        break;
+
+      case "❌ Remove Wallet":
+        bot.processUpdate({
+          message: { ...msg, text: "/removewallet" },
+        });
+        break;
+
+      case "🏆 Leaderboard":
+        bot.processUpdate({
+          message: { ...msg, text: "/top10" },
+        });
+        break;
+
+      case "🚀 Current Event":
+        bot.processUpdate({
+          message: { ...msg, text: "/event" },
+        });
+        break;
+
+      case "🐞 Report Bug":
+        bot.processUpdate({
+          message: { ...msg, text: "/bugreport" },
+        });
+        break;
+
+      default:
+        // ignore unknown button presses
+        break;
     }
   } catch (err) {
-    console.error("❌ Menu button handler:", err.message);
-    await sendSafeMessage(chatId, "⚠️ Something went wrong while processing your request.");
+    console.error("❌ Menu handler error:", err.message);
+    await sendSafeMessage(
+      chatId,
+      "⚠️ Something went wrong while processing your request."
+    );
   }
 });
 
