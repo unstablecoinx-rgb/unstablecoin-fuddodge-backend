@@ -551,28 +551,126 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
 }
 
 // ==========================================================
-// 11) TELEGRAM MAIN MENU UI
+// 11) TELEGRAM MAIN MENU — inline version with ⚡️ refresh
 // ==========================================================
-const mainMenu = {
-  reply_markup: {
-    keyboard: [
-      [{ text: "🪙 Add Wallet" }, { text: "⚡ Verify Holder" }],
-      [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
-      [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }],
-      [{ text: "🐞 Report Bug" }],
-    ],
-    resize_keyboard: true,
-    one_time_keyboard: false,
-  },
-};
 
+// /start and /menu — show main inline menu
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
-  await bot.sendMessage(
-    chatId,
-    `💛 Welcome to <b>UnStableCoin</b>\nUse the buttons to manage wallet or join the event.`,
-    { ...mainMenu, parse_mode: "HTML" }
-  );
+  const text =
+    "💛 <b>Welcome to UnStableCoin</b>\nUse the buttons below to manage wallet or join the event.";
+
+  const menu = {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🌕 Add Wallet", callback_data: "add_wallet" },
+          { text: "⚡ Verify Holder", callback_data: "verify_holder" }
+        ],
+        [
+          { text: "🔁 Change Wallet", callback_data: "change_wallet" },
+          { text: "❌ Remove Wallet", callback_data: "remove_wallet" }
+        ],
+        [
+          { text: "🏆 Leaderboard", callback_data: "leaderboard" },
+          { text: "🚀 Current Event", callback_data: "current_event" }
+        ],
+        [
+          { text: "🐞 Report Bug", callback_data: "report_bug" }
+        ]
+      ]
+    },
+    parse_mode: "HTML"
+  };
+
+  try {
+    await bot.sendMessage(chatId, text, menu);
+  } catch (err) {
+    console.error("❌ /start menu:", err.message);
+    await sendSafeMessage(chatId, "⚠️ Failed to display main menu.");
+  }
+});
+
+// ==========================================================
+//  INLINE MENU CALLBACK HANDLER — ⚡️ reply feedback + auto-remove
+// ==========================================================
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const data = query.data;
+  const messageId = query.message.message_id;
+
+  try {
+    // === Execute the action associated with the pressed button ===
+    switch (data) {
+      case "verify_holder":
+        await bot.sendMessage(chatId, "/verifyholder");
+        break;
+      case "add_wallet":
+        await bot.sendMessage(chatId, "/addwallet");
+        break;
+      case "change_wallet":
+        await bot.sendMessage(chatId, "/changewallet");
+        break;
+      case "remove_wallet":
+        await bot.sendMessage(chatId, "/removewallet");
+        break;
+      case "leaderboard":
+        await bot.sendMessage(chatId, "/top10");
+        break;
+      case "current_event":
+        await bot.sendMessage(chatId, "/event");
+        break;
+      case "report_bug":
+        await bot.sendMessage(chatId, "/bugreport");
+        break;
+      default:
+        await bot.sendMessage(chatId, "⚠️ Unknown menu action.");
+        break;
+    }
+
+    // === Re-send the main menu with subtle ⚡️ feedback (reply style) ===
+    const menu = {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🌕 Add Wallet", callback_data: "add_wallet" },
+            { text: "⚡ Verify Holder", callback_data: "verify_holder" }
+          ],
+          [
+            { text: "🔁 Change Wallet", callback_data: "change_wallet" },
+            { text: "❌ Remove Wallet", callback_data: "remove_wallet" }
+          ],
+          [
+            { text: "🏆 Leaderboard", callback_data: "leaderboard" },
+            { text: "🚀 Current Event", callback_data: "current_event" }
+          ],
+          [
+            { text: "🐞 Report Bug", callback_data: "report_bug" }
+          ]
+        ]
+      },
+      parse_mode: "HTML",
+      reply_to_message_id: messageId // attach to last bot message
+    };
+
+    const sent = await bot.sendMessage(chatId, "⚡️", menu);
+
+    // Remove ⚡️ after 3 seconds for a clean look
+    setTimeout(async () => {
+      try {
+        await bot.deleteMessage(chatId, sent.message_id);
+      } catch (_) {
+        // ignore if already removed
+      }
+    }, 3000);
+
+  } catch (err) {
+    console.error("❌ callback_query handler:", err.message);
+    await bot.sendMessage(chatId, "⚠️ Something went wrong with that button.");
+  }
+
+  // Always answer callback to remove Telegram's spinner
+  bot.answerCallbackQuery(query.id).catch(() => {});
 });
 
 // ==========================================================
