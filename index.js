@@ -37,6 +37,8 @@ const TelegramBot = require("node-telegram-bot-api");
 const { DateTime } = require("luxon");
 const sharp = require("sharp");
 const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
+// --- Bug reports destination (currently same as A.T.H. chat) ---
+const BUG_REPORT_CHAT_ID = ATH_CHAT_ID; // can later be replaced with your group chat id
 
 const CONFIG_DEFAULTS = {
   tokenMint: "6zzHz3X3s53zhEqyBMmokZLh6Ba5EfC5nP3XURzYpump",
@@ -674,6 +676,46 @@ bot.onText(/\/event$/i, async (msg) => {
     console.error("❌ /event:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
   }
+});
+
+// ==========================================================
+//  /bugreport — report bugs or issues (to BUG_REPORT_CHAT_ID)
+// ==========================================================
+bot.onText(/\/bugreport(@[A-Za-z0-9_]+)?$/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const user =
+    msg.from?.username ? "@" + msg.from.username :
+    msg.from.first_name || "Unknown user";
+
+  await sendSafeMessage(
+    chatId,
+    "🐞 Please describe the issue or bug you're experiencing.\n\n" +
+    "Try to include what you were doing, what happened, and (if possible) screenshots or error messages."
+  );
+
+  // Wait for the next message as the report
+  bot.once("message", async (m2) => {
+    const reportText = (m2.text || "").trim();
+    if (!reportText || reportText.startsWith("/"))
+      return sendSafeMessage(chatId, "⚠️ Report cancelled or invalid message.");
+
+    try {
+      const timestamp = new Date().toISOString().replace("T", " ").split(".")[0] + " UTC";
+      const msgText =
+        `🐞 <b>Bug Report</b>\n` +
+        `<b>Time:</b> ${timestamp}\n` +
+        `<b>From:</b> ${user}\n` +
+        `<b>Chat ID:</b> ${chatId}\n\n` +
+        `<b>Report:</b>\n${escapeXml(reportText)}`;
+
+      await sendSafeMessage(BUG_REPORT_CHAT_ID, msgText, { parse_mode: "HTML" });
+      await sendSafeMessage(chatId, "✅ Thanks! Your report has been sent to the devs.");
+      console.log(`🐞 Bug report forwarded from ${user}: ${reportText}`);
+    } catch (err) {
+      console.error("❌ /bugreport:", err.message);
+      await sendSafeMessage(chatId, "⚠️ Failed to send report. Please try again later.");
+    }
+  });
 });
 
 // ==========================================================
