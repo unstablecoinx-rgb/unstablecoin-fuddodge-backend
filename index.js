@@ -550,10 +550,11 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
   if (buf.trim()) await sendSafeMessage(chatId, buf.trim());
 }
 
+// ==========================================================
+// 11) TELEGRAM MAIN MENU — reply keyboard with direct command execution
+// ==========================================================
 
-// ==========================================================
-// 11) TELEGRAM MAIN MENU — reply keyboard, direct execution
-// ==========================================================
+// --- Menu layout ---
 const mainMenu = {
   reply_markup: {
     keyboard: [
@@ -567,6 +568,7 @@ const mainMenu = {
   },
 };
 
+// --- Show menu when /start or /menu is used ---
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
   const welcome =
@@ -576,7 +578,7 @@ bot.onText(/\/start|\/menu/i, async (msg) => {
 });
 
 // ==========================================================
-//  BUTTON HANDLERS — run commands directly (no /echo)
+//  BUTTON HANDLERS — directly execute internal logic
 // ==========================================================
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
@@ -585,25 +587,32 @@ bot.on("message", async (msg) => {
   try {
     switch (text) {
       case "🌕 Add Wallet":
-        return await handleAddWallet(msg);
+        return bot.emit("text", { ...msg, text: "/addwallet" });
+
       case "⚡ Verify Holder":
-        return await handleVerifyHolder(msg);
+        return bot.emit("text", { ...msg, text: "/verifyholder" });
+
       case "🔁 Change Wallet":
-        return await handleChangeWallet(msg);
+        return bot.emit("text", { ...msg, text: "/changewallet" });
+
       case "❌ Remove Wallet":
-        return await handleRemoveWallet(msg);
+        return bot.emit("text", { ...msg, text: "/removewallet" });
+
       case "🏆 Leaderboard":
-        return await handleLeaderboard(msg);
+        return bot.emit("text", { ...msg, text: "/top10" });
+
       case "🚀 Current Event":
-        return await handleEvent(msg);
+        return bot.emit("text", { ...msg, text: "/event" });
+
       case "🐞 Report Bug":
-        return await handleBugReport(msg);
+        return bot.emit("text", { ...msg, text: "/bugreport" });
+
       default:
         break;
     }
   } catch (err) {
     console.error("❌ menu handler:", err.message);
-    await sendSafeMessage(chatId, "⚠️ Something went wrong.");
+    await sendSafeMessage(chatId, "⚠️ Something went wrong while processing your request.");
   }
 });
 
