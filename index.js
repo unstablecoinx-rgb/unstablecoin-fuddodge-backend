@@ -1560,23 +1560,20 @@ app.get("/event", async (req, res) => {
 // === EVENT LEADERBOARD (TOP 10) ===
 app.get("/eventtop10", async (req, res) => {
   try {
-    const scoresRes = await axios.get(`${EVENT_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
+    const scoresRes = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`, {
+      headers: { "X-Master-Key": process.env.JSONBIN_KEY }
     });
-    const data = scoresRes.data?.record?.scores || [];
-    if (!data.length) {
+
+    const rec = scoresRes.data?.record || {};
+    const arr = rec.scores || [];
+
+    if (!arr.length) {
       console.log("📤 /eventtop10: 0 entries (no scores yet)");
       return res.json([]);
     }
 
-    const top = Object.entries(
-      data.reduce((acc, s) => {
-        const user = s.username;
-        if (!acc[user] || s.score > acc[user]) acc[user] = s.score;
-        return acc;
-      }, {})
-    )
-      .map(([username, score]) => ({ username, score }))
+    const top = arr
+      .filter((x) => !!x.username && typeof x.score === "number")
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
 
@@ -1588,12 +1585,12 @@ app.get("/eventtop10", async (req, res) => {
   }
 });
 
-// === EVENT SUBMIT (called by front-end /submitEventScore) ===
+// === EVENT SUBMIT (verified players only) ===
 app.post("/eventsubmit", async (req, res) => {
   try {
     const { username, score } = req.body;
     if (!username || !score)
-      return res.status(400).json({ ok: false, msg: "Missing data" });
+      return res.status(400).json({ ok: false, msg: "Missing username or score" });
 
     const holders = await getHoldersMapFromArray();
     const verified = !!holders[username];
@@ -1602,8 +1599,22 @@ app.post("/eventsubmit", async (req, res) => {
       return res.status(403).json({ ok: false, msg: "Not a verified holder" });
     }
 
-    const scoresRes = await axios.get(`${EVENT_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
+    // --- Check if event is active ---
+    const meta = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}/latest`);
+    let eventMeta = meta?.record?.record || meta?.record || meta;
+    const now = new Date();
+    const start = eventMeta?.startDate ? new Date(eventMeta.startDate) : null;
+    const end = eventMeta?.endDate ? new Date(eventMeta.endDate) : null;
+    const isActive = start && end && now >= start && now <= end;
+
+    if (!isActive) {
+      console.log("⚠️ Event not active, skipping score write");
+      return res.json({ ok: false, msg: "Event not active" });
+    }
+
+    // --- Read current leaderboard ---
+    const scoresRes = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`, {
+      headers: { "X-Master-Key": process.env.JSONBIN_KEY }
     });
     const rec = scoresRes.data?.record || {};
     const arr = rec.scores || [];
@@ -1614,19 +1625,20 @@ app.post("/eventsubmit", async (req, res) => {
       return res.json({ ok: true, stored: false });
     }
 
+    // --- Save updated leaderboard ---
     const newScores = [
       ...arr.filter((x) => x.username !== username),
-      { username, score, verified, at: new Date().toISOString() },
+      { username, score, verified, at: new Date().toISOString() }
     ];
 
     await axios.put(
-      `${EVENT_BIN_URL}`,
+      `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`,
       { record: { ...rec, scores: newScores } },
       {
         headers: {
-          "X-Master-Key": JSONBIN_KEY,
-          "Content-Type": "application/json",
-        },
+          "X-Master-Key": process.env.JSONBIN_KEY,
+          "Content-Type": "application/json"
+        }
       }
     );
 
