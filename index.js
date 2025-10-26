@@ -84,10 +84,10 @@ const HOLDER_BIN_URL  = `https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBI
 const ATH_BIN_URL     = `https://api.jsonbin.io/v3/b/${process.env.ATH_JSONBIN_ID}`;
 
 // ==========================================================
-// 🟣 EVENT BIN URLS (auto-built from existing envs)
+// 🟣 EVENT BIN URLS — Clean, stable references
 // ==========================================================
-const EVENT_BIN_URL        = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`;           // scores
-const EVENT_INFO_BIN_URL   = `https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`;      // event info (meta)
+const EVENT_BIN_URL          = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`;         // event scores
+const EVENT_META_BIN_URL     = `https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`;    // event info/meta
 const EVENT_SNAPSHOT_BIN_URL = `https://api.jsonbin.io/v3/b/${process.env.EVENT_SNAPSHOT_JSONBIN_ID}`; // archived events
 
 // ==========================================================
@@ -467,6 +467,10 @@ async function getLeaderboard() {
   }
 }
 
+// ==========================================================
+// 🧩 EVENT DATA FUNCTIONS — clean read from unified bins
+// ==========================================================
+
 async function getEventData() {
   try {
     const res = await axios.get(`${EVENT_BIN_URL}/latest`, {
@@ -484,10 +488,10 @@ async function getEventData() {
 
 async function getEventMeta() {
   try {
-    const res = await axios.get(`${META_BIN_URL}/latest`, {
+    const res = await axios.get(`${EVENT_META_BIN_URL}/latest`, {
       headers: { "X-Master-Key": JSONBIN_KEY },
     });
-    const p = res.data.record || res.data || {};
+    const p = res.data?.record || res.data || {};
     return {
       title: p.title || p.name || "Current Event",
       info: p.info || p.description || "",
