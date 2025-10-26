@@ -985,15 +985,20 @@ bot.onText(/\/resetevent/i, async (msg) => {
   }
 });
 
-// --- IMPROVED /setevent (v3.4.2) ---
+// ==========================================================
+// 🧠 /setevent — Admin command to create a new event
+// ==========================================================
 bot.onText(/\/setevent/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
-  if (!ADMIN_USERS.includes(user))
+
+  if (!ADMIN_USERS.includes(user)) {
     return sendSafeMessage(chatId, "⚠️ Admins only.");
+  }
 
   try {
     console.log("🧩 /setevent triggered by", user);
+
     await sendSafeMessage(chatId, "🧠 Let's set up a new event.\n\nPlease reply with the <b>title</b>:", { parse_mode: "HTML" });
 
     // 1️⃣ Title
@@ -1031,7 +1036,7 @@ bot.onText(/\/setevent/i, async (msg) => {
                   const startISO = `${startDate}T${startTime}`;
                   const endISO = `${endDate}T${endTime}`;
 
-                  // 🧩 Preview
+                  // 🧩 Preview for confirmation
                   const preview =
                     `✅ <b>Review event details:</b>\n\n` +
                     `<b>Title:</b> ${escapeXml(title)}\n` +
@@ -1053,7 +1058,7 @@ bot.onText(/\/setevent/i, async (msg) => {
                     },
                   });
 
-                  // 8️⃣ Confirmation
+                  // 8️⃣ Confirmation handler
                   bot.once("callback_query", async (cbq) => {
                     if (cbq.data === "confirm_event_cancel") {
                       await sendSafeMessage(chatId, "❌ Event creation cancelled.");
@@ -1074,8 +1079,10 @@ bot.onText(/\/setevent/i, async (msg) => {
                       };
 
                       try {
-                        console.log("➡️ Writing event meta:", payload);
-                        const res = await writeBin(META_BIN_URL, payload);
+                        console.log("📝 Writing new event meta to:", EVENT_META_BIN_URL);
+                        console.log("📦 Payload:", JSON.stringify(payload, null, 2));
+
+                        const res = await writeBin(EVENT_META_BIN_URL, payload);
                         console.log("✅ Event meta updated:", res?.metadata || "OK");
 
                         await sendSafeMessage(
