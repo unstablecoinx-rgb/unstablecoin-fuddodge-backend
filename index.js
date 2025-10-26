@@ -50,45 +50,53 @@ const ATH_CHAT_ID = process.env.ATH_CHAT_ID || "8067310645";
 // --- Bug reports destination (currently same as A.T.H. chat) ---
 const BUG_REPORT_CHAT_ID = ATH_CHAT_ID; // can later be replaced with your group chat id
 
-
-
 // ==========================================================
 // 2) ENVIRONMENT & CONSTANTS
 // ==========================================================
-const TELEGRAM_BOT_TOKEN   = process.env.TELEGRAM_BOT_TOKEN;
-const JSONBIN_ID           = process.env.JSONBIN_ID;
-const EVENT_JSONBIN_ID     = process.env.EVENT_JSONBIN_ID;
-const JSONBIN_KEY          = process.env.JSONBIN_KEY;
-const EVENT_META_JSONBIN_ID= process.env.EVENT_META_JSONBIN_ID;
-const RESET_KEY            = process.env.RESET_KEY;
-const CONFIG_JSONBIN_ID    = process.env.CONFIG_JSONBIN_ID;
-const HOLDER_JSONBIN_ID    = process.env.HOLDER_JSONBIN_ID;
-const ATH_JSONBIN_ID       = process.env.ATH_JSONBIN_ID;
-const RENDER_EXTERNAL_HOSTNAME = process.env.RENDER_EXTERNAL_HOSTNAME || null;
-const PORT = process.env.PORT || 10000;
+const TELEGRAM_BOT_TOKEN        = process.env.TELEGRAM_BOT_TOKEN;
+const JSONBIN_ID                = process.env.JSONBIN_ID;
+const EVENT_JSONBIN_ID          = process.env.EVENT_JSONBIN_ID;
+const EVENT_META_JSONBIN_ID     = process.env.EVENT_META_JSONBIN_ID;
+const EVENT_SNAPSHOT_JSONBIN_ID = process.env.EVENT_SNAPSHOT_JSONBIN_ID;
+const CONFIG_JSONBIN_ID         = process.env.CONFIG_JSONBIN_ID;
+const HOLDER_JSONBIN_ID         = process.env.HOLDER_JSONBIN_ID;
+const ATH_JSONBIN_ID            = process.env.ATH_JSONBIN_ID;
+const ATH_SHARED_ID             = process.env.ATH_SHARED_ID;
+const ATH_TEST_CHAT_ID          = process.env.ATH_TEST_CHAT_ID;
+const JSONBIN_KEY               = process.env.JSONBIN_KEY;
+const RESET_KEY                 = process.env.RESET_KEY;
+const RENDER_EXTERNAL_HOSTNAME  = process.env.RENDER_EXTERNAL_HOSTNAME || null;
+const PORT                      = process.env.PORT || 10000;
 
+// ✅ Validation — ensure all required ENV vars exist
 if (
-  !TELEGRAM_BOT_TOKEN || !JSONBIN_ID || !EVENT_JSONBIN_ID || !JSONBIN_KEY ||
-  !EVENT_META_JSONBIN_ID || !RESET_KEY || !CONFIG_JSONBIN_ID ||
-  !HOLDER_JSONBIN_ID || !ATH_JSONBIN_ID
+  !TELEGRAM_BOT_TOKEN ||
+  !JSONBIN_ID ||
+  !EVENT_JSONBIN_ID ||
+  !EVENT_META_JSONBIN_ID ||
+  !EVENT_SNAPSHOT_JSONBIN_ID ||
+  !CONFIG_JSONBIN_ID ||
+  !HOLDER_JSONBIN_ID ||
+  !ATH_JSONBIN_ID ||
+  !ATH_SHARED_ID ||
+  !JSONBIN_KEY ||
+  !RESET_KEY
 ) {
-  console.error("❌ Missing environment variables!");
+  console.error("❌ Missing one or more required environment variables!");
   process.exit(1);
 }
-// ==========================================================
-// 🗄️ JSONBIN URL DEFINITIONS
-// ==========================================================
-const MAIN_BIN_URL    = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}`;
-const CONFIG_BIN_URL  = `https://api.jsonbin.io/v3/b/${process.env.CONFIG_JSONBIN_ID}`;
-const HOLDER_BIN_URL  = `https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`;
-const ATH_BIN_URL     = `https://api.jsonbin.io/v3/b/${process.env.ATH_JSONBIN_ID}`;
 
 // ==========================================================
-// 🟣 EVENT BIN URLS — Clean, stable references
+// 🗄️ JSONBIN URL DEFINITIONS — Final Canonical References
 // ==========================================================
-const EVENT_BIN_URL          = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`;         // event scores
-const EVENT_META_BIN_URL     = `https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`;    // event info/meta
-const EVENT_SNAPSHOT_BIN_URL = `https://api.jsonbin.io/v3/b/${process.env.EVENT_SNAPSHOT_JSONBIN_ID}`; // archived events
+const MAIN_BIN_URL            = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
+const CONFIG_BIN_URL          = `https://api.jsonbin.io/v3/b/${CONFIG_JSONBIN_ID}`;
+const HOLDER_BIN_URL          = `https://api.jsonbin.io/v3/b/${HOLDER_JSONBIN_ID}`;
+const ATH_BIN_URL             = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
+const ATH_SHARED_BIN_URL      = `https://api.jsonbin.io/v3/b/${ATH_SHARED_ID}`;
+const EVENT_BIN_URL           = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;          // event scores
+const EVENT_META_BIN_URL      = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;     // event info/meta
+const EVENT_SNAPSHOT_BIN_URL  = `https://api.jsonbin.io/v3/b/${EVENT_SNAPSHOT_JSONBIN_ID}`; // archived events
 
 // ==========================================================
 // 🧑‍💻 ADMIN
@@ -935,37 +943,44 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   }
 });
 
-// --- FIXED /resetevent (v3.4.1) ---
+// ==========================================================
+// 🧹 /resetevent — Admin Command
+// Clears both event scores and metadata bins
+// ==========================================================
 bot.onText(/\/resetevent/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
-  if (!ADMIN_USERS.includes(user))
+
+  if (!ADMIN_USERS.includes(user)) {
     return sendSafeMessage(chatId, "⚠️ Admins only.");
+  }
 
   try {
     console.log("🧹 /resetevent triggered by", user);
     console.log("➡️ EVENT_BIN_URL:", EVENT_BIN_URL);
-    console.log("➡️ META_BIN_URL:", META_BIN_URL);
+    console.log("➡️ EVENT_META_BIN_URL:", EVENT_META_BIN_URL);
 
-    // JSONBin kräver minst ett fält – därför skickas ett tomt record-objekt
+    // JSONBin requires a valid record object, so we send a simple reset marker
     const payload = { record: { resetAt: new Date().toISOString() } };
 
+    // Clear event scores
     const eventRes = await writeBin(EVENT_BIN_URL, payload);
-    const metaRes  = await writeBin(META_BIN_URL, payload);
+    // Clear event metadata
+    const metaRes = await writeBin(EVENT_META_BIN_URL, payload);
 
     console.log("✅ EVENT reset response:", eventRes?.metadata || "OK");
     console.log("✅ META reset response:", metaRes?.metadata || "OK");
 
     await sendSafeMessage(
       chatId,
-      "🧹 Event data och metadata har återställts.\n" +
-      "<i>(Bin innehåller nu endast resetAt-fältet)</i>"
+      "🧹 <b>Event data and metadata reset</b>\nBoth bins now contain only a <code>resetAt</code> timestamp.",
+      { parse_mode: "HTML" }
     );
   } catch (err) {
     console.error("❌ /resetevent failed:", err.response?.data || err.message);
     await sendSafeMessage(
       chatId,
-      `⚠️ Reset misslyckades: ${err.response?.data?.message || err.message}`
+      `⚠️ Reset failed: ${err.response?.data?.message || err.message}`
     );
   }
 });
