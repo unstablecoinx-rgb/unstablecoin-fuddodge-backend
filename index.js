@@ -1503,84 +1503,115 @@ app.get("/leaderboard", async (req, res) => {
 // ======================================================
 // 🚀 CURRENT EVENT INFO (mirror of Telegram logic)
 // ======================================================
+// === EVENT INFO ===
 app.get("/event", async (req, res) => {
   try {
-    const meta = await getEventMeta();
-    const cfg = await getConfig();
-    const tz = meta.timezone || "Europe/Stockholm";
-    const now = DateTime.now().setZone(tz);
+    const infoRes = await axios.get(`${EVENT_INFO_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    const event = infoRes.data?.record;
 
-    const data = meta.raw?.record || meta.raw || meta;
-    const result = {
-      title: data.title || "UnStable Challenge",
-      info: data.info || "Stay tuned for upcoming events.",
-      startDate: data.startDate || "",
-      endDate: data.endDate || "",
-      timezone: tz,
-      status: "inactive",
-    };
-
-    if (data.startDate && data.endDate) {
-      const start = DateTime.fromISO(data.startDate).setZone(tz);
-      const end = DateTime.fromISO(data.endDate).setZone(tz);
-
-      if (now < start) result.status = "upcoming";
-      else if (now >= start && now <= end) result.status = "active";
-      else if (now > end) result.status = "ended";
+    if (!event || !event.startDate || !event.endDate) {
+      return res.json({
+        status: "inactive",
+        title: "UnStable Challenge",
+        info: "Stay tuned for upcoming events.",
+        startDate: "",
+        endDate: "",
+        timezone: "Europe/Stockholm"
+      });
     }
 
-    // append helpful text when ended
-    if (result.status === "ended")
-      result.info += "<br><br><span style='color:#777;'>🏁 This event has ended.</span>";
+    const now = new Date();
+    const start = new Date(event.startDate);
+    const end = new Date(event.endDate);
+    const status =
+      now < start ? "upcoming" :
+      now > end ? "ended" :
+      "active";
 
-    console.log(`📤 /event → ${result.status.toUpperCase()} (${result.startDate} → ${result.endDate})`);
-    res.json(result);
-  } catch (err) {
-    console.error("❌ /event:", err.message);
-    res.status(500).json({
-      status: "error",
-      title: "UnStable Challenge",
-      info: "⚠️ Could not load event data.",
+    res.json({
+      status,
+      title: event.title,
+      info: status === "ended" ? "Event ended. Results soon." : event.info,
+      startDate: event.startDate,
+      endDate: event.endDate,
+      timezone: event.timezone || "Europe/Stockholm"
     });
+
+    console.log(`📤 /event → ${status.toUpperCase()} (${event.startDate} → ${event.endDate})`);
+  } catch (err) {
+    console.error("❌ /event failed:", err.message);
+    res.status(500).json({ error: "Failed to load event info" });
   }
 });
 
-// --- EVENT LEADERBOARD ---
+// === EVENT LEADERBOARD (TOP 10) ===
 app.get("/eventtop10", async (req, res) => {
   try {
-    const meta = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
-    const record = meta?.record?.record || meta?.record || {};
-
-    const now = new Date();
-    const start = record.startDate ? new Date(record.startDate) : null;
-    const end = record.endDate ? new Date(record.endDate) : null;
-    const isActive = start && end && now >= start && now <= end;
-    const isEnded = end && now > end;
-
-    const scores = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
-    const raw = scores?.record || scores || {};
-    let arr = [];
-
-    if (typeof raw === "object" && !Array.isArray(raw)) {
-      arr = Object.entries(raw)
-        .filter(([key, val]) =>
-          typeof val === "number" && !["resetAt", "updatedAt", "createdAt"].includes(key)
-        )
-        .map(([username, score]) => ({ username, score: Number(score) }));
+    const scoresRes = await axios.get(`${EVENT_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    const data = scoresRes.data?.record?.scores || [];
+    if (!data.length) {
+      console.log("📤 /eventtop10: 0 entries (no scores yet)");
+      return res.json([]);
     }
 
-    arr = arr.sort((a, b) => b.score - a.score).slice(0, 10);
+    const top = Object.entries(
+      data.reduce((acc, s) => {
+        const user = s.username;
+        if (!acc[user] || s.score > acc[user]) acc[user] = s.score;
+        return acc;
+      }, {})
+    )
+      .map(([username, score]) => ({ username, score }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
 
-    res.json({
-      status: isActive ? "active" : isEnded ? "ended" : "inactive",
-      title: record.title || "UnStable Challenge",
-      entries: arr
+    console.log(`📤 /eventtop10: ${top.length} entries`);
+    res.json(top);
+  } catch (err) {
+    console.error("❌ /eventtop10 failed:", err.message);
+    res.status(500).json({ error: "Failed to load event leaderboard" });
+  }
+});
+
+// === EVENT SUBMIT (called by /submitScore in front end) ===
+app.post("/eventsubmit", async (req, res) => {
+  try {
+    const { username, score } = req.body;
+    if (!username || !score) return res.status(400).json({ ok: false, msg: "Missing data" });
+
+    const holders = await getHoldersMapFromArray();
+    const verified = !!holders[username];
+    if (!verified) {
+      console.log(`🚫 ${username} not verified holder`);
+      return res.status(403).json({ ok: false, msg: "Not a verified holder" });
+    }
+
+    const scoresRes = await axios.get(`${EVENT_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    const rec = scoresRes.data?.record || {};
+    const arr = rec.scores || [];
+
+    const prev = arr.find((x) => x.username === username);
+    if (prev && score <= prev.score) {
+      console.log(`📉 Lower score ignored for ${username} (${score} <= ${prev.score})`);
+      return res.json({ ok: true, stored: false });
+    }
+
+    const newScores = [...arr.filter((x) => x.username !== username), { username, score, verified, at: new Date().toISOString() }];
+    await axios.put(`${EVENT_BIN_URL}`, { record: { ...rec, scores: newScores } }, {
+      headers: { "X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json" },
     });
 
-    console.log(`📤 /eventtop10: ${arr.length} entries (${isActive ? "active" : isEnded ? "ended" : "inactive"})`);
+    console.log(`✅ Event score saved for ${username}: ${score}`);
+    res.json({ ok: true, stored: true });
   } catch (err) {
-    console.error("❌ /eventtop10 error:", err.message);
-    res.status(500).json({ status: "error", entries: [] });
+    console.error("❌ /eventsubmit error:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
