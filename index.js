@@ -1514,16 +1514,18 @@ app.get("/leaderboard", async (req, res) => {
 // 🚀 EVENT META + LEADERBOARD (Unified Logic)
 // ======================================================
 
-// === CURRENT EVENT INFO ===
 app.get("/event", async (req, res) => {
   try {
-    const infoRes = await axios.get(`${EVENT_META_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY }
+    const resp = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}/latest`, {
+      headers: { "X-Master-Key": process.env.JSONBIN_KEY }
     });
 
-    const event = infoRes.data?.record;
-    if (!event) {
-      console.log("📤 /event → INACTIVE (no record)");
+    // Unwrap possible nesting: { record: { record: {...} } }
+    let data = resp.data?.record;
+    if (data?.record) data = data.record;
+
+    if (!data?.title || !data?.startDate || !data?.endDate) {
+      console.log("📤 /event → INACTIVE (missing fields)");
       return res.json({
         status: "inactive",
         title: "UnStable Challenge",
@@ -1534,36 +1536,20 @@ app.get("/event", async (req, res) => {
       });
     }
 
-    const { title, info, startDate, endDate, timezone = "Europe/Stockholm" } = event;
-    if (!startDate || !endDate) {
-      console.log("📤 /event → INACTIVE (missing dates)");
-      return res.json({
-        status: "inactive",
-        title: title || "UnStable Challenge",
-        info: info || "Stay tuned for upcoming events.",
-        startDate: "",
-        endDate: "",
-        timezone
-      });
-    }
-
     const now = new Date();
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const status =
-      now < start ? "upcoming" :
-      now > end ? "ended" :
-      "active";
+    const start = new Date(data.startDate);
+    const end = new Date(data.endDate);
+    const status = now < start ? "upcoming" : now > end ? "ended" : "active";
 
-    console.log(`📤 /event → ${status.toUpperCase()} (${startDate} → ${endDate})`);
+    console.log(`📤 /event → ${status.toUpperCase()} (${data.startDate} → ${data.endDate})`);
 
     res.json({
       status,
-      title,
-      info: status === "ended" ? "Event ended. Results soon." : info,
-      startDate,
-      endDate,
-      timezone
+      title: data.title,
+      info: status === "ended" ? "Event ended. Results soon." : data.info,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      timezone: data.timezone || "Europe/Stockholm"
     });
   } catch (err) {
     console.error("❌ /event failed:", err.message);
