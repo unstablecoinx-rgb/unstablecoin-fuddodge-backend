@@ -75,14 +75,24 @@ if (
   console.error("❌ Missing environment variables!");
   process.exit(1);
 }
+// ==========================================================
+// 🗄️ JSONBIN URL DEFINITIONS
+// ==========================================================
+const MAIN_BIN_URL    = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}`;
+const CONFIG_BIN_URL  = `https://api.jsonbin.io/v3/b/${process.env.CONFIG_JSONBIN_ID}`;
+const HOLDER_BIN_URL  = `https://api.jsonbin.io/v3/b/${process.env.HOLDER_JSONBIN_ID}`;
+const ATH_BIN_URL     = `https://api.jsonbin.io/v3/b/${process.env.ATH_JSONBIN_ID}`;
 
-const MAIN_BIN_URL  = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
-const EVENT_BIN_URL = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;
-const META_BIN_URL  = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;
-const CONFIG_BIN_URL= `https://api.jsonbin.io/v3/b/${CONFIG_JSONBIN_ID}`;
-const HOLDER_BIN_URL= `https://api.jsonbin.io/v3/b/${HOLDER_JSONBIN_ID}`;
-const ATH_BIN_URL   = `https://api.jsonbin.io/v3/b/${ATH_JSONBIN_ID}`;
+// ==========================================================
+// 🟣 EVENT BIN URLS (auto-built from existing envs)
+// ==========================================================
+const EVENT_BIN_URL        = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`;           // scores
+const EVENT_INFO_BIN_URL   = `https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`;      // event info (meta)
+const EVENT_SNAPSHOT_BIN_URL = `https://api.jsonbin.io/v3/b/${process.env.EVENT_SNAPSHOT_JSONBIN_ID}`; // archived events
 
+// ==========================================================
+// 🧑‍💻 ADMIN
+// ==========================================================
 const ADMIN_USERS = ["unstablecoinx", "unstablecoinx_bot", "pachenko_14"];
 
 // ==========================================================
