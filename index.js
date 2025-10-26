@@ -573,7 +573,7 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
 }
 
 // ==========================================================
-// 11) TELEGRAM MAIN MENU — Stable build (v3.4 compatible)
+// 11) TELEGRAM MAIN MENU — Stable build (v3.5 compatible)
 // ==========================================================
 
 const mainMenu = {
@@ -582,6 +582,7 @@ const mainMenu = {
       [{ text: "🌕 Add Wallet" }, { text: "⚡ Verify Holder" }],
       [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
       [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }],
+      [{ text: "🏁 Event Leaderboard" }],
       [{ text: "🐞 Report Bug" }],
     ],
     resize_keyboard: true,
@@ -593,7 +594,7 @@ const mainMenu = {
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
   const welcome =
-    "💛 <b>Welcome to UnStableCoin</b>\nUse the buttons below to manage wallet or join the event.";
+    "💛 <b>Welcome to UnStableCoin</b>\nUse the buttons below to manage wallet, verify holdings, or join the current event.";
   await sendSafeMessage(chatId, welcome, { ...mainMenu, parse_mode: "HTML" });
 });
 
@@ -607,45 +608,35 @@ bot.on("message", async (msg) => {
   try {
     switch (text) {
       case "🌕 Add Wallet":
-        bot.processUpdate({
-          message: { ...msg, text: "/addwallet" },
-        });
+        bot.processUpdate({ message: { ...msg, text: "/addwallet" } });
         break;
 
       case "⚡ Verify Holder":
-        bot.processUpdate({
-          message: { ...msg, text: "/verifyholder" },
-        });
+        bot.processUpdate({ message: { ...msg, text: "/verifyholder" } });
         break;
 
       case "🔁 Change Wallet":
-        bot.processUpdate({
-          message: { ...msg, text: "/changewallet" },
-        });
+        bot.processUpdate({ message: { ...msg, text: "/changewallet" } });
         break;
 
       case "❌ Remove Wallet":
-        bot.processUpdate({
-          message: { ...msg, text: "/removewallet" },
-        });
+        bot.processUpdate({ message: { ...msg, text: "/removewallet" } });
         break;
 
       case "🏆 Leaderboard":
-        bot.processUpdate({
-          message: { ...msg, text: "/top10" },
-        });
+        bot.processUpdate({ message: { ...msg, text: "/top10" } });
         break;
 
       case "🚀 Current Event":
-        bot.processUpdate({
-          message: { ...msg, text: "/event" },
-        });
+        bot.processUpdate({ message: { ...msg, text: "/event" } });
+        break;
+
+      case "🏁 Event Leaderboard":
+        bot.processUpdate({ message: { ...msg, text: "/eventtop10" } });
         break;
 
       case "🐞 Report Bug":
-        bot.processUpdate({
-          message: { ...msg, text: "/bugreport" },
-        });
+        bot.processUpdate({ message: { ...msg, text: "/bugreport" } });
         break;
 
       default:
@@ -660,7 +651,6 @@ bot.on("message", async (msg) => {
     );
   }
 });
-
 // ==========================================================
 // 12) TELEGRAM CORE COMMANDS
 // ==========================================================
