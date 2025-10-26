@@ -1514,35 +1514,36 @@ app.get("/leaderboard", async (req, res) => {
 // 🚀 EVENT META + LEADERBOARD (Unified Logic)
 // ======================================================
 
-// ======================================================
-// 🚀 CURRENT EVENT INFO (mirror of Telegram logic)
-// ======================================================
-// === EVENT INFO ===
+// ==========================================================
+// 🌐 FRONTEND EVENT ENDPOINTS — aligned with unified bins
+// ==========================================================
+
+// === CURRENT EVENT INFO ===
 app.get("/event", async (req, res) => {
   try {
-    const infoRes = await axios.get(`${EVENT_INFO_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY }
+    const infoRes = await axios.get(`${EVENT_META_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
     });
     const event = infoRes.data?.record;
 
     if (!event || !event.startDate || !event.endDate) {
+      console.log("📤 /event → INACTIVE");
       return res.json({
         status: "inactive",
         title: "UnStable Challenge",
         info: "Stay tuned for upcoming events.",
         startDate: "",
         endDate: "",
-        timezone: "Europe/Stockholm"
+        timezone: "Europe/Stockholm",
       });
     }
 
     const now = new Date();
     const start = new Date(event.startDate);
     const end = new Date(event.endDate);
-    const status =
-      now < start ? "upcoming" :
-      now > end ? "ended" :
-      "active";
+    const status = now < start ? "upcoming" : now > end ? "ended" : "active";
+
+    console.log(`📤 /event → ${status.toUpperCase()} (${event.startDate} → ${event.endDate})`);
 
     res.json({
       status,
@@ -1550,10 +1551,8 @@ app.get("/event", async (req, res) => {
       info: status === "ended" ? "Event ended. Results soon." : event.info,
       startDate: event.startDate,
       endDate: event.endDate,
-      timezone: event.timezone || "Europe/Stockholm"
+      timezone: event.timezone || "Europe/Stockholm",
     });
-
-    console.log(`📤 /event → ${status.toUpperCase()} (${event.startDate} → ${event.endDate})`);
   } catch (err) {
     console.error("❌ /event failed:", err.message);
     res.status(500).json({ error: "Failed to load event info" });
@@ -1564,7 +1563,7 @@ app.get("/event", async (req, res) => {
 app.get("/eventtop10", async (req, res) => {
   try {
     const scoresRes = await axios.get(`${EVENT_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY }
+      headers: { "X-Master-Key": JSONBIN_KEY },
     });
     const data = scoresRes.data?.record?.scores || [];
     if (!data.length) {
@@ -1591,11 +1590,12 @@ app.get("/eventtop10", async (req, res) => {
   }
 });
 
-// === EVENT SUBMIT (called by /submitScore in front end) ===
+// === EVENT SUBMIT (called by front-end /submitEventScore) ===
 app.post("/eventsubmit", async (req, res) => {
   try {
     const { username, score } = req.body;
-    if (!username || !score) return res.status(400).json({ ok: false, msg: "Missing data" });
+    if (!username || !score)
+      return res.status(400).json({ ok: false, msg: "Missing data" });
 
     const holders = await getHoldersMapFromArray();
     const verified = !!holders[username];
@@ -1605,7 +1605,7 @@ app.post("/eventsubmit", async (req, res) => {
     }
 
     const scoresRes = await axios.get(`${EVENT_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY }
+      headers: { "X-Master-Key": JSONBIN_KEY },
     });
     const rec = scoresRes.data?.record || {};
     const arr = rec.scores || [];
@@ -1616,10 +1616,21 @@ app.post("/eventsubmit", async (req, res) => {
       return res.json({ ok: true, stored: false });
     }
 
-    const newScores = [...arr.filter((x) => x.username !== username), { username, score, verified, at: new Date().toISOString() }];
-    await axios.put(`${EVENT_BIN_URL}`, { record: { ...rec, scores: newScores } }, {
-      headers: { "X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json" },
-    });
+    const newScores = [
+      ...arr.filter((x) => x.username !== username),
+      { username, score, verified, at: new Date().toISOString() },
+    ];
+
+    await axios.put(
+      `${EVENT_BIN_URL}`,
+      { record: { ...rec, scores: newScores } },
+      {
+        headers: {
+          "X-Master-Key": JSONBIN_KEY,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
     console.log(`✅ Event score saved for ${username}: ${score}`);
     res.json({ ok: true, stored: true });
@@ -1628,7 +1639,7 @@ app.post("/eventsubmit", async (req, res) => {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
-
+ 
 // 🧩 META (optional, used for global app state / version info)
 app.get("/meta", async (req, res) => {
   try {
