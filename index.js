@@ -1597,7 +1597,6 @@ app.get("/eventtop10", async (req, res) => {
   }
 });
 
-// === EVENT SUBMIT (verified players only) ===
 app.post("/eventsubmit", async (req, res) => {
   try {
     const { username, score } = req.body;
@@ -1625,27 +1624,37 @@ app.post("/eventsubmit", async (req, res) => {
     }
 
     // --- Read current leaderboard ---
-    const scoresRes = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`, {
-      headers: { "X-Master-Key": process.env.JSONBIN_KEY }
-    });
-    const rec = scoresRes.data?.record || {};
-    const arr = rec.scores || [];
+    const scoresRes = await axios.get(
+      `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`,
+      { headers: { "X-Master-Key": process.env.JSONBIN_KEY } }
+    );
 
-    const prev = arr.find((x) => x.username === username);
+    // 🧹 Clean unwrap — fixes nested "record" issue
+    let data = scoresRes.data?.record || scoresRes.data || {};
+    while (data.record) data = data.record;
+    let scores = Array.isArray(data.scores) ? data.scores : [];
+
+    // 🏁 Update or insert player's best score only
+    const prev = scores.find((x) => x.username === username);
     if (prev && score <= prev.score) {
       console.log(`📉 Lower score ignored for ${username} (${score} <= ${prev.score})`);
       return res.json({ ok: true, stored: false });
     }
 
-    // --- Save updated leaderboard ---
     const newScores = [
-      ...arr.filter((x) => x.username !== username),
+      ...scores.filter((x) => x.username !== username),
       { username, score, verified, at: new Date().toISOString() }
     ];
 
+    // ✅ Write back clean, non-nested structure
+    const payload = {
+      resetAt: data.resetAt || new Date().toISOString(),
+      scores: newScores
+    };
+
     await axios.put(
       `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`,
-      { record: { ...rec, scores: newScores } },
+      payload,
       {
         headers: {
           "X-Master-Key": process.env.JSONBIN_KEY,
