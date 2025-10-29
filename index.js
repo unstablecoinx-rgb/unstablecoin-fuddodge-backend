@@ -447,17 +447,39 @@ function _normalizeScoreMap(obj) {
 }
 
 function _extractScoresFromBin(raw) {
+  // Unwrap any JSONBin nesting
   let data = raw;
   if (data && data.record && typeof data.record === "object") data = data.record;
   while (data && typeof data === "object" && data.record && typeof data.record === "object") {
     const siblings = {};
-    for (const [k, v] of Object.entries(data)) {
-      if (k !== "record") siblings[k] = v;
-    }
+    for (const [k, v] of Object.entries(data)) if (k !== "record") siblings[k] = v;
     data = Object.assign({}, siblings, data.record);
   }
-  if (data && data.scores && typeof data.scores === "object") data = data.scores;
-  return _normalizeScoreMap(data);
+
+  // ✅ New format: { resetAt, scores: [ { username, score, ... } ] }
+  if (Array.isArray(data?.scores)) {
+    const out = {};
+    for (const row of data.scores) {
+      if (!row || !row.username) continue;
+      const uname = row.username.startsWith("@") ? row.username : "@" + row.username;
+      const n = Number(row.score);
+      if (!Number.isNaN(n)) out[uname] = Math.max(n, out[uname] || 0);
+    }
+    return out;
+  }
+
+  // Legacy format: direct object map { "@user": score, ... } or { scores: { ... } }
+  if (data && typeof data === "object" && data.scores && typeof data.scores === "object") {
+    data = data.scores;
+  }
+  const out = {};
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    for (const [k, v] of Object.entries(data)) {
+      const n = Number(v);
+      if (!Number.isNaN(n)) out[k.startsWith("@") ? k : "@" + k] = n;
+    }
+  }
+  return out;
 }
 
 async function getLeaderboard() {
