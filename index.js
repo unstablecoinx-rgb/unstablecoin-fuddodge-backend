@@ -481,15 +481,28 @@ async function getLeaderboard() {
 
 async function getEventData() {
   try {
-    const res = await axios.get(`${EVENT_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY },
+    const res = await axios.get(EVENT_BIN_URL, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
     });
-    console.log("🟣 EVENT BIN keys:", Object.keys(res.data || {}));
-    const data = _extractScoresFromBin(res.data);
-    console.log(`🏁 Event scores loaded (${Object.keys(data).length})`);
-    return { scores: data };
+
+    // ✅ Handle both new and old JSONBin formats
+    const raw = res.data?.record || res.data || {};
+    const scoresArray = raw.scores || [];
+
+    // ✅ Convert scores to a username→score map for easy access
+    const scores = {};
+    for (const s of scoresArray) {
+      if (s.username && typeof s.score === "number") {
+        // only keep the highest score per user
+        scores[s.username] = Math.max(scores[s.username] || 0, s.score);
+      }
+    }
+
+    console.log(`🏁 Event scores loaded (${Object.keys(scores).length})`);
+    return { scores };
+
   } catch (err) {
-    console.error("❌ getEventData:", err?.message || err);
+    console.error("❌ Failed to load event data:", err.message);
     return { scores: {} };
   }
 }
