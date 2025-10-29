@@ -691,22 +691,34 @@ bot.on("message", async (msg) => {
 // ==========================================================
 bot.onText(/\/help/, async (msg) => {
   const isAdmin = ADMIN_USERS.includes((msg.from.username || "").toLowerCase());
+
   const lines = [
-    "🎮 <b>FUD Dodge — Bot Commands</b>",
-    "🎮 /play — Game link",
-    "🏆 /top10 — Top 10",
-    "📈 /top50 — Top 50",
-    "⚡ /eventtop10 — Event top 10 (holders)",
-    "🥇 /eventtop50 — Event top 50 (holders)",
-    "📢 /event — Current event info",
+    "💛 <b>Welcome to UnStableCoin</b>",
+    "",
+    "🎮 <b>FUD Dodge — Game Commands</b>",
+    "/start — Prepare for contests",
+    "/play — Game link",
+    "/top10 — Global Top 10",
+    "/top50 — Global Top 50",
+    "/eventtop10 — Event Top 10 (holders)",
+    "/eventtop50 — Event Top 50 (holders)",
+    "/event — Current event info",
+    "",
+    "🪙 <b>Holder & Info</b>",
+    "/howtoplay — Game guide & scoring",
+    "/getholdingreq — Holder requirement",
+    "/info — Game rules",
     "",
   ];
+
   if (isAdmin) {
-    lines.push("🔧 Admin:");
-    lines.push("/winners [n] — Check top event holders");
+    lines.push("🛠 <b>Admin</b>");
+    lines.push("/setevent — Start or update event");
     lines.push("/resetevent — Reset event leaderboard");
-    lines.push("/setevent — Start interactive event setup");
+    lines.push("/winners [n] — Check top event holders");
+    lines.push("/setholdingreq — Set required token holding amount");
   }
+
   await sendSafeMessage(msg.chat.id, lines.join("\n"));
 });
 
