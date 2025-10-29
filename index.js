@@ -934,8 +934,7 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 // ==========================================================
-// 🧹 /resetevent — Admin Command
-// Clears both event scores and metadata bins
+// 🧹 /resetevent — Admin Command (scores only, meta kept intact)
 // ==========================================================
 bot.onText(/\/resetevent/i, async (msg) => {
   const chatId = msg.chat.id;
@@ -946,24 +945,22 @@ bot.onText(/\/resetevent/i, async (msg) => {
   }
 
   try {
-    console.log("🧹 /resetevent triggered by", user);
+    console.log("🧹 /resetevent (scores only) triggered by", user);
     console.log("➡️ EVENT_BIN_URL:", EVENT_BIN_URL);
-    console.log("➡️ EVENT_META_BIN_URL:", EVENT_META_BIN_URL);
 
-    // JSONBin requires a valid record object, so we send a simple reset marker
-    const payload = { record: { resetAt: new Date().toISOString() } };
+    // 🔄 Prepare clean payload — flat structure
+    const payload = {
+      resetAt: new Date().toISOString(),
+      scores: []
+    };
 
-    // Clear event scores
+    // ✅ Clear only the event scores bin
     const eventRes = await writeBin(EVENT_BIN_URL, payload);
-    // Clear event metadata
-    const metaRes = await writeBin(EVENT_META_BIN_URL, payload);
-
-    console.log("✅ EVENT reset response:", eventRes?.metadata || "OK");
-    console.log("✅ META reset response:", metaRes?.metadata || "OK");
+    console.log("✅ EVENT scores reset:", eventRes?.metadata || "OK");
 
     await sendSafeMessage(
       chatId,
-      "🧹 <b>Event data and metadata reset</b>\nBoth bins now contain only a <code>resetAt</code> timestamp.",
+      "🧹 <b>Event leaderboard reset</b>\nOnly scores were cleared — event info/meta remains.",
       { parse_mode: "HTML" }
     );
   } catch (err) {
