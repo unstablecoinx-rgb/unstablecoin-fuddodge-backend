@@ -795,7 +795,6 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     if (data.minHoldAmount)
       body += `\n<b>Minimum holding:</b> ${data.minHoldAmount.toLocaleString()} $US`;
 
-    // ⚡ Append unified participation HTML directly
     if (data.participation)
       body += `\n\n${data.participation}`;
 
@@ -1596,7 +1595,7 @@ app.get("/event", async (req, res) => {
         timezone: "Europe/Stockholm",
         minHoldAmount: 0,
         participation:
-          "<b>Participation:</b><br>Hold the line and prepare for the next event."
+          "Participation:\nHold the line and prepare for the next event."
       });
     }
 
@@ -1609,13 +1608,15 @@ app.get("/event", async (req, res) => {
     // 5️⃣ Load config for holding requirement
     const cfg = await getConfig();
 
-    // 6️⃣ Build unified participation text (HTML-ready)
+    // 6️⃣ Build unified participation text (no <br> — Telegram safe)
     const participation = `
-<b>Participation:</b><br>
-Hold at least <b>${cfg.minHoldAmount.toLocaleString()} $US</b> to join and appear on event leaderboards.<br>
-Add your wallet using <code>/addwallet</code> or the 🌕 <b>Add Wallet</b> button in the <b>/start</b> menu in Telegram <b>UnStableCoin Game Bot</b>.<br><br>
-We run various community contests — memes, scores, and creative drops.<br><br>
-<i>Stay unstable. Build weird. Hold the chaos. ⚡</i><br>
+<b>Participation:</b>
+Hold at least <b>${cfg.minHoldAmount.toLocaleString()} $US</b> to join and appear on event leaderboards.
+Add your wallet using <code>/addwallet</code> or the 🌕 <b>Add Wallet</b> button in the <b>/start</b> menu in Telegram <b>UnStableCoin Game Bot</b>.
+
+We run various community contests — memes, scores, and creative drops.
+
+<i>Stay unstable. Build weird. Hold the chaos. ⚡</i>
 - <b>UnStableCoin Community</b>
 `.trim();
 
