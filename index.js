@@ -754,20 +754,17 @@ Stay unstable. 💛⚡`;
   sendSafeMessage(msg.chat.id, text);
 });
 
-// --- FIXED /event (v3.4.2 compatible with new meta structure) ---
 bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   try {
     const chatId = msg.chat.id;
-    const meta = await getEventMeta();
-    const cfg = await getConfig();
-    const tz = meta.timezone || "Europe/Stockholm";
+    const tz = "Europe/Stockholm";
     const now = DateTime.now().setZone(tz);
 
-    // Hantera flera möjliga strukturer
-    const data = meta.raw?.record || meta.raw || meta;
+    const res = await axios.get(`https://unstablecoin-fuddodge-backend.onrender.com/event`);
+    const data = res.data || {};
 
     if (!data.title) {
-      await sendSafeMessage(chatId, "⚠️ No active event found in metadata.");
+      await sendSafeMessage(chatId, "⚠️ No active event found.");
       return;
     }
 
@@ -794,7 +791,13 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       if (end) body += ` → ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
     }
 
-    body += `\n\n<b>Timezone:</b> ${escapeXml(tz)}\n<b>Minimum holding:</b> ${cfg.minHoldAmount.toLocaleString()} $US`;
+    body += `\n\n<b>Timezone:</b> ${escapeXml(data.timezone || tz)}`;
+    if (data.minHoldAmount)
+      body += `\n<b>Minimum holding:</b> ${data.minHoldAmount.toLocaleString()} $US`;
+
+    // ⚡ Append unified participation HTML directly
+    if (data.participation)
+      body += `\n\n${data.participation}`;
 
     await sendSafeMessage(chatId, body, { parse_mode: "HTML" });
   } catch (err) {
@@ -1569,17 +1572,19 @@ app.get("/leaderboard", async (req, res) => {
 // ======================================================
 // 🚀 EVENT META + LEADERBOARD (Unified Logic)
 // ======================================================
-
 app.get("/event", async (req, res) => {
   try {
-    const resp = await axios.get(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}/latest`, {
-      headers: { "X-Master-Key": process.env.JSONBIN_KEY }
-    });
+    // 1️⃣ Fetch event meta from JSONBin
+    const resp = await axios.get(
+      `https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}/latest`,
+      { headers: { "X-Master-Key": process.env.JSONBIN_KEY } }
+    );
 
-    // Unwrap possible nesting: { record: { record: {...} } }
+    // 2️⃣ Unwrap possible nesting
     let data = resp.data?.record;
     if (data?.record) data = data.record;
 
+    // 3️⃣ Handle missing or inactive event
     if (!data?.title || !data?.startDate || !data?.endDate) {
       console.log("📤 /event → INACTIVE (missing fields)");
       return res.json({
@@ -1588,24 +1593,44 @@ app.get("/event", async (req, res) => {
         info: "Stay tuned for upcoming events.",
         startDate: "",
         endDate: "",
-        timezone: "Europe/Stockholm"
+        timezone: "Europe/Stockholm",
+        minHoldAmount: 0,
+        participation:
+          "<b>Participation:</b><br>Hold the line and prepare for the next event."
       });
     }
 
+    // 4️⃣ Determine event status
     const now = new Date();
     const start = new Date(data.startDate);
     const end = new Date(data.endDate);
     const status = now < start ? "upcoming" : now > end ? "ended" : "active";
 
+    // 5️⃣ Load config for holding requirement
+    const cfg = await getConfig();
+
+    // 6️⃣ Build unified participation text (HTML-ready)
+    const participation = `
+<b>Participation:</b><br>
+Hold at least <b>${cfg.minHoldAmount.toLocaleString()} $US</b> to join and appear on event leaderboards.<br>
+Add your wallet using <code>/addwallet</code> or the 🌕 <b>Add Wallet</b> button in the <b>/start</b> menu in Telegram <b>UnStableCoin Game Bot</b>.<br><br>
+We run various community contests — memes, scores, and creative drops.<br><br>
+<i>Stay unstable. Build weird. Hold the chaos. ⚡</i><br>
+- <b>UnStableCoin Community</b>
+`.trim();
+
     console.log(`📤 /event → ${status.toUpperCase()} (${data.startDate} → ${data.endDate})`);
 
+    // 7️⃣ Send unified JSON response
     res.json({
       status,
       title: data.title,
       info: status === "ended" ? "Event ended. Results soon." : data.info,
       startDate: data.startDate,
       endDate: data.endDate,
-      timezone: data.timezone || "Europe/Stockholm"
+      timezone: data.timezone || "Europe/Stockholm",
+      minHoldAmount: cfg.minHoldAmount || 0,
+      participation
     });
   } catch (err) {
     console.error("❌ /event failed:", err.message);
