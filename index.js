@@ -755,7 +755,7 @@ Stay unstable. 💛⚡`;
 });
 
 // --- FIXED /event (v3.4.2 compatible with new meta structure) ---
-bot.onText(/\/event$/i, async (msg) => {
+bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   try {
     const chatId = msg.chat.id;
     const meta = await getEventMeta();
