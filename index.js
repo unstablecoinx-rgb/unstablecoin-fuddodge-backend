@@ -846,8 +846,7 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       "",
       "Stay unstable. Build weird. Hold the chaos. ⚡️",
       "",
-      "🌐 theunstable.io | @UnStableCoinX | t.me/UnStableCoin_US"
-    ].join("\n");
+      "🌐 theunstable.io | x.com/unstablecoinx;
 
     await bot.sendPhoto(chatId, logoUrl, {
       caption,
