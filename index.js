@@ -1667,6 +1667,22 @@ app.get("/eventtop10", async (req, res) => {
   }
 });
 
+// === TEMP TEST ENDPOINT ===
+app.get("/testpost", async (req, res) => {
+  try {
+    const chatId = "-1002187343204"; // UnStableCoin group ID
+    const testMsg = "⚡️ Test message from UnStableCoin backend — confirming group post works.";
+
+    await bot.sendMessage(chatId, testMsg, { parse_mode: "HTML" });
+    console.log("✅ Test message sent to group:", chatId);
+
+    res.json({ ok: true, sentTo: chatId });
+  } catch (err) {
+    console.error("❌ Failed to send test message:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post("/eventsubmit", async (req, res) => {
   try {
     const { username, score } = req.body;
