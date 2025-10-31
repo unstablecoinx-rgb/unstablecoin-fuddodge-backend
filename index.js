@@ -826,7 +826,7 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       "💛 <b>Welcome to the UnStableCoin Game Bot</b>",
       "",
       "🎮 <b>How to Begin</b>",
-      `👉 <a href="${botLink}">Open the Game Bot in DM</a> and type /start to connect your wallet and access the main menu.`,
+      `👉 <a href="${botLink}">Open the Game Bot in DM</a> and connect your wallet in the start menu.`,
       "",
       "🚀 <b>Play the Game</b>",
       "Play <b>FUD Dodge</b> in your private chat.",
