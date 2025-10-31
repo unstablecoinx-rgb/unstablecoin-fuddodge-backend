@@ -806,14 +806,9 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   }
 });
 
-// ==========================================================
-//  /intro — With local UnStableCoin logo (assets/logo.png)
-// ==========================================================
 bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   try {
     const chatId = msg.chat.id;
-
-    // ✅ Dynamic holder requirement
     const cfg = await getConfig();
     const minHold = cfg?.minHoldAmount
       ? cfg.minHoldAmount.toLocaleString()
@@ -821,57 +816,32 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 
     const me = await bot.getMe();
     const botLink = `https://t.me/${me.username}?start=start`;
-
-    // 🖼️ Local logo path
     const logoPath = "./assets/logo.png";
 
-    // --- Send logo first ---
     await bot.sendPhoto(chatId, logoPath, {
       caption: "💛 <b>Welcome to the UnStableCoin Game Hub</b>",
       parse_mode: "HTML",
     });
 
-    // --- Then send intro text ---
     const lines = [
       "",
       "🎮 <b>How to Begin</b>",
-      "To set up your player profile, open a private chat with the bot.",
-      `👉 <a href="${botLink}">Click here to open the Game Bot in DM</a>`,
-      "Then type /start — that’s where you can connect your wallet, verify as a holder, and access the game menu.",
+      `👉 <a href="${botLink}">Open the Game Bot in DM</a>`,
+      "Then type /start to connect your wallet and access the menu.",
       "",
       "🚀 <b>Play the Game</b>",
-      "Launch <b>FUD Dodge</b> using /play in your private chat.",
-      "Collect coins, dodge FUD, and grow your MCap to reach the top.",
+      "Use /play to start <b>FUD Dodge</b> in your private chat.",
       "",
-      "🏆 <b>Events & Rankings</b>",
-      "• Current event info → /event",
-      "• Event leaderboards → /eventtop10 or /eventtop50",
-      "• Global leaderboards → /top10 or /top50",
+      "💰 <b>Holder Requirement</b>",
+      `Hold at least <b>${minHold} $US</b> to appear on event leaderboards.`,
       "",
-      "💰 <b>Holder Verification</b>",
-      `Hold at least <b>${minHold} $US</b> to appear on event leaderboards and join drops.`,
-      "Add or update your wallet from the /start menu (in private chat).",
-      "",
-      "🧩 <b>Community Contests</b>",
-      "We run meme, art, and game-based challenges here in the group.",
-      "Verified holders are eligible for drops and rewards.",
-      "",
-      "🌐 <b>Direct Links</b>",
-      "Play now: https://theunstable.io/fuddodge",
-      "Telegram hub: https://t.me/UnStableCoin_US",
-      "X (Twitter): https://x.com/UnStableCoinX",
+      "🌐 <b>Links</b>",
+      "Play: https://theunstable.io/fuddodge",
+      "Telegram: https://t.me/UnStableCoin_US",
+      "X: https://x.com/UnStableCoinX",
       "",
       "Stay unstable. Build weird. Hold the chaos. ⚡️",
-      "",
-      "📜 Type /help for the full command list."
     ];
-
-    await sendSafeMessage(chatId, lines.join("\n"), { parse_mode: "HTML" });
-  } catch (err) {
-    console.error("❌ /intro error:", err);
-    await sendSafeMessage(msg.chat.id, "⚠️ Could not load introduction info.");
-  }
-});
 
     await sendSafeMessage(chatId, lines.join("\n"), { parse_mode: "HTML" });
   } catch (err) {
