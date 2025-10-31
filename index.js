@@ -1671,7 +1671,7 @@ app.get("/eventtop10", async (req, res) => {
 // === TEMP TEST ENDPOINT ===
 app.get("/testpost", async (req, res) => {
   try {
-    const chatId = "-1002187343204"; // UnStableCoin group ID
+    const chatId = "-1002703016911"; // UnStableCoin group ID
     const testMsg = "⚡️ Test message from UnStableCoin backend — confirming group post works.";
 
     await bot.sendMessage(chatId, testMsg, { parse_mode: "HTML" });
