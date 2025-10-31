@@ -1594,8 +1594,6 @@ app.get("/event", async (req, res) => {
         endDate: "",
         timezone: "Europe/Stockholm",
         minHoldAmount: 0,
-        participation:
-          "Participation:\nHold the line and prepare for the next event."
       });
     }
 
@@ -1608,30 +1606,32 @@ app.get("/event", async (req, res) => {
     // 5️⃣ Load config for holding requirement
     const cfg = await getConfig();
 
-    // 6️⃣ Build unified participation text (no <br> — Telegram safe)
+    // 6️⃣ Build unified participation text (Telegram + Web safe)
     const participation = `
-<b>Participation:</b>
+<b>Participation</b>
 Hold at least <b>${cfg.minHoldAmount.toLocaleString()} $US</b> to join and appear on event leaderboards.
-Add your wallet using <code>/addwallet</code> or the 🌕 <b>Add Wallet</b> button in the <b>/start</b> menu in Telegram <b>UnStableCoin Game Bot</b>.
+Add your wallet using <i>/addwallet</i> or the 🌕 <b>Add Wallet</b> button in the start menu of Telegram <b>UnStableCoin Game Bot</b>.
 
 We run various community contests — memes, scores, and creative drops.
 
 <i>Stay unstable. Build weird. Hold the chaos. ⚡</i>
-- <b>UnStableCoin Community</b>
+<b>- UnStableCoin Community</b>
 `.trim();
+
+    // 7️⃣ Merge participation directly into the event info for unified display
+    const unifiedInfo = [data.info || "", participation].filter(Boolean).join("\n\n");
 
     console.log(`📤 /event → ${status.toUpperCase()} (${data.startDate} → ${data.endDate})`);
 
-    // 7️⃣ Send unified JSON response
+    // 8️⃣ Send unified JSON response
     res.json({
       status,
       title: data.title,
-      info: status === "ended" ? "Event ended. Results soon." : data.info,
+      info: status === "ended" ? "Event ended. Results soon." : unifiedInfo,
       startDate: data.startDate,
       endDate: data.endDate,
       timezone: data.timezone || "Europe/Stockholm",
       minHoldAmount: cfg.minHoldAmount || 0,
-      participation
     });
   } catch (err) {
     console.error("❌ /event failed:", err.message);
