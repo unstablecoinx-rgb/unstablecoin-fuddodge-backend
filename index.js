@@ -810,62 +810,55 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   try {
     const chatId = msg.chat.id;
 
-    // ✅ Get current holder requirement dynamically
+    // 🔧 Load config dynamically
     const cfg = await getConfig();
     const minHold = cfg?.minHoldAmount
       ? cfg.minHoldAmount.toLocaleString()
       : "—";
 
-    // 🔗 Public logo hosted on your site
+    // 🖼️ Image + bot link
     const logoUrl = "https://theunstable.io/fuddodge/assets/logo.png";
-
-    // 🖼️ Send logo first
-    await bot.sendPhoto(chatId, logoUrl, {
-      caption: "💛 <b>Welcome to the UnStableCoin Game Hub</b>",
-      parse_mode: "HTML",
-    });
-
-    // 🧩 Then send intro text
     const me = await bot.getMe();
     const botLink = `https://t.me/${me.username}?start=start`;
 
-    const lines = [
+    // 📝 Caption text (kept within safe 1000-char Telegram limit)
+    const caption = [
+      "💛 <b>Welcome to the UnStableCoin Game Bot</b>",
       "",
       "🎮 <b>How to Begin</b>",
-      `👉 <a href="${botLink}">Open the Game Bot in DM</a>`,
-      "Then type /start to connect your wallet and access the menu.",
+      `👉 <a href="${botLink}">Open the Game Bot in DM</a> and type /start to connect your wallet and access the main menu.`,
       "",
       "🚀 <b>Play the Game</b>",
-      "Use /play to start <b>FUD Dodge</b> in your private chat.",
-      "Collect coins, dodge FUD, and grow your MCap to reach the top.",
+      "Play <b>FUD Dodge</b> in your private chat.",
+      "Collect coins, dodge FUD, and climb the leaderboard.",
       "",
       "🏆 <b>Events & Rankings</b>",
-      "• Current event info → /event",
-      "• Event leaderboards → /eventtop10 or /eventtop50",
-      "• Global leaderboards → /top10 or /top50",
+      "• /event — Current event info",
+      "• /eventtop10 — Event Top 10 (holders)",
+      "• /top10 — Global Top 10",
       "",
       "💰 <b>Holder Verification</b>",
-      `Hold at least <b>${minHold} $US</b> to participate in contests and appear on event leaderboards.`,
-      "Add or update your wallet via the /start menu.",
+      `Hold at least <b>${minHold} $US</b> to qualify for contests.`,
+      "Add or update your wallet in the /start menu.",
       "",
       "🧩 <b>Community Contests</b>",
-      "We run meme, art, and game-based challenges here in the group.",
-      "Verified holders are eligible for drops and rewards.",
-      "",
-      "🌐 <b>Direct Links</b>",
-      "Play now: https://theunstable.io/fuddodge",
-      "Telegram hub: https://t.me/UnStableCoin_US",
-      "X (Twitter): https://x.com/UnStableCoinX",
+      "We run meme, art, and score challenges with $US rewards.",
       "",
       "Stay unstable. Build weird. Hold the chaos. ⚡️",
-    ];
+      "",
+      "🌐 theunstable.io | @UnStableCoinX | t.me/UnStableCoin_US"
+    ].join("\n");
 
-    await sendSafeMessage(chatId, lines.join("\n"), { parse_mode: "HTML" });
+    await bot.sendPhoto(chatId, logoUrl, {
+      caption,
+      parse_mode: "HTML",
+    });
   } catch (err) {
     console.error("❌ /intro error:", err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load introduction info.");
   }
 });
+
 
 // ==========================================================
 //  /bugreport — report bugs or issues (to BUG_REPORT_CHAT_ID)
