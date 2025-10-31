@@ -839,7 +839,7 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       "",
       "💰 <b>Holder Verification</b>",
       `Hold at least <b>${minHold} $US</b> to qualify for contests.`,
-      "Add or update your wallet in the /start menu.",
+      "Add or update your wallet in the UnStableCoin Game Bot start menu.",
       "",
       "🧩 <b>Community Contests</b>",
       "We run meme, art, and score challenges with $US rewards.",
