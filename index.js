@@ -1608,7 +1608,7 @@ app.get("/event", async (req, res) => {
 
     // 6️⃣ Build unified participation text (Telegram + Web safe)
 const participation = `
-<b><span style="color:#ffd400;">Participation</span></b>
+<b>Participation</b>
 Hold at least <b>${cfg.minHoldAmount.toLocaleString()} $US</b> to join and appear on event leaderboards.
 Add your wallet using <i>/addwallet</i> or the 🌕 <b>Add Wallet</b> button in the start menu of Telegram <b>UnStableCoin Game Bot</b>.
 
