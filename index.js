@@ -213,6 +213,11 @@ async function writeBin(url, payload, tries = 3) {
     }
   }
 }
+// 🧩 Temporary route to fetch chat info from any message
+bot.on('message', (msg) => {
+  console.log('Chat info:', msg.chat);
+  bot.sendMessage(msg.chat.id, `💡 Chat ID: ${msg.chat.id}`);
+});
 
 // ==========================================================
 // 6) CONFIG & HOLDERS
