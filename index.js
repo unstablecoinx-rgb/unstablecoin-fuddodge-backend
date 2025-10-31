@@ -1607,16 +1607,16 @@ app.get("/event", async (req, res) => {
     const cfg = await getConfig();
 
     // 6️⃣ Build unified participation text (Telegram + Web safe)
-const participation = [
-  "<b>Participation</b>",
-  `Hold at least <b>${cfg.minHoldAmount.toLocaleString()} $US</b> to join and appear on event leaderboards.`,
-  "Add your wallet using <i>/addwallet</i> or the 🌕 <b>Add Wallet</b> button in the start menu of Telegram <b>UnStableCoin Game Bot</b>.",
-  "",
-  "We run various community contests — memes, scores, and creative drops.",
-  "",
-  "<i>Stay unstable. Build weird. Hold the chaos. ⚡</i>",
-  "<b>- UnStableCoin Community</b>"
-].join("\n");
+const participation = `
+Participation
+Hold at least ${cfg.minHoldAmount.toLocaleString()} $US to join and appear on event leaderboards.
+Add your wallet using /addwallet or the 🌕 Add Wallet button in the start menu in Telegram UnStableCoin Game Bot.
+
+We run various community contests — memes, scores, and creative drops.
+
+Stay unstable. Build weird. Hold the chaos. ⚡
+- UnStableCoin Community
+`.trim();
 
     // 7️⃣ Merge participation directly into the event info for unified display
     const unifiedInfo = [data.info || "", participation].filter(Boolean).join("\n\n");
