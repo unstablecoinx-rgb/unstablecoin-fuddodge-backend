@@ -806,11 +806,14 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   }
 });
 
+// ==========================================================
+//  /intro — With local UnStableCoin logo (assets/logo.png)
+// ==========================================================
 bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   try {
     const chatId = msg.chat.id;
 
-    // ✅ Dynamic holding requirement
+    // ✅ Dynamic holder requirement
     const cfg = await getConfig();
     const minHold = cfg?.minHoldAmount
       ? cfg.minHoldAmount.toLocaleString()
@@ -819,8 +822,17 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     const me = await bot.getMe();
     const botLink = `https://t.me/${me.username}?start=start`;
 
+    // 🖼️ Local logo path
+    const logoPath = "./assets/logo.png";
+
+    // --- Send logo first ---
+    await bot.sendPhoto(chatId, logoPath, {
+      caption: "💛 <b>Welcome to the UnStableCoin Game Hub</b>",
+      parse_mode: "HTML",
+    });
+
+    // --- Then send intro text ---
     const lines = [
-      "💛 <b>Welcome to the UnStableCoin Game Hub</b>",
       "",
       "🎮 <b>How to Begin</b>",
       "To set up your player profile, open a private chat with the bot.",
@@ -853,6 +865,13 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       "",
       "📜 Type /help for the full command list."
     ];
+
+    await sendSafeMessage(chatId, lines.join("\n"), { parse_mode: "HTML" });
+  } catch (err) {
+    console.error("❌ /intro error:", err);
+    await sendSafeMessage(msg.chat.id, "⚠️ Could not load introduction info.");
+  }
+});
 
     await sendSafeMessage(chatId, lines.join("\n"), { parse_mode: "HTML" });
   } catch (err) {
