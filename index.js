@@ -809,19 +809,25 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   try {
     const chatId = msg.chat.id;
+
+    // ✅ Get current holder requirement dynamically
     const cfg = await getConfig();
     const minHold = cfg?.minHoldAmount
       ? cfg.minHoldAmount.toLocaleString()
       : "—";
 
-    const me = await bot.getMe();
-    const botLink = `https://t.me/${me.username}?start=start`;
-    const logoPath = "./assets/logo.png";
+    // 🔗 Public logo hosted on your site
+    const logoUrl = "https://theunstable.io/fuddodge/assets/logo.png";
 
-    await bot.sendPhoto(chatId, logoPath, {
+    // 🖼️ Send logo first
+    await bot.sendPhoto(chatId, logoUrl, {
       caption: "💛 <b>Welcome to the UnStableCoin Game Hub</b>",
       parse_mode: "HTML",
     });
+
+    // 🧩 Then send intro text
+    const me = await bot.getMe();
+    const botLink = `https://t.me/${me.username}?start=start`;
 
     const lines = [
       "",
@@ -831,14 +837,25 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       "",
       "🚀 <b>Play the Game</b>",
       "Use /play to start <b>FUD Dodge</b> in your private chat.",
+      "Collect coins, dodge FUD, and grow your MCap to reach the top.",
       "",
-      "💰 <b>Holder Requirement</b>",
-      `Hold at least <b>${minHold} $US</b> to appear on event leaderboards.`,
+      "🏆 <b>Events & Rankings</b>",
+      "• Current event info → /event",
+      "• Event leaderboards → /eventtop10 or /eventtop50",
+      "• Global leaderboards → /top10 or /top50",
       "",
-      "🌐 <b>Links</b>",
-      "Play: https://theunstable.io/fuddodge",
-      "Telegram: https://t.me/UnStableCoin_US",
-      "X: https://x.com/UnStableCoinX",
+      "💰 <b>Holder Verification</b>",
+      `Hold at least <b>${minHold} $US</b> to participate in contests and appear on event leaderboards.`,
+      "Add or update your wallet via the /start menu.",
+      "",
+      "🧩 <b>Community Contests</b>",
+      "We run meme, art, and game-based challenges here in the group.",
+      "Verified holders are eligible for drops and rewards.",
+      "",
+      "🌐 <b>Direct Links</b>",
+      "Play now: https://theunstable.io/fuddodge",
+      "Telegram hub: https://t.me/UnStableCoin_US",
+      "X (Twitter): https://x.com/UnStableCoinX",
       "",
       "Stay unstable. Build weird. Hold the chaos. ⚡️",
     ];
