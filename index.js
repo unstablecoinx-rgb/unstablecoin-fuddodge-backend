@@ -846,7 +846,8 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       "",
       "Stay unstable. Build weird. Hold the chaos. ⚡️",
       "",
-      "🌐 theunstable.io | x.com/unstablecoinx";
+      "🌐 theunstable.io | x.com/UnStableCoinX | t.me/UnStableCoin_US"
+    ].join("\n"); // 👈 You forgot this and the closing bracket
 
     await bot.sendPhoto(chatId, logoUrl, {
       caption,
@@ -857,6 +858,7 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load introduction info.");
   }
 });
+
 
 
 // ==========================================================
