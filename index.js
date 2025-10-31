@@ -806,29 +806,29 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   }
 });
 
-// ==========================================================
-//  /intro — Onboarding message for new users & group intro
-// ==========================================================
 bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   try {
     const chatId = msg.chat.id;
 
-    // ✅ Get current holder requirement dynamically
+    // ✅ Dynamic holding requirement
     const cfg = await getConfig();
     const minHold = cfg?.minHoldAmount
       ? cfg.minHoldAmount.toLocaleString()
       : "—";
 
+    const me = await bot.getMe();
+    const botLink = `https://t.me/${me.username}?start=start`;
+
     const lines = [
       "💛 <b>Welcome to the UnStableCoin Game Hub</b>",
       "",
       "🎮 <b>How to Begin</b>",
-      "Use /start to open the main menu of the UnStableCoin Game Bot.",
-      "That’s where you can connect your wallet, verify as a holder,",
-      "and access quick links to play or view leaderboards.",
+      "To set up your player profile, open a private chat with the bot.",
+      `👉 <a href="${botLink}">Click here to open the Game Bot in DM</a>`,
+      "Then type /start — that’s where you can connect your wallet, verify as a holder, and access the game menu.",
       "",
       "🚀 <b>Play the Game</b>",
-      "Launch <b>FUD Dodge</b> directly using /play.",
+      "Launch <b>FUD Dodge</b> using /play in your private chat.",
       "Collect coins, dodge FUD, and grow your MCap to reach the top.",
       "",
       "🏆 <b>Events & Rankings</b>",
@@ -837,8 +837,8 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       "• Global leaderboards → /top10 or /top50",
       "",
       "💰 <b>Holder Verification</b>",
-      `Hold at least <b>${minHold} $US</b> to participate in contests and appear on event leaderboards.`,
-      "Add or update your wallet via the /start menu.",
+      `Hold at least <b>${minHold} $US</b> to appear on event leaderboards and join drops.`,
+      "Add or update your wallet from the /start menu (in private chat).",
       "",
       "🧩 <b>Community Contests</b>",
       "We run meme, art, and game-based challenges here in the group.",
