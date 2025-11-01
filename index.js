@@ -1532,17 +1532,30 @@ app.get("/holderStatus", async (req, res) => {
   }
 });
 
-// 🧩 Final /share — always saves scores (event + global), optional ATH posting
+// ======================================================
+// ✅ CLEAN FIXED /share — Restored Telegram post logic
+// ======================================================
 app.post("/share", async (req, res) => {
   try {
-    const { username, score, imageBase64, mode, curveImage } = req.body;
+    const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
     if (!username) return res.status(400).json({ ok: false, message: "Missing username" });
 
-    const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-    const targetChatId = ATH_CHAT_ID;
+    const cfg = await getConfig();
+    const holders = await getHoldersMapFromArray();
+    const userRec = holders[username] || holders[normalizeUsername(username)];
     const isAth = String(mode).toLowerCase() === "ath";
+    const targetChatId = ATH_CHAT_ID;
 
-    // === Step 1: ATH record check ===
+    // --- Verify holder ---
+    if (!userRec?.wallet) {
+      return res.json({ ok: false, message: "Wallet not verified. Use /verifyholder first." });
+    }
+    const verified = await checkSolanaHolding(userRec.wallet, cfg.minHoldAmount || 0);
+    if (!verified.ok) {
+      return res.json({ ok: false, message: "Holding below required minimum." });
+    }
+
+    // --- Load previous ATH records ---
     let shared = {};
     try {
       const r = await axios.get(`${ATH_BIN_URL}/latest`, {
@@ -1553,48 +1566,51 @@ app.post("/share", async (req, res) => {
       console.warn("⚠️ Could not load previous A.T.H. records:", err.message);
     }
 
-    const prevAth = shared[username] || 0;
-    if (isAth && score <= prevAth && !ATH_TEST_MODE) {
-      console.log(`🚫 ${username} already shared same or higher A.T.H. (${prevAth})`);
+    const prev = shared[username] || 0;
+    if (isAth && score <= prev && !ATH_TEST_MODE) {
+      console.log(`🚫 ${username} already shared same or higher A.T.H. (${prev})`);
       return res.json({
         ok: true,
         posted: false,
         stored: false,
-        message: "Already shared. Make a new A.T.H. and share that.",
+        message: "Already shared same or higher A.T.H.",
       });
     }
 
-// === Step 2: Telegram post ===
-const caption = isAth
-  ? `💛 ${username} just reached a new A.T.H: ${score.toLocaleString()} MCap!\n#UnStableCoin #WAGMI-ish`
-  : `⚡️ ${username} posted a highlight moment!\nScore: ${score.toLocaleString()}`;
+    // --- Prepare photo data (safe format) ---
+    let photoData = curveImage || imageBase64;
+    if (!photoData) return res.status(400).json({ ok: false, message: "Missing image data" });
 
-let photoData = curveImage || imageBase64;
-if (!photoData)
-  return res.status(400).json({ ok: false, message: "Missing image data" });
+    // ✅ Auto-fix missing base64 prefix for Telegram
+    if (photoData.startsWith("iVBOR") || photoData.startsWith("/9j/")) {
+      photoData = "data:image/png;base64," + photoData;
+    }
 
-// 🩹 Normalize base64 for Telegram
-if (!photoData.startsWith("data:image")) {
-  photoData = "data:image/png;base64," + photoData;
-}
-while (photoData.length % 4 !== 0) photoData += "=";
+    // --- Compose caption ---
+    const caption = isAth
+      ? `💛 ${username} just reached a new A.T.H of ${score.toLocaleString()} MCap!\n#UnStableCoin #WAGMI-ish`
+      : `⚡️ ${username} shared a highlight — MCap ${score.toLocaleString()}`;
 
-let tgResp = null; // ✅ ensure it exists even if posting fails or skipped
+    // --- Send photo to Telegram ---
+    let tgResp = null;
+    try {
+      tgResp = await axios.post(
+        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
+        {
+          chat_id: targetChatId,
+          caption,
+          photo: photoData,
+          parse_mode: "HTML",
+        }
+      );
+      console.log(`📤 Sent ${isAth ? "A.T.H." : "highlight"} post to Telegram`);
+    } catch (err) {
+      console.error("❌ Telegram post failed:", err.response?.data || err.message);
+      return res.status(500).json({ ok: false, message: "Telegram upload failed" });
+    }
 
-try {
-  tgResp = await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-    chat_id: targetChatId,
-    caption,
-    photo: photoData,
-    parse_mode: "HTML",
-  });
-  console.log(`📤 Sent ${isAth ? "A.T.H." : "post"} to Telegram`);
-} catch (err) {
-  console.error("❌ Telegram post failed:", err.response?.data || err.message);
-}
-
-    // === Step 3: ATH update ===
-    if (isAth && score > prevAth) {
+    // --- Record new A.T.H. ---
+    if (isAth && score > prev) {
       shared[username] = score;
       try {
         await axios.put(`${ATH_BIN_URL}`, shared, {
@@ -1609,48 +1625,22 @@ try {
       }
     }
 
-    // === Step 4: Update EVENT leaderboard (always) ===
+    // --- Update event leaderboard (if active) ---
     try {
-      const evData = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`);
-      let data = evData?.record || evData || {};
-      while (data.record) data = data.record;
-      let scores = Array.isArray(data.scores) ? data.scores : [];
+      const meta = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
+      const record = meta?.record?.record || meta?.record || {};
+      const now = new Date();
+      const start = record.startDate ? new Date(record.startDate) : null;
+      const end = record.endDate ? new Date(record.endDate) : null;
+      const isActive = start && end && now >= start && now <= end;
 
-      const prev = scores.find((x) => x.username === username);
-      if (!prev || score > prev.score) {
-        scores = [
-          ...scores.filter((x) => x.username !== username),
-          { username, score, at: new Date().toISOString() },
-        ];
+      if (isActive) {
+        const evData = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
+        const scores = evData?.record || evData || {};
+        scores[username] = Math.max(Number(scores[username] || 0), Number(score));
+
         await axios.put(
           `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`,
-          { resetAt: data.resetAt || new Date().toISOString(), scores },
-          {
-            headers: {
-              "X-Master-Key": process.env.JSONBIN_KEY,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-        console.log(`⚡ Saved ${username} (${score}) to event leaderboard`);
-      } else {
-        console.log(`📉 Lower event score ignored for ${username} (${score} <= ${prev.score})`);
-      }
-    } catch (err) {
-      console.warn("⚠️ Could not update event leaderboard:", err.message);
-    }
-
-    // === Step 5: Update GLOBAL leaderboard ===
-    try {
-      const mainData = await readBin(`https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}/latest`);
-      let scores = mainData?.record || mainData || {};
-      while (scores.record) scores = scores.record;
-
-      const prevGlobal = Number(scores[username] || 0);
-      if (score > prevGlobal) {
-        scores[username] = score;
-        await axios.put(
-          `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}`,
           { record: scores },
           {
             headers: {
@@ -1659,20 +1649,28 @@ try {
             },
           }
         );
-        console.log(`🏁 Global leaderboard updated: ${username} (${score})`);
+
+        console.log(`⚡ Saved ${username} (${score}) to event leaderboard`);
       } else {
-        console.log(`📉 Lower global score ignored for ${username} (${score} <= ${prevGlobal})`);
+        console.log("⚠️ No active event — skipping event leaderboard update.");
       }
     } catch (err) {
-      console.warn("⚠️ Could not update global leaderboard:", err.message);
+      console.warn("⚠️ Could not update event leaderboard:", err.message);
     }
 
-    res.json({ ok: true, posted: !!tgResp, stored: isAth });
+    // --- Done ---
+    res.json({
+      ok: true,
+      posted: true,
+      stored: isAth,
+      message: "Posted successfully",
+    });
   } catch (err) {
     console.error("❌ /share error:", err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
+
 
 // ==========================================================
 // 🌐 WEB APP ENDPOINTS — FUD DODGE Splash & Game
