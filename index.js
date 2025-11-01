@@ -1510,25 +1510,20 @@ app.post("/share", async (req, res) => {
       });
     }
 
-    // === Step 2: Telegram post (optional) ===
-    const caption = isAth
-      ? `💛 ${username} just reached a new A.T.H: ${score.toLocaleString()} MCap!\n#UnStableCoin #WAGMI-ish`
-      : `⚡️ ${username} posted a highlight moment!\nScore: ${score.toLocaleString()}`;
-    const photoData = curveImage || imageBase64;
-    if (!photoData) return res.status(400).json({ ok: false, message: "Missing image data" });
+// === Step 2: Telegram post ===
+const caption = isAth
+  ? `💛 ${username} just reached a new A.T.H: ${score.toLocaleString()} MCap!\n#UnStableCoin #WAGMI-ish`
+  : `⚡️ ${username} posted a highlight moment!\nScore: ${score.toLocaleString()}`;
 
-    let tgResp = null;
-    try {
-      tgResp = await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-        chat_id: targetChatId,
-        caption,
-        photo: photoData,
-        parse_mode: "HTML",
-      });
-      console.log(`📤 Sent ${isAth ? "A.T.H." : "post"} to Telegram`);
-    } catch (err) {
-      console.error("❌ Telegram post failed:", err.response?.data || err.message);
-    }
+let photoData = curveImage || imageBase64;
+if (!photoData)
+  return res.status(400).json({ ok: false, message: "Missing image data" });
+
+// 🩹 Normalize base64 for Telegram
+if (!photoData.startsWith("data:image")) {
+  photoData = "data:image/png;base64," + photoData;
+}
+while (photoData.length % 4 !== 0) photoData += "=";
 
     // === Step 3: ATH update ===
     if (isAth && score > prevAth) {
