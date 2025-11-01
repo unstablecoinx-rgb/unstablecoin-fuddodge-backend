@@ -934,13 +934,66 @@ bot.onText(/\/top50/i, async (msg) => {
   }
 });
 
-// --- EVENT LEADERBOARD COMMANDS ---
+// ==========================================================
+// 🧩 Unified verified event leaderboard (cached balance checks)
+// ==========================================================
+const _verifyCache = new Map();
+
+async function getVerifiedEventTopArray(limit = 10) {
+  try {
+    // 🧩 1. Load event scores (array format)
+    const res = await axios.get(`${EVENT_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY },
+    });
+    const data = res.data?.record || {};
+    const scores = Array.isArray(data.scores) ? data.scores : [];
+
+    // 🧩 2. Load verified holders
+    const holdersMap = await getHoldersMapFromArray();
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+
+    // 🧩 3. Check on-chain status (with 10-minute cache)
+    const verifiedList = [];
+    const now = Date.now();
+    const TTL = 10 * 60 * 1000; // 10 minutes
+
+    for (const s of scores) {
+      const rec = holdersMap[s.username];
+      if (!rec?.wallet) continue;
+
+      const key = rec.wallet.toLowerCase();
+      const cached = _verifyCache.get(key);
+
+      if (cached && now - cached.t < TTL) {
+        if (cached.ok) verifiedList.push(s);
+        continue;
+      }
+
+      const check = await checkSolanaHolding(rec.wallet, minHold);
+      _verifyCache.set(key, { ok: check.ok, t: now });
+      if (check.ok) verifiedList.push(s);
+    }
+
+    // 🧩 4. Sort & limit
+    verifiedList.sort((a, b) => b.score - a.score);
+    console.log(`⚡ Verified ${verifiedList.length} holders for leaderboard`);
+    return verifiedList.slice(0, limit);
+  } catch (err) {
+    console.error("❌ getVerifiedEventTopArray failed:", err.message);
+    return [];
+  }
+}
+
+
+// --- EVENT LEADERBOARD COMMANDS (verified only) ---
 bot.onText(/\/eventtop10/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const top = await getVerifiedEventTop(10);
-    if (!top.length) return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
-    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${x.score}`);
+    const top = await getVerifiedEventTopArray(10);
+    if (!top.length)
+      return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
+    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${Math.round(x.score)}`);
     await sendChunked(chatId, "⚡ <b>Event Top 10 (Verified)</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop10:", err.message);
@@ -951,9 +1004,10 @@ bot.onText(/\/eventtop10/i, async (msg) => {
 bot.onText(/\/eventtop50/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const top = await getVerifiedEventTop(50);
-    if (!top.length) return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
-    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${x.score}`);
+    const top = await getVerifiedEventTopArray(50);
+    if (!top.length)
+      return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
+    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${Math.round(x.score)}`);
     await sendChunked(chatId, "⚡ <b>Event Top 50 (Verified)</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop50:", err.message);
@@ -1525,6 +1579,20 @@ if (!photoData.startsWith("data:image")) {
 }
 while (photoData.length % 4 !== 0) photoData += "=";
 
+let tgResp = null; // ✅ ensure it exists even if posting fails or skipped
+
+try {
+  tgResp = await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+    chat_id: targetChatId,
+    caption,
+    photo: photoData,
+    parse_mode: "HTML",
+  });
+  console.log(`📤 Sent ${isAth ? "A.T.H." : "post"} to Telegram`);
+} catch (err) {
+  console.error("❌ Telegram post failed:", err.response?.data || err.message);
+}
+
     // === Step 3: ATH update ===
     if (isAth && score > prevAth) {
       shared[username] = score;
@@ -1702,6 +1770,8 @@ Stay unstable. Build weird. Hold the chaos. ⚡
     res.status(500).json({ error: "Failed to load event info" });
   }
 });
+
+
 
 // === EVENT LEADERBOARD (TOP 10) ===
 app.get("/eventtop10", async (req, res) => {
