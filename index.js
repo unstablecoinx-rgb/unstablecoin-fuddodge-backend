@@ -45,7 +45,7 @@ const CONFIG_DEFAULTS = {
 };
 
 // 🧩 Feature toggles
-const ATH_TEST_MODE = false; // disable test mode for production
+const ATH_TEST_MODE = true; // disable test mode for production
 const ATH_CHAT_ID = process.env.ATH_CHAT_ID || "-1002703016911";
 // --- Bug reports destination (currently same as A.T.H. chat) ---
 const BUG_REPORT_CHAT_ID = ATH_CHAT_ID; // can later be replaced with your group chat id
