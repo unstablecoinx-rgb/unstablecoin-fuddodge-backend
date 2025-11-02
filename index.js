@@ -916,18 +916,20 @@ bot.onText(/\/bugreport(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 // 🧩 PATCH: Leaderboard + Admin Commands (v3.4.1 restore)
 // ==========================================================
 
-// --- Helper: format scores as MCap (k / M) ---
+// ==========================================================
+// 🧩 LEADERBOARD COMMANDS — unified MCap format (always k/M)
+// ==========================================================
+
+// Helper: format scores as MCap (always k, switch to M after 1M)
 function formatMcap(score) {
   if (score >= 1_000_000) {
     return (score / 1_000_000).toFixed(2) + "M";
-  } else if (score >= 100_000) {
-    return (score / 1000).toFixed(1) + "k";
   } else {
-    return Math.round(score).toString();
+    return (score / 1000).toFixed(1) + "k";
   }
 }
 
-// --- LEADERBOARD COMMANDS ---
+// --- TOP 10 ---
 bot.onText(/\/top10/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
@@ -951,6 +953,7 @@ bot.onText(/\/top10/i, async (msg) => {
   }
 });
 
+// --- TOP 50 ---
 bot.onText(/\/top50/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
@@ -1029,14 +1032,12 @@ async function getVerifiedEventTopArray(limit = 10) {
 // --- EVENT LEADERBOARD COMMANDS (verified only) ---
 // ==========================================================
 
-// 🧩 Helper: format scores as MCap (k / M)
+// 🧩 Helper: format scores as MCap (always k, switch to M after 1M)
 function formatMcap(score) {
   if (score >= 1_000_000) {
     return (score / 1_000_000).toFixed(2) + "M";
-  } else if (score >= 100_000) {
-    return (score / 1000).toFixed(1) + "k";
   } else {
-    return Math.round(score).toString();
+    return (score / 1000).toFixed(1) + "k";
   }
 }
 
@@ -1131,14 +1132,12 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 
   await sendSafeMessage(chatId, "📊 Fetching top 10 event holders...");
 
-  // 🧩 Helper: format MCap nicely (k / M)
+  // 🧩 Helper: format MCap (always k, switch to M after 1M)
   function formatMcap(score) {
     if (score >= 1_000_000) {
       return (score / 1_000_000).toFixed(2) + "M";
-    } else if (score >= 100_000) {
-      return (score / 1000).toFixed(1) + "k";
     } else {
-      return Math.round(score).toString();
+      return (score / 1000).toFixed(1) + "k";
     }
   }
 
