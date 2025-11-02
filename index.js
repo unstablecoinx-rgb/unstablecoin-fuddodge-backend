@@ -67,6 +67,8 @@ const JSONBIN_KEY               = process.env.JSONBIN_KEY;
 const RESET_KEY                 = process.env.RESET_KEY;
 const RENDER_EXTERNAL_HOSTNAME  = process.env.RENDER_EXTERNAL_HOSTNAME || null;
 const PORT                      = process.env.PORT || 10000;
+const ATH_CHARTS_BIN_ID         = process.env.ATH_CHARTS_BIN_ID;
+
 
 // ✅ Validation — ensure all required ENV vars exist
 if (
@@ -97,6 +99,7 @@ const ATH_SHARED_BIN_URL      = `https://api.jsonbin.io/v3/b/${ATH_SHARED_ID}`;
 const EVENT_BIN_URL           = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}`;          // event scores
 const EVENT_META_BIN_URL      = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;     // event info/meta
 const EVENT_SNAPSHOT_BIN_URL  = `https://api.jsonbin.io/v3/b/${EVENT_SNAPSHOT_JSONBIN_ID}`; // archived events
+const ATH_CHARTS_URL          = `https://api.jsonbin.io/v3/b/${ATH_CHARTS_BIN_ID}`;
 
 // ==========================================================
 // 🧑‍💻 ADMIN
@@ -1923,6 +1926,64 @@ app.post("/eventsubmit", async (req, res) => {
   } catch (err) {
     console.error("❌ /eventsubmit error:", err.message);
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get("/getChart", async (req, res) => {
+  const { username } = req.query;
+  if (!username) return res.status(400).json({ ok: false, message: "Missing username" });
+
+  try {
+    const r = await axios.get(`${ATH_CHARTS_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    const data = r.data?.record || {};
+
+    const record = data[username] || { ath: 0, chartData: [], updated: null };
+    res.json({ ok: true, ...record });
+  } catch (err) {
+    console.error("❌ getChart failed:", err.message);
+    res.status(500).json({ ok: false, message: "Failed to fetch chart data" });
+  }
+});
+
+app.post("/saveChart", async (req, res) => {
+  const { username, ath, chartData } = req.body;
+  if (!username || !Array.isArray(chartData))
+    return res.status(400).json({ ok: false, message: "Invalid payload" });
+
+  try {
+    // Fetch current data
+    const r = await axios.get(`${ATH_CHARTS_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+    const all = r.data?.record || {};
+    const existing = all[username] || { ath: 0, chartData: [], updated: null };
+
+    // Compare
+    if (ath > existing.ath) {
+      all[username] = {
+        ath,
+        chartData,
+        updated: new Date().toISOString()
+      };
+
+      // Write back
+      await axios.put(ATH_CHARTS_URL, all, {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": JSONBIN_KEY
+        }
+      });
+
+      console.log(`📈 Saved new ATH chart for ${username}`);
+      return res.json({ ok: true, updated: true });
+    } else {
+      return res.json({ ok: true, updated: false, message: "Existing ATH is higher" });
+    }
+  } catch (err) {
+    console.error("❌ saveChart failed:", err.message);
+    res.status(500).json({ ok: false, message: "Failed to save chart data" });
   }
 });
  
