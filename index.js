@@ -1871,7 +1871,7 @@ app.get("/leaderboard", async (req, res) => {
 });
 
 // ======================================================
-// 🚀 EVENT META + LEADERBOARD (Unified Logic)
+// 🚀 EVENT META + LEADERBOARD (Unified Logic with banner + overlay)
 // ======================================================
 app.get("/event", async (req, res) => {
   try {
@@ -1892,6 +1892,11 @@ app.get("/event", async (req, res) => {
         status: "inactive",
         title: "UnStable Challenge",
         info: "Stay tuned for upcoming events.",
+        banner: "https://theunstable.io/fuddodge/assets/event.png",
+        overlay: {
+          text: "No active event",
+          color: "rgba(0,0,0,0.6)",
+        },
         startDate: "",
         endDate: "",
         timezone: "Europe/Stockholm",
@@ -1909,7 +1914,7 @@ app.get("/event", async (req, res) => {
     const cfg = await getConfig();
 
     // 6️⃣ Build unified participation text (Telegram + Web safe)
-const participation = `
+    const participation = `
 Participation
 Hold at least ${cfg.minHoldAmount.toLocaleString()} $US to join and appear on event leaderboards.
 Add your wallet using /addwallet or the 🌕 Add Wallet button in the start menu in Telegram UnStableCoin Game Bot.
@@ -1925,11 +1930,27 @@ Stay unstable. Build weird. Hold the chaos. ⚡
 
     console.log(`📤 /event → ${status.toUpperCase()} (${data.startDate} → ${data.endDate})`);
 
-    // 8️⃣ Send unified JSON response
+    // 8️⃣ Overlay logic based on status
+    const overlay =
+      status === "ended"
+        ? {
+            text: "This event has ended.\nStay tuned for our next contest!",
+            color: "rgba(0, 0, 0, 0.6)",
+          }
+        : status === "upcoming"
+        ? {
+            text: "Contest starting soon!\nPrepare your memes, your scores, your chaos. ⚡",
+            color: "rgba(0, 0, 0, 0.5)",
+          }
+        : null;
+
+    // 9️⃣ Send unified JSON response
     res.json({
       status,
       title: data.title,
       info: status === "ended" ? "Event ended. Results soon." : unifiedInfo,
+      banner: "https://theunstable.io/fuddodge/assets/event.png",
+      overlay,
       startDate: data.startDate,
       endDate: data.endDate,
       timezone: data.timezone || "Europe/Stockholm",
@@ -1940,7 +1961,6 @@ Stay unstable. Build weird. Hold the chaos. ⚡
     res.status(500).json({ error: "Failed to load event info" });
   }
 });
-
 
 
 // === EVENT LEADERBOARD (TOP 10) ===
