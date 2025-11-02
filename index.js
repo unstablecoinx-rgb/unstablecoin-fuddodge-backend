@@ -1893,7 +1893,6 @@ app.get("/leaderboard", async (req, res) => {
   }
 });
 
-Did you build banner into this
 
 // ======================================================
 // 🚀 EVENT META + LEADERBOARD (Unified Logic)
