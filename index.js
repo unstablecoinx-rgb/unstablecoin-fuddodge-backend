@@ -1050,10 +1050,9 @@ async function getVerifiedEventTopArray(limit = 10) {
 }
 
 // ==========================================================
-// --- EVENT LEADERBOARD COMMANDS (verified only) ---
+// 🧩 EVENT LEADERBOARD COMMANDS — single post (banner + text)
 // ==========================================================
 
-// 🧩 Helper: format scores as MCap (always k, switch to M after 1M)
 function formatMcap(score) {
   if (score >= 1_000_000) {
     return (score / 1_000_000).toFixed(2) + "M";
@@ -1062,6 +1061,7 @@ function formatMcap(score) {
   }
 }
 
+// --- EVENT TOP 10 ---
 bot.onText(/\/eventtop10/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
@@ -1069,18 +1069,32 @@ bot.onText(/\/eventtop10/i, async (msg) => {
     if (!top.length)
       return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
 
-    const lines = top.map((x, i) => {
-      const formatted = formatMcap(Number(x.score));
-      return `${i + 1}. ${x.username} — ${formatted}`;
+    const lines = top
+      .map((x, i) => `${i + 1}. ${x.username} — ${formatMcap(Number(x.score))}`)
+      .join("\n");
+
+    const caption =
+      "🚀 <b>Compete for prices!</b>\n" +
+      "🏁 <b>Contest Top 10 (Verified)</b>\n\n" +
+      lines + "\n\n" +
+      "Hold. Race. Meme. Repeat.⚡";
+
+    const bannerUrl = "https://theunstable.io/fuddodge/assets/eventtop.png";
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      chat_id: chatId,
+      photo: bannerUrl,
+      caption,
+      parse_mode: "HTML",
     });
 
-    await sendChunked(chatId, "⚡ <b>Event Top 10 (Verified)</b>\n\n", lines);
+    console.log("📤 Sent /eventtop10 (single post)");
   } catch (err) {
     console.error("❌ /eventtop10:", err.message);
     sendSafeMessage(chatId, "⚠️ Could not load event leaderboard.");
   }
 });
 
+// --- EVENT TOP 50 ---
 bot.onText(/\/eventtop50/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
@@ -1088,12 +1102,25 @@ bot.onText(/\/eventtop50/i, async (msg) => {
     if (!top.length)
       return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
 
-    const lines = top.map((x, i) => {
-      const formatted = formatMcap(Number(x.score));
-      return `${i + 1}. ${x.username} — ${formatted}`;
+    const lines = top
+      .map((x, i) => `${i + 1}. ${x.username} — ${formatMcap(Number(x.score))}`)
+      .join("\n");
+
+    const caption =
+      "⚡ <b>Compete for prices!</b>\n" +
+      "📈 <b>Contest Top 50 (Verified)</b>\n\n" +
+      lines + "\n\n" +
+      "Stretch that MCap curve to the moon.⚡";
+
+    const bannerUrl = "https://theunstable.io/fuddodge/assets/eventtop.png";
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      chat_id: chatId,
+      photo: bannerUrl,
+      caption,
+      parse_mode: "HTML",
     });
 
-    await sendChunked(chatId, "⚡ <b>Event Top 50 (Verified)</b>\n\n", lines);
+    console.log("📤 Sent /eventtop50 (single post)");
   } catch (err) {
     console.error("❌ /eventtop50:", err.message);
     sendSafeMessage(chatId, "⚠️ Could not load event leaderboard.");
