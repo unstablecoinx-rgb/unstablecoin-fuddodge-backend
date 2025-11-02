@@ -785,7 +785,7 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     }
 
     // 2️⃣ Always use same banner
-    const bannerUrl = "https://theunstable.io/fuddodge/assets/event.png";
+    const bannerUrl = "https://theunstable.io/fuddodge/assets/event_banner.png";
 
     // 3️⃣ Start building caption
     let caption = `🚀 <b>${escapeXml(data.title)}</b>\n\n`;
