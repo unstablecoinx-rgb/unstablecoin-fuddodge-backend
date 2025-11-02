@@ -130,10 +130,8 @@ const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 function formatMcap(score) {
   if (score >= 1_000_000) {
     return (score / 1_000_000).toFixed(2) + "M";
-  } else if (score >= 100_000) {
-    return (score / 1000).toFixed(1) + "k";
   } else {
-    return Math.round(score).toString();
+    return (score / 1000).toFixed(1) + "k";
   }
 }
 
