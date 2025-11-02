@@ -127,6 +127,16 @@ const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
   }
 })();
 
+function formatMcap(score) {
+  if (score >= 1_000_000) {
+    return (score / 1_000_000).toFixed(2) + "M";
+  } else if (score >= 100_000) {
+    return (score / 1000).toFixed(1) + "k";
+  } else {
+    return Math.round(score).toString();
+  }
+}
+
 app.post(`/bot${TELEGRAM_BOT_TOKEN}`, (req, res) => {
   try {
     bot.processUpdate(req.body);
@@ -1071,10 +1081,23 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 
   await sendSafeMessage(chatId, "📊 Fetching top 10 event holders...");
 
+  // 🧩 Helper: format MCap nicely (k / M)
+  function formatMcap(score) {
+    if (score >= 1_000_000) {
+      return (score / 1_000_000).toFixed(2) + "M";
+    } else if (score >= 100_000) {
+      return (score / 1000).toFixed(1) + "k";
+    } else {
+      return Math.round(score).toString();
+    }
+  }
+
   try {
     const { scores } = await getEventData();
     const holdersMap = await getHoldersMapFromArray();
-    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const sorted = Object.entries(scores)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
 
     if (!sorted.length)
       return sendSafeMessage(chatId, "⚠️ No event data found.");
@@ -1084,7 +1107,8 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       const wallet = holder?.wallet
         ? holder.wallet.slice(0, 4) + "…" + holder.wallet.slice(-4)
         : "—";
-      return `${i + 1}. ${uname} — ${score}  |  ${wallet}`;
+      const formatted = formatMcap(Number(score));
+      return `${i + 1}. ${uname} — ${formatted} | ${wallet}`;
     });
 
     const header = "🏁 <b>Top 10 Event Holders</b>\n\n";
