@@ -772,6 +772,7 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     const tz = "Europe/Stockholm";
     const now = DateTime.now().setZone(tz);
 
+    // 🧩 Fetch unified event data
     const res = await axios.get(`https://unstablecoin-fuddodge-backend.onrender.com/event`);
     const data = res.data || {};
 
@@ -780,15 +781,20 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       return;
     }
 
-    // 🧩 Determine which banner to use
-    const bannerUrl =
-      data.status === "ended"
-        ? "https://theunstable.io/fuddodge/assets/eventtop.png"
-        : "https://theunstable.io/fuddodge/assets/event.png";
+    // 🖼 Always use the same event banner
+    const bannerUrl = data.banner || "https://theunstable.io/fuddodge/assets/event.png";
 
-    // 🧠 Build caption body
-    let body = `🚀 <b>${escapeXml(data.title)}</b>\n\n${escapeXml(data.info || "")}\n`;
+    // 🧠 Build caption text
+    let body = `🚀 <b>${escapeXml(data.title)}</b>\n\n`;
 
+    // If overlay exists (e.g., event ended), show it prominently
+    if (data.overlay?.text) {
+      body += `<i>${escapeXml(data.overlay.text)}</i>\n\n`;
+    } else {
+      body += `${escapeXml(data.info || "")}\n\n`;
+    }
+
+    // 🕓 Add timing info
     if (data.startDate) {
       const start = DateTime.fromISO(data.startDate).setZone(tz);
       const end = data.endDate ? DateTime.fromISO(data.endDate).setZone(tz) : null;
@@ -796,30 +802,30 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       if (now < start) {
         const diff = start.diff(now, ["days", "hours", "minutes"]).toObject();
         const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
-        body += `\n🟡 Starts in ${remain}`;
+        body += `🟡 Starts in ${remain}\n`;
       } else if (end && now < end) {
         const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
         const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
-        body += `\n⏳ Ends in ${remain}`;
+        body += `⏳ Ends in ${remain}\n`;
       } else if (end && now >= end) {
-        body += `\n🔴 Event ended ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
-        body += `\n📜 Stay tuned for next event.`;
+        body += `🔴 Event ended ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}\n`;
       }
 
-      body += `\n🕓 ${start.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
+      body += `🕓 ${start.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
       if (end) body += ` → ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
+      body += "\n\n";
     }
 
-    body += `\n\n<b>Timezone:</b> ${escapeXml(data.timezone || tz)}`;
+    // 🪙 Add timezone and holding info
+    body += `<b>Timezone:</b> ${escapeXml(data.timezone || tz)}\n`;
     if (data.minHoldAmount)
-      body += `\n<b>Minimum holding:</b> ${data.minHoldAmount.toLocaleString()} $US`;
+      body += `<b>Minimum holding:</b> ${data.minHoldAmount.toLocaleString()} $US\n\n`;
 
-    if (data.participation)
-      body += `\n\n${data.participation}`;
+    if (data.participation) body += `${data.participation}\n\n`;
 
-    body += `\n\n#UnStableCoin #WAGMI-ish #Solana`;
+    body += `#UnStableCoin #WAGMI-ish #Solana`;
 
-    // 📸 Send banner + caption as a single Telegram post
+    // 📸 Send as a photo + caption
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
       chat_id: chatId,
       photo: bannerUrl,
@@ -827,7 +833,7 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       parse_mode: "HTML",
     });
 
-    console.log(`📤 Event banner + info sent (${data.status || "unknown"})`);
+    console.log(`📤 Event banner + overlay text sent (${data.status || "unknown"})`);
   } catch (err) {
     console.error("❌ /event:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
