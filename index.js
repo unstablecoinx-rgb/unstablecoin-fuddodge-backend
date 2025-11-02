@@ -68,7 +68,7 @@ const RESET_KEY                 = process.env.RESET_KEY;
 const RENDER_EXTERNAL_HOSTNAME  = process.env.RENDER_EXTERNAL_HOSTNAME || null;
 const PORT                      = process.env.PORT || 10000;
 const ATH_CHARTS_BIN_ID         = process.env.ATH_CHARTS_BIN_ID;
-
+const REQUIRE_HOLDER_FOR_ATH    = process.env.REQUIRE_HOLDER_FOR_ATH === "false";
 
 // ✅ Validation — ensure all required ENV vars exist
 if (
@@ -1546,13 +1546,24 @@ app.post("/share", async (req, res) => {
     const isAth = String(mode).toLowerCase() === "ath";
     const targetChatId = ATH_CHAT_ID;
 
-    // --- Verify holder (but only for posting permission) ---
-    if (!userRec?.wallet) {
-      return res.json({ ok: false, message: "Wallet not verified. Use /verifyholder first." });
-    }
-    const verified = await checkSolanaHolding(userRec.wallet, cfg.minHoldAmount || 0);
-    if (!verified.ok) {
-      return res.json({ ok: false, message: "Holding below required minimum." });
+    // 🟡 New toggle: allow non-holders to post if configured
+    const REQUIRE_HOLDER_FOR_ATH = process.env.REQUIRE_HOLDER_FOR_ATH === "true";
+
+    // --- Verify holder only if required ---
+    if (REQUIRE_HOLDER_FOR_ATH) {
+      if (!userRec?.wallet) {
+        return res.json({
+          ok: false,
+          message: "Wallet not verified. Use /verifyholder first.",
+        });
+      }
+      const verified = await checkSolanaHolding(userRec.wallet, cfg.minHoldAmount || 0);
+      if (!verified.ok) {
+        return res.json({
+          ok: false,
+          message: "Holding below required minimum.",
+        });
+      }
     }
 
     // --- Load previous ATH records ---
@@ -1585,7 +1596,7 @@ app.post("/share", async (req, res) => {
     }
     const cleanBase64 = photoData.replace(/^data:image\/\w+;base64,/, "");
 
-    // --- Get current GLOBAL leaderboard rank (ignore verification) ---
+    // --- Get current GLOBAL leaderboard rank ---
     let rankText = "";
     try {
       const resLB = await axios.get(`${MAIN_BIN_URL}/latest`, {
