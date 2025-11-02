@@ -997,27 +997,6 @@ bot.onText(/\/top50/i, async (msg) => {
   }
 });
 
-    // 🟡 POST LEADERBOARD IMAGE FIRST
-    try {
-      const bannerUrl = "https://theunstable.io/fuddodge/assets/leaderboard.png"; // same banner for Top 50
-      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-        chat_id: chatId,
-        photo: bannerUrl,
-        caption: "📈 <b>$US FUD DODGE</b>\n⚡ <b>Top 50 Players</b>\n\nChaos. Coins. Curves. 💛⚡",
-        parse_mode: "HTML",
-      });
-      console.log("📤 Leaderboard banner (Top 50) posted");
-      await sleep(1500);
-    } catch (err) {
-      console.warn("⚠️ Failed to post leaderboard banner:", err.message);
-    }
-
-    await sendChunked(chatId, "<b>Top 50 Players</b>\n\n", lines);
-  } catch (err) {
-    console.error("❌ /top50:", err.message);
-    sendSafeMessage(chatId, "⚠️ Failed to load leaderboard.");
-  }
-});
 
 // ==========================================================
 // 🧩 Unified verified event leaderboard (cached balance checks)
