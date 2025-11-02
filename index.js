@@ -1192,9 +1192,8 @@ bot.onText(/\/validatewinners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     await sendSafeMessage(chatId, `⚠️ Could not validate winners: ${err.message}`);
   }
 });
-
 // ==========================================================
-//  /winners — list top 10 event holders + wallets
+// 🏁 /winners — Final results banner + Top 10 Event Holders
 // ==========================================================
 bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
@@ -1202,7 +1201,7 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   if (!ADMIN_USERS.includes(user))
     return sendSafeMessage(chatId, "⚠️ Admins only.");
 
-  await sendSafeMessage(chatId, "📊 Fetching top 10 event holders...");
+  await sendSafeMessage(chatId, "📊 Fetching final event results...");
 
   // 🧩 Helper: format MCap (always k, switch to M after 1M)
   function formatMcap(score) {
@@ -1214,6 +1213,7 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   }
 
   try {
+    // 🧠 Load event data
     const { scores } = await getEventData();
     const holdersMap = await getHoldersMapFromArray();
     const sorted = Object.entries(scores)
@@ -1223,6 +1223,34 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     if (!sorted.length)
       return sendSafeMessage(chatId, "⚠️ No event data found.");
 
+    // 🛰️ Load event meta for dynamic title
+    let eventTitle = "UnStable Contest";
+    try {
+      const evRes = await axios.get(`https://unstablecoin-fuddodge-backend.onrender.com/event`);
+      if (evRes.data?.title) eventTitle = evRes.data.title;
+    } catch (e) {
+      console.warn("⚠️ Could not fetch event title:", e.message);
+    }
+
+    // 🖼 Winners banner
+    const bannerUrl = "https://theunstable.io/fuddodge/assets/winners.png";
+    const caption =
+      `✨ <b>The contest “${eventTitle}” has ended.</b>\n` +
+      "Here are the verified final results.\n\n" +
+      "Minimum holding has been checked. ✅\n" +
+      "Thanks to everyone who played, built, and stayed unstable. ⚡\n\n" +
+      "#UnStableCoin #WAGMI-ish #Solana";
+
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      chat_id: chatId,
+      photo: bannerUrl,
+      caption,
+      parse_mode: "HTML",
+    });
+
+    await sleep(1500);
+
+    // 🏆 Winners list
     const lines = sorted.map(([uname, score], i) => {
       const holder = holdersMap[uname] || holdersMap[uname.toLowerCase()];
       const wallet = holder?.wallet
@@ -1232,8 +1260,19 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       return `${i + 1}. ${uname} — ${formatted} | ${wallet}`;
     });
 
-    const header = "🏁 <b>Top 10 Event Holders</b>\n\n";
+    const header =
+      `🏁 <b>Top 10 — ${eventTitle}</b>\n\n` +
+      "All verified and ranked fairly. 💛⚡\n\n";
+
     await sendChunked(chatId, header, lines, 3800);
+
+    // 💬 Follow-up line
+    await sendSafeMessage(
+      chatId,
+      "🎁 Drops and rewards will be announced soon. Stay tuned."
+    );
+
+    console.log(`📤 Winners banner + verified results posted for ${eventTitle}`);
   } catch (err) {
     console.error("❌ /winners:", err.message);
     await sendSafeMessage(chatId, `⚠️ Could not load winners: ${err.message}`);
