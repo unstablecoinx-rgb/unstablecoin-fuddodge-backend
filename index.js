@@ -1530,10 +1530,7 @@ app.post("/verifyHolder", async (req, res) => {
 });
 
 // ======================================================
-// ✅ /share — Posts A.T.H. or highlight to Telegram
-// ======================================================
-// ======================================================
-// ✅ /share — Posts A.T.H. or highlight to Telegram (with live rank)
+// ✅ /share — Posts A.T.H. or highlight to Telegram (banner first + global rank)
 // ======================================================
 app.post("/share", async (req, res) => {
   try {
@@ -1546,7 +1543,7 @@ app.post("/share", async (req, res) => {
     const isAth = String(mode).toLowerCase() === "ath";
     const targetChatId = ATH_CHAT_ID;
 
-    // --- Verify holder ---
+    // --- Verify holder (but only for posting permission) ---
     if (!userRec?.wallet) {
       return res.json({ ok: false, message: "Wallet not verified. Use /verifyholder first." });
     }
@@ -1585,23 +1582,27 @@ app.post("/share", async (req, res) => {
     }
     const cleanBase64 = photoData.replace(/^data:image\/\w+;base64,/, "");
 
-    // --- Get current event rank (if available) ---
+    // --- Get current GLOBAL leaderboard rank (ignore verification) ---
     let rankText = "";
     try {
-      const scoresRes = await axios.get(
-        `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`,
-        { headers: { "X-Master-Key": process.env.JSONBIN_KEY } }
-      );
-      const rec = scoresRes.data?.record || {};
-      const arr = Array.isArray(rec.scores) ? rec.scores : [];
-      const sorted = arr
-        .filter((x) => !!x.username && typeof x.score === "number")
+      const resLB = await axios.get(`${MAIN_BIN_URL}/latest`, {
+        headers: { "X-Master-Key": JSONBIN_KEY },
+      });
+      const raw = resLB.data?.record || {};
+      const scores = Object.entries(raw)
+        .filter(([u, v]) => !isNaN(Number(v)))
+        .map(([u, v]) => ({
+          username: u.startsWith("@") ? u : "@" + u,
+          score: Number(v),
+        }))
         .sort((a, b) => b.score - a.score);
-
-      const rank = sorted.findIndex((x) => x.username === username) + 1;
-      if (rank > 0) rankText = `Current rank: #${rank}`;
+      const rank = scores.findIndex((x) => x.username === username) + 1;
+      if (rank > 0) {
+        rankText = `Current rank: #${rank}`;
+        console.log(`⚡ Rank check: ${username} is #${rank} / ${scores.length}`);
+      }
     } catch (err) {
-      console.warn("⚠️ Could not fetch rank:", err.message);
+      console.warn("⚠️ Could not fetch leaderboard rank:", err.message);
     }
 
     // === DUAL POST LOGIC ===
@@ -1619,16 +1620,16 @@ app.post("/share", async (req, res) => {
         console.warn("⚠️ Failed to post banner:", err.response?.data || err.message);
       }
 
-      // --- POST 2: Graph with live rank ---
+      // --- POST 2: Graph with caption including rank ---
       try {
         const form = new FormData();
         form.append("chat_id", targetChatId);
         form.append(
           "caption",
-          `${username} reached a new All-Time-High. ⚡\n` +
-          `A.T.H. MCap: ${(score / 1000).toFixed(2)}k\n` +
-          (rankText ? `${rankText}\n` : "") +
-          `We aim for Win–Win.\n\n#UnStableCoin #WAGMI-ish`
+          `${username} reached a new All-Time-High! ⚡️\n` +
+            `A.T.H. MCap: ${(score / 1000).toFixed(2)}k\n` +
+            (rankText ? `${rankText}\n` : "") +
+            `Stay unstable.\n\n#UnStableCoin #WAGMI-ish`
         );
         form.append("parse_mode", "HTML");
         form.append("photo", Buffer.from(cleanBase64, "base64"), {
