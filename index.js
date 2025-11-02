@@ -766,14 +766,17 @@ Stay unstable. 💛⚡`;
   sendSafeMessage(msg.chat.id, text);
 });
 
+// ======================================================
+// 🧩 /EVENT — Event banner + timer + participation (Telegram safe)
+// ======================================================
 bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
+  const chatId = msg.chat.id;
   try {
-    const chatId = msg.chat.id;
     const tz = "Europe/Stockholm";
     const now = DateTime.now().setZone(tz);
 
-    // 🧩 Fetch unified event data
-    const res = await axios.get(`https://unstablecoin-fuddodge-backend.onrender.com/event`);
+    // 1️⃣ Fetch event data
+    const res = await axios.get("https://unstablecoin-fuddodge-backend.onrender.com/event");
     const data = res.data || {};
 
     if (!data.title) {
@@ -781,62 +784,60 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       return;
     }
 
-    // 🖼 Always use the same event banner
-    const bannerUrl = data.banner || "https://theunstable.io/fuddodge/assets/event.png";
+    // 2️⃣ Always use same banner
+    const bannerUrl = "https://theunstable.io/fuddodge/assets/event.png";
 
-    // 🧠 Build caption text
-    let body = `🚀 <b>${escapeXml(data.title)}</b>\n\n`;
+    // 3️⃣ Start building caption
+    let caption = `🚀 <b>${escapeXml(data.title)}</b>\n\n`;
 
-    // If overlay exists (e.g., event ended), show it prominently
-    if (data.overlay?.text) {
-      body += `<i>${escapeXml(data.overlay.text)}</i>\n\n`;
-    } else {
-      body += `${escapeXml(data.info || "")}\n\n`;
-    }
+    // 4️⃣ Overlay (ended/upcoming info)
+    if (data.overlay?.text) caption += `${escapeXml(data.overlay.text)}\n\n`;
 
-    // 🕓 Add timing info
-    if (data.startDate) {
+    // 5️⃣ Timing block
+    if (data.startDate && data.endDate) {
       const start = DateTime.fromISO(data.startDate).setZone(tz);
-      const end = data.endDate ? DateTime.fromISO(data.endDate).setZone(tz) : null;
+      const end = DateTime.fromISO(data.endDate).setZone(tz);
+
+      caption += `🕓 ${start.toFormat("yyyy-MM-dd HH:mm")} → ${end.toFormat("yyyy-MM-dd HH:mm")}\n`;
 
       if (now < start) {
         const diff = start.diff(now, ["days", "hours", "minutes"]).toObject();
         const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
-        body += `🟡 Starts in ${remain}\n`;
-      } else if (end && now < end) {
+        caption += `🟡 Starts in ${remain}\n\n`;
+      } else if (now >= start && now < end) {
         const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
         const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
-        body += `⏳ Ends in ${remain}\n`;
-      } else if (end && now >= end) {
-        body += `🔴 Event ended ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}\n`;
+        caption += `⏳ Ends in ${remain}\n\n`;
+      } else {
+        caption += `🔴 <b>Event ended</b>\n\n`;
       }
-
-      body += `🕓 ${start.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
-      if (end) body += ` → ${end.toFormat("yyyy-MM-dd HH:mm ZZZZ")}`;
-      body += "\n\n";
     }
 
-    // 🪙 Add timezone and holding info
-    body += `<b>Timezone:</b> ${escapeXml(data.timezone || tz)}\n`;
+    // 6️⃣ Holding + participation
     if (data.minHoldAmount)
-      body += `<b>Minimum holding:</b> ${data.minHoldAmount.toLocaleString()} $US\n\n`;
+      caption += `Hold at least ${data.minHoldAmount.toLocaleString()} $US to join.\n`;
 
-    if (data.participation) body += `${data.participation}\n\n`;
+    if (data.participation) {
+      const info = data.participation.replace(/\s+/g, " ").trim();
+      const maxAllowed = 1000 - caption.length - 50; // stay under Telegram limit
+      caption += `\n${info.slice(0, maxAllowed)}\n\n`;
+    }
 
-    body += `#UnStableCoin #WAGMI-ish #Solana`;
+    // 7️⃣ Hashtags
+    caption += `#UnStableCoin #WAGMI-ish #Solana`;
 
-    // 📸 Send as a photo + caption
+    // 8️⃣ Send post
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
       chat_id: chatId,
       photo: bannerUrl,
-      caption: body,
+      caption,
       parse_mode: "HTML",
     });
 
-    console.log(`📤 Event banner + overlay text sent (${data.status || "unknown"})`);
+    console.log(`📤 /event banner sent (${data.status || "unknown"})`);
   } catch (err) {
-    console.error("❌ /event:", err?.message || err);
-    await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
+    console.error("❌ /event:", err?.response?.data || err.message);
+    await sendSafeMessage(chatId, "⚠️ Could not load event info.");
   }
 });
 
