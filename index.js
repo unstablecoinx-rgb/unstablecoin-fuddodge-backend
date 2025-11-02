@@ -1529,10 +1529,12 @@ app.post("/verifyHolder", async (req, res) => {
   }
 });
 
-// --- Share (A.T.H. & highlights) ---
+// ======================================================
+// ✅ /share — Posts A.T.H. or highlight to Telegram
+// ======================================================
 app.post("/share", async (req, res) => {
   try {
-    const { username, score, imageBase64, mode, curveImage } = req.body;
+    const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
     if (!username) return res.status(400).json({ ok: false, message: "Missing username" });
 
     const cfg = await getConfig();
@@ -1541,15 +1543,16 @@ app.post("/share", async (req, res) => {
     const isAth = String(mode).toLowerCase() === "ath";
     const targetChatId = ATH_CHAT_ID;
 
-    // --- Verify holder existence ---
-    if (!userRec?.wallet)
+    // --- Verify holder ---
+    if (!userRec?.wallet) {
       return res.json({ ok: false, message: "Wallet not verified. Use /verifyholder first." });
-
+    }
     const verified = await checkSolanaHolding(userRec.wallet, cfg.minHoldAmount || 0);
-    if (!verified.ok)
+    if (!verified.ok) {
       return res.json({ ok: false, message: "Holding below required minimum." });
+    }
 
-    // --- Load previous A.T.H. records ---
+    // --- Load previous ATH records ---
     let shared = {};
     try {
       const r = await axios.get(`${ATH_BIN_URL}/latest`, {
@@ -1571,36 +1574,79 @@ app.post("/share", async (req, res) => {
       });
     }
 
-    // --- Prepare photo ---
+    // --- Prepare photo data ---
     let photoData = curveImage || imageBase64;
     if (!photoData) return res.status(400).json({ ok: false, message: "Missing image data" });
+    if (photoData.startsWith("iVBOR") || photoData.startsWith("/9j/")) {
+      photoData = "data:image/png;base64," + photoData;
+    }
+    const cleanBase64 = photoData.replace(/^data:image\/\w+;base64,/, "");
 
-    // ensure clean base64
-    const cleanBase64 = photoData.split(",").pop();
+    // === DUAL-POST LOGIC ===
+    if (isAth) {
+      // --- POST 1: Banner (no caption) ---
+      try {
+        const bannerUrl = "https://theunstable.io/fuddodge/assets/ath_banner_base.png";
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+          chat_id: targetChatId,
+          photo: bannerUrl,
+        });
+        console.log("📤 Banner image posted first (no caption)");
+        await sleep(1500);
+      } catch (err) {
+        console.warn("⚠️ Failed to post banner:", err.response?.data || err.message);
+      }
 
-    // --- Caption ---
-    const caption = isAth
-      ? `💛 ${username} reached a new All-Time-High! ⚡\nA.T.H. MCap: ${score.toLocaleString()}\n#UnStableCoin #WAGMI-ish`
-      : `⚡️ ${username} shared a highlight — MCap ${score.toLocaleString()}`;
+      // --- POST 2: Graph with caption ---
+      try {
+        const form = new FormData();
+        form.append("chat_id", targetChatId);
+        form.append(
+          "caption",
+          `${username} reached a new All-Time-High. ⚡\n` +
+          `A.T.H. MCap: ${(score / 1000).toFixed(2)}k\n` +
+          `Current rank: #1\n` +
+          `We aim for Win–Win.\n\n` +
+          `#UnStableCoin #WAGMI-ish`
+        );
+        form.append("parse_mode", "HTML");
+        form.append("photo", Buffer.from(cleanBase64, "base64"), {
+          filename: "ath_graph.png",
+          contentType: "image/png",
+        });
 
-    // --- Send as multipart/form-data (works like your old version) ---
-    const form = new FormData();
-    form.append("chat_id", targetChatId);
-    form.append("caption", caption);
-    form.append("parse_mode", "HTML");
-    form.append("photo", Buffer.from(cleanBase64, "base64"), {
-      filename: "ath.png",
-      contentType: "image/png",
-    });
+        await axios.post(
+          `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
+          form,
+          { headers: form.getHeaders() }
+        );
+        console.log("📤 Graph post sent after banner");
+      } catch (err) {
+        console.error("❌ Failed to post graph:", err.response?.data || err.message);
+      }
+    } else {
+      // --- Normal highlight single post ---
+      const form = new FormData();
+      form.append("chat_id", targetChatId);
+      form.append(
+        "caption",
+        `⚡️ ${username} shared a highlight — MCap ${(score / 1000).toFixed(2)}k\n#UnStableCoin #WAGMI-ish`
+      );
+      form.append("parse_mode", "HTML");
+      form.append("photo", Buffer.from(cleanBase64, "base64"), {
+        filename: "highlight.png",
+        contentType: "image/png",
+      });
 
-    const tgResp = await axios.post(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
-      form,
-      { headers: form.getHeaders() }
-    );
-    console.log(`📤 Sent ${isAth ? "A.T.H." : "highlight"} post to Telegram`);
+      await axios.post(
+        `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
+        form,
+        { headers: form.getHeaders() }
+      );
+      console.log("📤 Highlight post sent");
+    }
 
-    // --- Record new ATH ---
+    // --- Record new A.T.H. ---
     if (isAth && score > prev) {
       shared[username] = score;
       try {
@@ -1616,7 +1662,42 @@ app.post("/share", async (req, res) => {
       }
     }
 
+    // --- Update event leaderboard (if active) ---
+    try {
+      const meta = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
+      const record = meta?.record?.record || meta?.record || {};
+      const now = new Date();
+      const start = record.startDate ? new Date(record.startDate) : null;
+      const end = record.endDate ? new Date(record.endDate) : null;
+      const isActive = start && end && now >= start && now <= end;
+
+      if (isActive) {
+        const evData = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
+        const scores = evData?.record || evData || {};
+        scores[username] = Math.max(Number(scores[username] || 0), Number(score));
+
+        await axios.put(
+          `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`,
+          { record: scores },
+          {
+            headers: {
+              "X-Master-Key": process.env.JSONBIN_KEY,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        console.log(`⚡ Saved ${username} (${score}) to event leaderboard`);
+      } else {
+        console.log("⚠️ No active event — skipping event leaderboard update.");
+      }
+    } catch (err) {
+      console.warn("⚠️ Could not update event leaderboard:", err.message);
+    }
+
+    // --- Response ---
     res.json({ ok: true, posted: true, stored: isAth, message: "Posted successfully" });
+
   } catch (err) {
     console.error("❌ /share error:", err);
     res.status(500).json({ ok: false, error: err.message });
