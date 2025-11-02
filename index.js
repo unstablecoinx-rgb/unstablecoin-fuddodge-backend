@@ -780,7 +780,14 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       return;
     }
 
-    let body = `🧩 <b>${escapeXml(data.title)}</b>\n\n${escapeXml(data.info || "")}\n`;
+    // 🧩 Determine which banner to use
+    const bannerUrl =
+      data.status === "ended"
+        ? "https://theunstable.io/fuddodge/assets/eventtop.png"
+        : "https://theunstable.io/fuddodge/assets/event.png";
+
+    // 🧠 Build caption body
+    let body = `🚀 <b>${escapeXml(data.title)}</b>\n\n${escapeXml(data.info || "")}\n`;
 
     if (data.startDate) {
       const start = DateTime.fromISO(data.startDate).setZone(tz);
@@ -810,7 +817,17 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     if (data.participation)
       body += `\n\n${data.participation}`;
 
-    await sendSafeMessage(chatId, body, { parse_mode: "HTML" });
+    body += `\n\n#UnStableCoin #WAGMI-ish #Solana`;
+
+    // 📸 Send banner + caption as a single Telegram post
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      chat_id: chatId,
+      photo: bannerUrl,
+      caption: body,
+      parse_mode: "HTML",
+    });
+
+    console.log(`📤 Event banner + info sent (${data.status || "unknown"})`);
   } catch (err) {
     console.error("❌ /event:", err?.message || err);
     await sendSafeMessage(msg.chat.id, "⚠️ Could not load event info.");
@@ -1870,8 +1887,10 @@ app.get("/leaderboard", async (req, res) => {
   }
 });
 
+Did you build banner into this
+
 // ======================================================
-// 🚀 EVENT META + LEADERBOARD (Unified Logic with banner + overlay)
+// 🚀 EVENT META + LEADERBOARD (Unified Logic)
 // ======================================================
 app.get("/event", async (req, res) => {
   try {
@@ -1892,11 +1911,6 @@ app.get("/event", async (req, res) => {
         status: "inactive",
         title: "UnStable Challenge",
         info: "Stay tuned for upcoming events.",
-        banner: "https://theunstable.io/fuddodge/assets/event.png",
-        overlay: {
-          text: "No active event",
-          color: "rgba(0,0,0,0.6)",
-        },
         startDate: "",
         endDate: "",
         timezone: "Europe/Stockholm",
@@ -1914,7 +1928,7 @@ app.get("/event", async (req, res) => {
     const cfg = await getConfig();
 
     // 6️⃣ Build unified participation text (Telegram + Web safe)
-    const participation = `
+const participation = `
 Participation
 Hold at least ${cfg.minHoldAmount.toLocaleString()} $US to join and appear on event leaderboards.
 Add your wallet using /addwallet or the 🌕 Add Wallet button in the start menu in Telegram UnStableCoin Game Bot.
@@ -1930,27 +1944,11 @@ Stay unstable. Build weird. Hold the chaos. ⚡
 
     console.log(`📤 /event → ${status.toUpperCase()} (${data.startDate} → ${data.endDate})`);
 
-    // 8️⃣ Overlay logic based on status
-    const overlay =
-      status === "ended"
-        ? {
-            text: "This event has ended.\nStay tuned for our next contest!",
-            color: "rgba(0, 0, 0, 0.6)",
-          }
-        : status === "upcoming"
-        ? {
-            text: "Contest starting soon!\nPrepare your memes, your scores, your chaos. ⚡",
-            color: "rgba(0, 0, 0, 0.5)",
-          }
-        : null;
-
-    // 9️⃣ Send unified JSON response
+    // 8️⃣ Send unified JSON response
     res.json({
       status,
       title: data.title,
       info: status === "ended" ? "Event ended. Results soon." : unifiedInfo,
-      banner: "https://theunstable.io/fuddodge/assets/event.png",
-      overlay,
       startDate: data.startDate,
       endDate: data.endDate,
       timezone: data.timezone || "Europe/Stockholm",
