@@ -918,14 +918,34 @@ bot.onText(/\/bugreport(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 // 🧩 PATCH: Leaderboard + Admin Commands (v3.4.1 restore)
 // ==========================================================
 
+// --- Helper: format scores as MCap (k / M) ---
+function formatMcap(score) {
+  if (score >= 1_000_000) {
+    return (score / 1_000_000).toFixed(2) + "M";
+  } else if (score >= 100_000) {
+    return (score / 1000).toFixed(1) + "k";
+  } else {
+    return Math.round(score).toString();
+  }
+}
+
 // --- LEADERBOARD COMMANDS ---
 bot.onText(/\/top10/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const data = await getLeaderboard();
-    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    if (!sorted.length) return sendSafeMessage(chatId, "⚠️ No leaderboard data available.");
-    const lines = sorted.map(([u, v], i) => `${i + 1}. ${u} — ${v}`);
+    const sorted = Object.entries(data)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+
+    if (!sorted.length)
+      return sendSafeMessage(chatId, "⚠️ No leaderboard data available.");
+
+    const lines = sorted.map(([u, v], i) => {
+      const formatted = formatMcap(Number(v));
+      return `${i + 1}. ${u} — ${formatted}`;
+    });
+
     await sendChunked(chatId, "🏆 <b>Top 10</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top10:", err.message);
@@ -937,9 +957,18 @@ bot.onText(/\/top50/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const data = await getLeaderboard();
-    const sorted = Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 50);
-    if (!sorted.length) return sendSafeMessage(chatId, "⚠️ No leaderboard data available.");
-    const lines = sorted.map(([u, v], i) => `${i + 1}. ${u} — ${v}`);
+    const sorted = Object.entries(data)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 50);
+
+    if (!sorted.length)
+      return sendSafeMessage(chatId, "⚠️ No leaderboard data available.");
+
+    const lines = sorted.map(([u, v], i) => {
+      const formatted = formatMcap(Number(v));
+      return `${i + 1}. ${u} — ${formatted}`;
+    });
+
     await sendChunked(chatId, "📈 <b>Top 50</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /top50:", err.message);
@@ -998,15 +1027,33 @@ async function getVerifiedEventTopArray(limit = 10) {
   }
 }
 
-
+// ==========================================================
 // --- EVENT LEADERBOARD COMMANDS (verified only) ---
+// ==========================================================
+
+// 🧩 Helper: format scores as MCap (k / M)
+function formatMcap(score) {
+  if (score >= 1_000_000) {
+    return (score / 1_000_000).toFixed(2) + "M";
+  } else if (score >= 100_000) {
+    return (score / 1000).toFixed(1) + "k";
+  } else {
+    return Math.round(score).toString();
+  }
+}
+
 bot.onText(/\/eventtop10/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
     const top = await getVerifiedEventTopArray(10);
     if (!top.length)
       return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
-    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${Math.round(x.score)}`);
+
+    const lines = top.map((x, i) => {
+      const formatted = formatMcap(Number(x.score));
+      return `${i + 1}. ${x.username} — ${formatted}`;
+    });
+
     await sendChunked(chatId, "⚡ <b>Event Top 10 (Verified)</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop10:", err.message);
@@ -1020,7 +1067,12 @@ bot.onText(/\/eventtop50/i, async (msg) => {
     const top = await getVerifiedEventTopArray(50);
     if (!top.length)
       return sendSafeMessage(chatId, "⚠️ No verified holders found for current event.");
-    const lines = top.map((x, i) => `${i + 1}. ${x.username} — ${Math.round(x.score)}`);
+
+    const lines = top.map((x, i) => {
+      const formatted = formatMcap(Number(x.score));
+      return `${i + 1}. ${x.username} — ${formatted}`;
+    });
+
     await sendChunked(chatId, "⚡ <b>Event Top 50 (Verified)</b>\n\n", lines);
   } catch (err) {
     console.error("❌ /eventtop50:", err.message);
