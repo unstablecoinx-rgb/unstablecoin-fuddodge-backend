@@ -1532,9 +1532,12 @@ app.post("/verifyHolder", async (req, res) => {
 // ======================================================
 // ✅ /share — Posts A.T.H. or highlight to Telegram
 // ======================================================
+// ======================================================
+// ✅ /share — Posts A.T.H. or highlight to Telegram (with live rank)
+// ======================================================
 app.post("/share", async (req, res) => {
   try {
-    const { username, score, chatId, imageBase64, mode, curveImage } = req.body;
+    const { username, score, imageBase64, mode, curveImage } = req.body;
     if (!username) return res.status(400).json({ ok: false, message: "Missing username" });
 
     const cfg = await getConfig();
@@ -1574,7 +1577,7 @@ app.post("/share", async (req, res) => {
       });
     }
 
-    // --- Prepare photo data ---
+    // --- Prepare image data ---
     let photoData = curveImage || imageBase64;
     if (!photoData) return res.status(400).json({ ok: false, message: "Missing image data" });
     if (photoData.startsWith("iVBOR") || photoData.startsWith("/9j/")) {
@@ -1582,7 +1585,26 @@ app.post("/share", async (req, res) => {
     }
     const cleanBase64 = photoData.replace(/^data:image\/\w+;base64,/, "");
 
-    // === DUAL-POST LOGIC ===
+    // --- Get current event rank (if available) ---
+    let rankText = "";
+    try {
+      const scoresRes = await axios.get(
+        `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`,
+        { headers: { "X-Master-Key": process.env.JSONBIN_KEY } }
+      );
+      const rec = scoresRes.data?.record || {};
+      const arr = Array.isArray(rec.scores) ? rec.scores : [];
+      const sorted = arr
+        .filter((x) => !!x.username && typeof x.score === "number")
+        .sort((a, b) => b.score - a.score);
+
+      const rank = sorted.findIndex((x) => x.username === username) + 1;
+      if (rank > 0) rankText = `Current rank: #${rank}`;
+    } catch (err) {
+      console.warn("⚠️ Could not fetch rank:", err.message);
+    }
+
+    // === DUAL POST LOGIC ===
     if (isAth) {
       // --- POST 1: Banner (no caption) ---
       try {
@@ -1597,7 +1619,7 @@ app.post("/share", async (req, res) => {
         console.warn("⚠️ Failed to post banner:", err.response?.data || err.message);
       }
 
-      // --- POST 2: Graph with caption ---
+      // --- POST 2: Graph with live rank ---
       try {
         const form = new FormData();
         form.append("chat_id", targetChatId);
@@ -1605,9 +1627,8 @@ app.post("/share", async (req, res) => {
           "caption",
           `${username} reached a new All-Time-High. ⚡\n` +
           `A.T.H. MCap: ${(score / 1000).toFixed(2)}k\n` +
-          `Current rank: #1\n` +
-          `We aim for Win–Win.\n\n` +
-          `#UnStableCoin #WAGMI-ish`
+          (rankText ? `${rankText}\n` : "") +
+          `We aim for Win–Win.\n\n#UnStableCoin #WAGMI-ish`
         );
         form.append("parse_mode", "HTML");
         form.append("photo", Buffer.from(cleanBase64, "base64"), {
@@ -1625,7 +1646,7 @@ app.post("/share", async (req, res) => {
         console.error("❌ Failed to post graph:", err.response?.data || err.message);
       }
     } else {
-      // --- Normal highlight single post ---
+      // --- Normal highlight ---
       const form = new FormData();
       form.append("chat_id", targetChatId);
       form.append(
@@ -1646,7 +1667,7 @@ app.post("/share", async (req, res) => {
       console.log("📤 Highlight post sent");
     }
 
-    // --- Record new A.T.H. ---
+    // --- Save new ATH ---
     if (isAth && score > prev) {
       shared[username] = score;
       try {
@@ -1662,42 +1683,7 @@ app.post("/share", async (req, res) => {
       }
     }
 
-    // --- Update event leaderboard (if active) ---
-    try {
-      const meta = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}`);
-      const record = meta?.record?.record || meta?.record || {};
-      const now = new Date();
-      const start = record.startDate ? new Date(record.startDate) : null;
-      const end = record.endDate ? new Date(record.endDate) : null;
-      const isActive = start && end && now >= start && now <= end;
-
-      if (isActive) {
-        const evData = await readBin(`https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`);
-        const scores = evData?.record || evData || {};
-        scores[username] = Math.max(Number(scores[username] || 0), Number(score));
-
-        await axios.put(
-          `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`,
-          { record: scores },
-          {
-            headers: {
-              "X-Master-Key": process.env.JSONBIN_KEY,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        console.log(`⚡ Saved ${username} (${score}) to event leaderboard`);
-      } else {
-        console.log("⚠️ No active event — skipping event leaderboard update.");
-      }
-    } catch (err) {
-      console.warn("⚠️ Could not update event leaderboard:", err.message);
-    }
-
-    // --- Response ---
     res.json({ ok: true, posted: true, stored: isAth, message: "Posted successfully" });
-
   } catch (err) {
     console.error("❌ /share error:", err);
     res.status(500).json({ ok: false, error: err.message });
