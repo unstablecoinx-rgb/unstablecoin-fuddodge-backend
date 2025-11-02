@@ -913,7 +913,7 @@ bot.onText(/\/bugreport(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 // ==========================================================
-// 🧩 LEADERBOARD COMMANDS — now with image banner
+// 🧩 LEADERBOARD COMMANDS — single post (banner + text)
 // ==========================================================
 
 // Helper: format scores as MCap (always k, switch to M after 1M)
@@ -937,27 +937,24 @@ bot.onText(/\/top10/i, async (msg) => {
     if (!sorted.length)
       return sendSafeMessage(chatId, "⚠️ No leaderboard data available.");
 
-    const lines = sorted.map(([u, v], i) => {
-      const formatted = formatMcap(Number(v));
-      return `${i + 1}. ${u} — ${formatted}`;
+    const lines = sorted
+      .map(([u, v], i) => `${i + 1}. ${u} — ${formatMcap(Number(v))}`)
+      .join("\n");
+
+    const caption =
+      "🏆 <b>Top 10 Players</b>\n\n" +
+      lines + "\n\n" +
+      "Stay unstable.⚡";
+
+    const bannerUrl = "https://theunstable.io/fuddodge/assets/leaderboard.png";
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      chat_id: chatId,
+      photo: bannerUrl,
+      caption,
+      parse_mode: "HTML",
     });
 
-    // 🟡 POST LEADERBOARD IMAGE FIRST
-    try {
-      const bannerUrl = "https://theunstable.io/fuddodge/assets/leaderboard.png"; // ← upload image here
-      await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-        chat_id: chatId,
-        photo: bannerUrl,
-        caption: "🚀 <b>$US FUD DODGE</b>\n🏆 <b>Top 10 Players</b>\n\nStay unstable. 💛⚡",
-        parse_mode: "HTML",
-      });
-      console.log("📤 Leaderboard banner (Top 10) posted");
-      await sleep(1500);
-    } catch (err) {
-      console.warn("⚠️ Failed to post leaderboard banner:", err.message);
-    }
-
-    await sendChunked(chatId, "<b>Top 10 Players</b>\n\n", lines);
+    console.log("📤 Sent /top10 leaderboard (single post)");
   } catch (err) {
     console.error("❌ /top10:", err.message);
     sendSafeMessage(chatId, "⚠️ Failed to load leaderboard.");
@@ -976,10 +973,29 @@ bot.onText(/\/top50/i, async (msg) => {
     if (!sorted.length)
       return sendSafeMessage(chatId, "⚠️ No leaderboard data available.");
 
-    const lines = sorted.map(([u, v], i) => {
-      const formatted = formatMcap(Number(v));
-      return `${i + 1}. ${u} — ${formatted}`;
+    const lines = sorted
+      .map(([u, v], i) => `${i + 1}. ${u} — ${formatMcap(Number(v))}`)
+      .join("\n");
+
+    const caption =
+      "⚡ <b>Top 50 Players</b>\n\n" +
+      lines + "\n\n" +
+      "Chaos. Coins. Curves.⚡";
+
+    const bannerUrl = "https://theunstable.io/fuddodge/assets/leaderboard.png";
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      chat_id: chatId,
+      photo: bannerUrl,
+      caption,
+      parse_mode: "HTML",
     });
+
+    console.log("📤 Sent /top50 leaderboard (single post)");
+  } catch (err) {
+    console.error("❌ /top50:", err.message);
+    sendSafeMessage(chatId, "⚠️ Failed to load leaderboard.");
+  }
+});
 
     // 🟡 POST LEADERBOARD IMAGE FIRST
     try {
