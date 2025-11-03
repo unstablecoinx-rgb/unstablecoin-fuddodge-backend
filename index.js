@@ -766,6 +766,66 @@ Stay unstable. 💛⚡`;
   sendSafeMessage(msg.chat.id, text);
 });
 
+// ==========================================================
+// 💰 /setpricepool — Admin command to define event rewards
+// Overwrites entire previous list
+// ==========================================================
+bot.onText(/\/setpricepool([\s\S]*)/i, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const user = (msg.from.username || "").toLowerCase();
+
+  if (!ADMIN_USERS.includes(user))
+    return sendSafeMessage(chatId, "⚠️ Admins only.");
+
+  const inputText = (match[1] || "").trim();
+  if (!inputText)
+    return sendSafeMessage(
+      chatId,
+      "⚙️ Usage:\n/setpricepool\n1: 1,000,000 $US\n2: 500,000 $US\n3: 250,000 $US"
+    );
+
+  try {
+    // 🧩 Parse input lines into prize objects
+    const lines = inputText.split("\n").filter(Boolean);
+    const prizes = lines.map((line) => {
+      const [rank, reward] = line.split(":").map((s) => s.trim());
+      return { rank: Number(rank), reward };
+    });
+
+    if (!prizes.length)
+      return sendSafeMessage(chatId, "⚠️ Could not parse any prize entries.");
+
+    // 🧱 Save (overwrite existing JSONBin content)
+    await axios.put(
+      `https://api.jsonbin.io/v3/b/${process.env.PRICELIST_JSONBIN_ID}`,
+      { prizes },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": process.env.JSONBIN_KEY,
+        },
+      }
+    );
+
+    const formatted = prizes
+      .map((p) => `${p.rank}️⃣ ${p.reward}`)
+      .join("\n");
+
+    await sendSafeMessage(
+      chatId,
+      `✅ <b>Prize pool updated and saved.</b>\n` +
+        `Old entries replaced with ${prizes.length} new winners.\n\n` +
+        `🏆 <b>Current Prize Pool:</b>\n${formatted}`,
+      { parse_mode: "HTML" }
+    );
+
+    console.log(`💰 Price pool overwritten (${prizes.length} entries) by ${user}`);
+  } catch (err) {
+    console.error("❌ /setpricepool:", err.message);
+    await sendSafeMessage(chatId, "⚠️ Failed to save prize pool.");
+  }
+});
+
 // ======================================================
 // 🧩 /EVENT — Event banner + timer + participation (Telegram safe)
 // ======================================================
