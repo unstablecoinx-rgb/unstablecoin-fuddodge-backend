@@ -898,10 +898,7 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       console.warn("⚠️ Could not load prize pool:", e.message);
     }
 
-    // 8️⃣ Hashtags
-    caption += `#UnStableCoin #WAGMI-ish #Solana`;
-
-    // 9️⃣ Send post
+    // 8️⃣ Send post
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
       chat_id: chatId,
       photo: bannerUrl,
