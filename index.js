@@ -2113,7 +2113,7 @@ app.get("/leaderboard", async (req, res) => {
 });
 
 // ======================================================
-// 💰 /pricepool — returns current prize pool
+// 💰 /pricepool — unified support for {prizes:[]} + auto-sort
 // ======================================================
 app.get("/pricepool", async (req, res) => {
   try {
@@ -2121,11 +2121,20 @@ app.get("/pricepool", async (req, res) => {
       headers: { "X-Master-Key": JSONBIN_KEY }
     });
 
-    const data = r.data?.record || [];
-    if (!Array.isArray(data)) {
-      console.warn("⚠️ Invalid pricepool format, expected array.");
+    const record = r.data?.record || {};
+    let data = [];
+
+    if (Array.isArray(record)) {
+      data = record;
+    } else if (Array.isArray(record.prizes)) {
+      data = record.prizes;
+    } else {
+      console.warn("⚠️ Invalid pricepool format:", record);
       return res.json([]);
     }
+
+    // 🧩 Sort ascending by rank (1, 2, 3…)
+    data.sort((a, b) => (a.rank || 0) - (b.rank || 0));
 
     res.json(data);
   } catch (err) {
