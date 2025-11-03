@@ -827,7 +827,7 @@ bot.onText(/\/setpricepool([\s\S]*)/i, async (msg, match) => {
 });
 
 // ======================================================
-// 🧩 /EVENT — Event banner + timer + participation (Telegram safe)
+// 🧩 /EVENT — Event banner + timer + participation + prize pool
 // ======================================================
 bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
@@ -879,14 +879,29 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 
     if (data.participation) {
       const info = data.participation.replace(/\s+/g, " ").trim();
-      const maxAllowed = 1000 - caption.length - 50; // stay under Telegram limit
+      const maxAllowed = 900 - caption.length; // reserve space for prizes + hashtags
       caption += `\n${info.slice(0, maxAllowed)}\n\n`;
     }
 
-    // 7️⃣ Hashtags
+    // 7️⃣ Prize pool
+    try {
+      const prizeRes = await axios.get(
+        `https://api.jsonbin.io/v3/b/${process.env.PRICELIST_JSONBIN_ID}/latest`,
+        { headers: { "X-Master-Key": process.env.JSONBIN_KEY } }
+      );
+      const prizes = prizeRes.data?.record?.prizes || [];
+      if (prizes.length) {
+        const pool = prizes.map((p) => `${p.rank}️⃣ ${p.reward}`).join("\n");
+        caption += `🏆 <b>Prize Pool:</b>\n${pool}\n\n`;
+      }
+    } catch (e) {
+      console.warn("⚠️ Could not load prize pool:", e.message);
+    }
+
+    // 8️⃣ Hashtags
     caption += `#UnStableCoin #WAGMI-ish #Solana`;
 
-    // 8️⃣ Send post
+    // 9️⃣ Send post
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
       chat_id: chatId,
       photo: bannerUrl,
@@ -894,7 +909,7 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       parse_mode: "HTML",
     });
 
-    console.log(`📤 /event banner sent (${data.status || "unknown"})`);
+    console.log(`📤 /event banner sent (${data.title})`);
   } catch (err) {
     console.error("❌ /event:", err?.response?.data || err.message);
     await sendSafeMessage(chatId, "⚠️ Could not load event info.");
