@@ -2117,9 +2117,10 @@ app.get("/leaderboard", async (req, res) => {
 // ======================================================
 app.get("/pricepool", async (req, res) => {
   try {
-    const r = await axios.get(`${PRICEPOOL_BIN_URL}/latest`, {
-      headers: { "X-Master-Key": JSONBIN_KEY }
-    });
+    const r = await axios.get(
+      `https://api.jsonbin.io/v3/b/${process.env.PRICELIST_JSONBIN_ID}/latest`,
+      { headers: { "X-Master-Key": JSONBIN_KEY } }
+    );
 
     const record = r.data?.record || {};
     let data = [];
@@ -2129,11 +2130,11 @@ app.get("/pricepool", async (req, res) => {
     } else if (Array.isArray(record.prizes)) {
       data = record.prizes;
     } else {
-      console.warn("⚠️ Invalid pricepool format:", record);
+      console.warn("⚠️ Invalid prizepool format:", record);
       return res.json([]);
     }
 
-    // 🧩 Sort ascending by rank (1, 2, 3…)
+    // 🧩 Sort ascending by rank
     data.sort((a, b) => (a.rank || 0) - (b.rank || 0));
 
     res.json(data);
