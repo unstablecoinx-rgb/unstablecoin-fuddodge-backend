@@ -698,6 +698,110 @@ bot.on("message", async (msg) => {
     );
   }
 });
+
+// ==========================================================
+// 🧠 /admin — Inline control panel for core admin actions
+// ==========================================================
+bot.onText(/\/admin(@[A-Za-z0-9_]+)?$/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = (msg.from.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(user))
+    return sendSafeMessage(chatId, "⚠️ Admins only.");
+
+  await showAdminPanel(chatId);
+});
+
+async function showAdminPanel(chatId) {
+  try {
+    const text =
+      "🧩 <b>UnStableCoin Admin Panel</b>\n" +
+      "Manage events, prizes, and verification.\n\n" +
+      "Choose an action below:";
+
+    const markup = {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🧠 Set Event", callback_data: "admin_setevent" },
+            { text: "🧹 Reset Event", callback_data: "admin_resetevent" },
+          ],
+          [
+            { text: "💰 Set Prize Pool", callback_data: "admin_setpricepool" },
+            { text: "⚡ Set Holding Req", callback_data: "admin_setholdingreq" },
+          ],
+          [{ text: "🔍 Validate Winners", callback_data: "admin_validatewinners" }],
+          [{ text: "❌ Close Panel", callback_data: "admin_close" }],
+        ],
+      },
+    };
+
+    await sendSafeMessage(chatId, text, markup);
+  } catch (err) {
+    console.error("❌ showAdminPanel:", err.message);
+  }
+}
+
+// ==========================================================
+// 🔘 Handle button presses from /admin panel
+// ==========================================================
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const user = (query.from.username || "").toLowerCase();
+  const data = query.data;
+
+  if (!ADMIN_USERS.includes(user)) {
+    await bot.answerCallbackQuery(query.id, { text: "⚠️ Admins only." });
+    return;
+  }
+
+  try {
+    switch (data) {
+      case "admin_setevent":
+        await bot.answerCallbackQuery(query.id, { text: "Opening Set Event…" });
+        bot.processUpdate({ message: { chat: { id: chatId }, from: query.from, text: "/setevent" } });
+        break;
+
+      case "admin_resetevent":
+        await bot.answerCallbackQuery(query.id, { text: "Resetting event…" });
+        bot.processUpdate({ message: { chat: { id: chatId }, from: query.from, text: "/resetevent" } });
+        break;
+
+      case "admin_setpricepool":
+        await bot.answerCallbackQuery(query.id, { text: "Setting prize pool…" });
+        bot.processUpdate({ message: { chat: { id: chatId }, from: query.from, text: "/setpricepool" } });
+        break;
+
+      case "admin_setholdingreq":
+        await bot.answerCallbackQuery(query.id, { text: "Setting holding requirement…" });
+        bot.processUpdate({ message: { chat: { id: chatId }, from: query.from, text: "/setholdingreq" } });
+        break;
+
+      case "admin_validatewinners":
+        await bot.answerCallbackQuery(query.id, { text: "Validating winners…" });
+        bot.processUpdate({ message: { chat: { id: chatId }, from: query.from, text: "/validatewinners" } });
+        break;
+
+      case "admin_close":
+        await bot.answerCallbackQuery(query.id, { text: "Closing panel." });
+        await bot.editMessageText("❌ Admin panel closed.", {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+        });
+        return;
+
+      default:
+        await bot.answerCallbackQuery(query.id, { text: "Unknown action." });
+        return;
+    }
+
+    // 👇 Reopen panel after 3 seconds (keep it awake)
+    setTimeout(() => showAdminPanel(chatId), 3000);
+  } catch (err) {
+    console.error("❌ /admin panel error:", err.message);
+  }
+});
+
 // ==========================================================
 // 12) TELEGRAM CORE COMMANDS
 // ==========================================================
