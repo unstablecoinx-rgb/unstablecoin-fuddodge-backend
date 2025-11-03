@@ -100,6 +100,8 @@ const EVENT_BIN_URL           = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}
 const EVENT_META_BIN_URL      = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;     // event info/meta
 const EVENT_SNAPSHOT_BIN_URL  = `https://api.jsonbin.io/v3/b/${EVENT_SNAPSHOT_JSONBIN_ID}`; // archived events
 const ATH_CHARTS_URL          = `https://api.jsonbin.io/v3/b/${ATH_CHARTS_BIN_ID}`;
+const PRICEPOOL_BIN_URL       = `https://api.jsonbin.io/v3/b/${process.env.PRICEPOOL_JSONBIN_ID}`;
+
 
 // ==========================================================
 // 🧑‍💻 ADMIN
@@ -2110,6 +2112,27 @@ app.get("/leaderboard", async (req, res) => {
   }
 });
 
+// ======================================================
+// 💰 /pricepool — returns current prize pool
+// ======================================================
+app.get("/pricepool", async (req, res) => {
+  try {
+    const r = await axios.get(`${PRICEPOOL_BIN_URL}/latest`, {
+      headers: { "X-Master-Key": JSONBIN_KEY }
+    });
+
+    const data = r.data?.record || [];
+    if (!Array.isArray(data)) {
+      console.warn("⚠️ Invalid pricepool format, expected array.");
+      return res.json([]);
+    }
+
+    res.json(data);
+  } catch (err) {
+    console.error("❌ /pricepool:", err.message);
+    res.status(500).json({ error: "Failed to fetch prize pool" });
+  }
+});
 
 // ======================================================
 // 🚀 EVENT META + LEADERBOARD (Unified Logic)
