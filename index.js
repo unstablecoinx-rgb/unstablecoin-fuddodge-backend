@@ -2169,6 +2169,77 @@ app.get("/pricepool", async (req, res) => {
 });
 
 // ======================================================
+// 🧠 /submit — Admin endpoint to manually push scores
+// ======================================================
+app.post("/submit", async (req, res) => {
+  try {
+    const adminKey = req.headers["x-admin-key"];
+    if (adminKey !== RESET_KEY)
+      return res.status(403).send("Invalid admin key.");
+
+    const { username, score, target = "both" } = req.body;
+    if (!username || !score)
+      return res.status(400).send("Missing username or score.");
+
+    const uname = username.startsWith("@") ? username : "@" + username;
+    console.log(`🧩 /submit by admin: ${uname} → ${score} (${target})`);
+
+    // 1️⃣ Update MAIN leaderboard (JSONBIN_ID)
+    if (target === "main" || target === "both") {
+      try {
+        const mainRes = await axios.get(`${MAIN_BIN_URL}/latest`, {
+          headers: { "X-Master-Key": JSONBIN_KEY },
+        });
+        const mainData = mainRes.data?.record || {};
+        mainData[uname] = score;
+        await axios.put(`${MAIN_BIN_URL}`, mainData, {
+          headers: {
+            "X-Master-Key": JSONBIN_KEY,
+            "Content-Type": "application/json",
+          },
+        });
+        console.log(`✅ Updated MAIN leaderboard for ${uname}`);
+      } catch (err) {
+        console.warn("⚠️ Failed to update MAIN leaderboard:", err.message);
+      }
+    }
+
+    // 2️⃣ Update EVENT leaderboard if requested
+    if (target === "event" || target === "both") {
+      try {
+        const evRes = await axios.get(`${EVENT_BIN_URL}/latest`, {
+          headers: { "X-Master-Key": JSONBIN_KEY },
+        });
+        let evData = evRes.data?.record || {};
+        while (evData.record) evData = evData.record;
+        let scores = Array.isArray(evData.scores) ? evData.scores : [];
+
+        const prev = scores.find((x) => x.username === uname);
+        const newScores = [
+          ...scores.filter((x) => x.username !== uname),
+          { username: uname, score, verified: true, at: new Date().toISOString() },
+        ];
+
+        await axios.put(`${EVENT_BIN_URL}`, { resetAt: evData.resetAt || new Date().toISOString(), scores: newScores }, {
+          headers: {
+            "X-Master-Key": JSONBIN_KEY,
+            "Content-Type": "application/json",
+          },
+        });
+        console.log(`✅ Updated EVENT leaderboard for ${uname}`);
+      } catch (err) {
+        console.warn("⚠️ Failed to update EVENT leaderboard:", err.message);
+      }
+    }
+
+    res.send(`Score ${score} saved for ${uname} (${target})`);
+  } catch (err) {
+    console.error("❌ /submit:", err.message);
+    res.status(500).send("Server error.");
+  }
+});
+
+// ======================================================
 // 🚀 EVENT META + LEADERBOARD (Unified Logic)
 // ======================================================
 app.get("/event", async (req, res) => {
