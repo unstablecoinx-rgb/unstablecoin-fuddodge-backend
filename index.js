@@ -1962,7 +1962,8 @@ app.post("/share", async (req, res) => {
     // --- Get current GLOBAL leaderboard rank ---
     let rankText = "";
     try {
-      const resLB = await axios.get(`${MAIN_BIN_URL}/latest`, {
+      await sleep(1500); // 🕐 small delay to let JSONBin finish any previous write
+      const resLB = await axios.get(`${MAIN_BIN_URL}/latest?nocache=${Date.now()}`, {
         headers: { "X-Master-Key": JSONBIN_KEY },
       });
       const raw = resLB.data?.record || {};
@@ -2045,10 +2046,12 @@ app.post("/share", async (req, res) => {
       console.log("📤 Highlight post sent");
     }
 
-    // --- Save new ATH ---
+    // --- Save new ATH and update global leaderboard ---
     if (isAth && score > prev) {
       shared[username] = score;
+
       try {
+        // 1️⃣ Update ATH bin
         await axios.put(`${ATH_BIN_URL}`, shared, {
           headers: {
             "X-Master-Key": JSONBIN_KEY,
@@ -2056,8 +2059,29 @@ app.post("/share", async (req, res) => {
           },
         });
         console.log(`✅ A.T.H. recorded for ${username} (${score})`);
+
+        // 2️⃣ Read global leaderboard (MAIN_BIN_URL)
+        let globalData = {};
+        try {
+          const res = await axios.get(`${MAIN_BIN_URL}/latest`, {
+            headers: { "X-Master-Key": JSONBIN_KEY },
+          });
+          globalData = res.data?.record || res.data || {};
+        } catch (e) {
+          console.warn("⚠️ Could not read global leaderboard:", e.message);
+        }
+
+        // 3️⃣ Write updated record to MAIN_BIN_URL (JSONBIN_ID)
+        globalData[username] = score;
+        await axios.put(`${MAIN_BIN_URL}`, globalData, {
+          headers: {
+            "X-Master-Key": JSONBIN_KEY,
+            "Content-Type": "application/json",
+          },
+        });
+        console.log(`✅ Record saved in MAIN_BIN_URL for ${username} (${score})`);
       } catch (err) {
-        console.warn("⚠️ Failed to update A.T.H. bin:", err.message);
+        console.warn("⚠️ Failed to update ATH or MAIN_BIN_URL:", err.message);
       }
     }
 
