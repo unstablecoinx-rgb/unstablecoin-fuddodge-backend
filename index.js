@@ -932,11 +932,9 @@ bot.onText(/\/setpricepool([\s\S]*)/i, async (msg, match) => {
   }
 });
 
-// ======================================================
-// 🧩 /EVENT — Event banner + timer + participation + prize pool
-// ======================================================
 bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
+
   try {
     const tz = "Europe/Stockholm";
     const now = DateTime.now().setZone(tz);
@@ -950,22 +948,26 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       return;
     }
 
-    // 2️⃣ Always use same banner
+    // 2️⃣ Banner image
     const bannerUrl = "https://theunstable.io/fuddodge/assets/event_banner.png";
 
-    // 3️⃣ Start building caption
+    // 3️⃣ Base caption
     let caption = `🚀 <b>${escapeXml(data.title)}</b>\n\n`;
 
-    // 4️⃣ Overlay (ended/upcoming info)
-    if (data.overlay?.text) caption += `${escapeXml(data.overlay.text)}\n\n`;
+    // 🧾 Include event description/info
+    if (data.info) {
+      const trimmedInfo = data.info
+        .replace(/^Participation[\s\S]*/i, "") // remove repeated participation section
+        .trim();
+      if (trimmedInfo.length) caption += `${escapeXml(trimmedInfo)}\n\n`;
+    }
 
-    // 5️⃣ Timing block
+    // 4️⃣ Timing block (no seconds, includes timezone)
     if (data.startDate && data.endDate) {
       const start = DateTime.fromISO(data.startDate).setZone(tz);
       const end = DateTime.fromISO(data.endDate).setZone(tz);
-      const tzName = start.toFormat("ZZZZ"); // CET / CEST etc.
 
-      caption += `🕓 ${start.toFormat("yyyy-MM-dd HH:mm")} ${tzName} → ${end.toFormat("yyyy-MM-dd HH:mm")} ${tzName}\n\n`;
+      caption += `🕓 ${start.toFormat("yyyy-MM-dd HH:mm")} → ${end.toFormat("yyyy-MM-dd HH:mm")} ${tz}\n`;
 
       if (now < start) {
         const diff = start.diff(now, ["days", "hours", "minutes"]).toObject();
@@ -980,14 +982,13 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       }
     }
 
-    // 6️⃣ Holding + participation
+    // 5️⃣ Holding requirement
     if (data.minHoldAmount)
-      caption += `Hold at least ${data.minHoldAmount.toLocaleString()} $US to join.\n`;
+      caption += `Hold at least ${data.minHoldAmount.toLocaleString()} $US to join.\n\n`;
 
+    // 6️⃣ Participation (if provided)
     if (data.participation) {
-      const info = data.participation.replace(/\s+/g, " ").trim();
-      const maxAllowed = 900 - caption.length; // reserve space for prizes + hashtags
-      caption += `\n${info.slice(0, maxAllowed)}\n\n`;
+      caption += `${escapeXml(data.participation)}\n\n`;
     }
 
     // 7️⃣ Prize pool
@@ -1005,7 +1006,7 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       console.warn("⚠️ Could not load prize pool:", e.message);
     }
 
-    // 8️⃣ Send post
+    // 8️⃣ Send event post
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
       chat_id: chatId,
       photo: bannerUrl,
