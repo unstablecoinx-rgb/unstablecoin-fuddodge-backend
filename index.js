@@ -963,8 +963,9 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     if (data.startDate && data.endDate) {
       const start = DateTime.fromISO(data.startDate).setZone(tz);
       const end = DateTime.fromISO(data.endDate).setZone(tz);
+      const tzName = start.toFormat("ZZZZ"); // CET / CEST etc.
 
-      caption += `🕓 ${start.toFormat("yyyy-MM-dd HH:mm")} → ${end.toFormat("yyyy-MM-dd HH:mm")}\n`;
+      caption += `🕓 ${start.toFormat("yyyy-MM-dd HH:mm")} ${tzName} → ${end.toFormat("yyyy-MM-dd HH:mm")} ${tzName}\n\n`;
 
       if (now < start) {
         const diff = start.diff(now, ["days", "hours", "minutes"]).toObject();
