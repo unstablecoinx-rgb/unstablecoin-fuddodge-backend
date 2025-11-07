@@ -2172,13 +2172,13 @@ app.get("/pricepool", async (req, res) => {
 
 // ======================================================
 // ⚡ /submit — Manual score submit (uses JSONBIN_KEY)
+// With timezone-aware event guard
 // ======================================================
 app.post("/submit", async (req, res) => {
   try {
     const { username, score, target = "both" } = req.body;
-    if (!username || !score) {
+    if (!username || !score)
       return res.status(400).send("Missing username or score.");
-    }
 
     const uname = username.startsWith("@") ? username : "@" + username;
     const scoreVal = Math.round(Number(score));
@@ -2189,6 +2189,72 @@ app.post("/submit", async (req, res) => {
       "X-Master-Key": process.env.JSONBIN_KEY,
       "Content-Type": "application/json",
     };
+
+    // ======================================================
+    // 🟡 MAIN LEADERBOARD
+    // ======================================================
+    if (target === "main" || target === "both") {
+      const mainUrl = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}/latest`;
+      const mainPut = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}`;
+      const mainRes = await axios.get(mainUrl, { headers });
+      const mainData = mainRes.data?.record || {};
+      mainData[uname] = scoreVal;
+      await axios.put(mainPut, mainData, { headers });
+      console.log(`✅ Updated MAIN leaderboard for ${uname}`);
+    }
+
+    // ======================================================
+    // 🚀 EVENT LEADERBOARD — only if event is active
+    // ======================================================
+    if (target === "event" || target === "both") {
+      const meta = await readBin(
+        `https://api.jsonbin.io/v3/b/${process.env.EVENT_META_JSONBIN_ID}/latest`
+      );
+      let eventMeta = meta?.record?.record || meta?.record || meta;
+
+      const tz = eventMeta?.timezone || "Europe/Stockholm";
+      const now = DateTime.now().setZone(tz);
+      const start = eventMeta?.startDate
+        ? DateTime.fromISO(eventMeta.startDate, { zone: tz })
+        : null;
+      const end = eventMeta?.endDate
+        ? DateTime.fromISO(eventMeta.endDate, { zone: tz })
+        : null;
+      const isActive = start && end && now >= start && now <= end;
+
+      if (!isActive) {
+        console.log(
+          `⚠️ Event not active (${tz}): now=${now.toISO()} start=${start?.toISO()} end=${end?.toISO()}`
+        );
+        return res.json({ ok: false, msg: "Event not active" });
+      }
+
+      const eventUrl = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`;
+      const eventPut = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`;
+      const evRes = await axios.get(eventUrl, { headers });
+      const evData = evRes.data?.record || {};
+      let scores = Array.isArray(evData.scores) ? evData.scores : [];
+
+      scores = [
+        ...scores.filter((s) => s.username !== uname),
+        {
+          username: uname,
+          score: scoreVal,
+          verified: true,
+          at: new Date().toISOString(),
+        },
+      ];
+
+      await axios.put(eventPut, { ...evData, scores }, { headers });
+      console.log(`✅ Updated EVENT leaderboard for ${uname}`);
+    }
+
+    res.send(`✅ ${uname} → ${scoreVal} saved (${target})`);
+  } catch (err) {
+    console.error("❌ /submit failed:", err.message);
+    res.status(500).send("Server error: " + err.message);
+  }
+});
 
     // ======================================================
     // 🟡 MAIN LEADERBOARD (JSONBIN_ID)
@@ -2269,14 +2335,13 @@ app.get("/event", async (req, res) => {
     // 5️⃣ Load config for holding requirement
     const cfg = await getConfig();
 
-    // 6️⃣ Build unified participation text (Telegram + Web safe)
+// 6️⃣ Build unified participation text (Telegram + Web safe)
 const participation = `
 Participation
 Hold at least ${cfg.minHoldAmount.toLocaleString()} $US to join and appear on event leaderboards.
-Add your wallet using /addwallet or the 🌕 Add Wallet button in the start menu in Telegram UnStableCoin Game Bot.
+Add your wallet from the start menu in the UnStableCoin Game Bot.
 
-We run various community contests — memes, scores, and creative drops.
-
+Community events reward holders, builders, and creative chaos.
 Stay unstable. Build weird. Hold the chaos. ⚡
 - UnStableCoin Community
 `.trim();
