@@ -2256,47 +2256,6 @@ app.post("/submit", async (req, res) => {
   }
 });
 
-    // ======================================================
-    // 🟡 MAIN LEADERBOARD (JSONBIN_ID)
-    // ======================================================
-    if (target === "main" || target === "both") {
-      const mainUrl = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}/latest`;
-      const mainPut = `https://api.jsonbin.io/v3/b/${process.env.JSONBIN_ID}`;
-      const mainRes = await axios.get(mainUrl, { headers });
-      const mainData = mainRes.data?.record || {};
-
-      mainData[uname] = scoreVal;
-
-      await axios.put(mainPut, mainData, { headers });
-      console.log(`✅ Updated MAIN leaderboard for ${uname}`);
-    }
-
-    // ======================================================
-    // 🚀 EVENT LEADERBOARD (EVENT_JSONBIN_ID)
-    // ======================================================
-    if (target === "event" || target === "both") {
-      const eventUrl = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`;
-      const eventPut = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`;
-      const evRes = await axios.get(eventUrl, { headers });
-      const evData = evRes.data?.record || {};
-      let scores = Array.isArray(evData.scores) ? evData.scores : [];
-
-      scores = [
-        ...scores.filter((s) => s.username !== uname),
-        { username: uname, score: scoreVal, verified: true, at: new Date().toISOString() },
-      ];
-
-      await axios.put(eventPut, { ...evData, scores }, { headers });
-      console.log(`✅ Updated EVENT leaderboard for ${uname}`);
-    }
-
-    res.send(`✅ ${uname} → ${scoreVal} saved (${target})`);
-  } catch (err) {
-    console.error("❌ /submit failed:", err.message);
-    res.status(500).send("Server error: " + err.message);
-  }
-});
-
 // ======================================================
 // 🚀 EVENT META + LEADERBOARD (Unified Logic)
 // ======================================================
