@@ -939,6 +939,77 @@ bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
     const tz = "Europe/Stockholm";
     const now = DateTime.now().setZone(tz);
 
+    // 1️⃣ Fetch unified event info (includes prizes)
+    const res = await axios.get("https://unstablecoin-fuddodge-backend.onrender.com/event");
+    const data = res.data || {};
+
+    if (!data.title) {
+      await sendSafeMessage(chatId, "⚠️ No active event found.");
+      return;
+    }
+
+    // 2️⃣ Banner image
+    const bannerUrl = "https://theunstable.io/fuddodge/assets/event_banner.png";
+
+    // 3️⃣ Base caption
+    let caption = `🚀 <b>${escapeXml(data.title)}</b>\n\n`;
+
+    // 4️⃣ Event description/info
+    if (data.info) caption += `${escapeXml(data.info)}\n\n`;
+
+    // 5️⃣ Timing block (no seconds, includes timezone)
+    if (data.startDate && data.endDate) {
+      const start = DateTime.fromISO(data.startDate).setZone(tz);
+      const end = DateTime.fromISO(data.endDate).setZone(tz);
+
+      caption += `🕓 ${start.toFormat("yyyy-MM-dd HH:mm")} → ${end.toFormat("yyyy-MM-dd HH:mm")} ${tz}\n`;
+
+      if (now < start) {
+        const diff = start.diff(now, ["days", "hours", "minutes"]).toObject();
+        const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
+        caption += `🟡 Starts in ${remain}\n\n`;
+      } else if (now >= start && now < end) {
+        const diff = end.diff(now, ["days", "hours", "minutes"]).toObject();
+        const remain = `${diff.days ? Math.floor(diff.days) + "d " : ""}${diff.hours ? Math.floor(diff.hours) + "h " : ""}${diff.minutes ? Math.floor(diff.minutes) + "m" : ""}`.trim();
+        caption += `⏳ Ends in ${remain}\n\n`;
+      } else {
+        caption += `🔴 <b>Event ended</b>\n\n`;
+      }
+    }
+
+    // 6️⃣ Holding requirement
+    if (data.minHoldAmount)
+      caption += `Hold at least ${data.minHoldAmount.toLocaleString()} $US to join.\n\n`;
+
+    // 7️⃣ Prize pool (now delivered by backend)
+    if (Array.isArray(data.prizes) && data.prizes.length) {
+      const pool = data.prizes.map((p) => `${p.rank}️⃣ ${p.reward}`).join("\n");
+      caption += `🏆 <b>Prize Pool:</b>\n${pool}\n\n`;
+    }
+
+    // 8️⃣ Send event post
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      chat_id: chatId,
+      photo: bannerUrl,
+      caption,
+      parse_mode: "HTML",
+    });
+
+    console.log(`📤 /event banner sent (${data.title})`);
+  } catch (err) {
+    console.error("❌ /event:", err?.response?.data || err.message);
+    await sendSafeMessage(chatId, "⚠️ Could not load event info.");
+  }
+});
+
+
+bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
+  const chatId = msg.chat.id;
+
+  try {
+    const tz = "Europe/Stockholm";
+    const now = DateTime.now().setZone(tz);
+
     // 1️⃣ Fetch event data
     const res = await axios.get("https://unstablecoin-fuddodge-backend.onrender.com/event");
     const data = res.data || {};
