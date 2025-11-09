@@ -2073,21 +2073,34 @@ app.post("/share", async (req, res) => {
           console.warn("⚠️ Could not read global leaderboard:", e.message);
         }
 
-        // 3️⃣ Write updated record to MAIN_BIN_URL (JSONBIN_ID)
-        globalData[username] = score;
-        await axios.put(`${MAIN_BIN_URL}`, globalData, {
-          headers: {
-            "X-Master-Key": JSONBIN_KEY,
-            "Content-Type": "application/json",
-          },
-        });
-        console.log(`✅ Record saved in MAIN_BIN_URL for ${username} (${score})`);
+        // 3️⃣ Safe write to MAIN_BIN_URL (JSONBIN_ID) — prevent lower-score overwrite
+        const prevMain = Number(globalData[username] || 0);
+        if (score > prevMain) {
+          globalData[username] = score;
+          await axios.put(`${MAIN_BIN_URL}`, globalData, {
+            headers: {
+              "X-Master-Key": JSONBIN_KEY,
+              "Content-Type": "application/json",
+            },
+          });
+          console.log(`✅ Updated MAIN leaderboard for ${username}: ${score} (prev ${prevMain})`);
+        } else {
+          console.log(`🚫 Ignored lower score for ${username}: ${score} < ${prevMain}`);
+        }
+
       } catch (err) {
         console.warn("⚠️ Failed to update ATH or MAIN_BIN_URL:", err.message);
       }
     }
 
-    res.json({ ok: true, posted: true, stored: isAth, message: "Posted successfully" });
+    // ✅ Final response
+    res.json({
+      ok: true,
+      posted: true,
+      stored: isAth,
+      message: "Posted successfully"
+    });
+
   } catch (err) {
     console.error("❌ /share error:", err);
     res.status(500).json({ ok: false, error: err.message });
@@ -2232,21 +2245,37 @@ app.post("/submit", async (req, res) => {
       const eventUrl = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}/latest`;
       const eventPut = `https://api.jsonbin.io/v3/b/${process.env.EVENT_JSONBIN_ID}`;
       const evRes = await axios.get(eventUrl, { headers });
-      const evData = evRes.data?.record || {};
+      let evData = evRes.data?.record || evRes.data || {};
+      while (evData.record) evData = evData.record; // unwrap nesting
+
       let scores = Array.isArray(evData.scores) ? evData.scores : [];
 
-      scores = [
-        ...scores.filter((s) => s.username !== uname),
-        {
-          username: uname,
-          score: scoreVal,
-          verified: true,
-          at: new Date().toISOString(),
-        },
-      ];
+      // 🧩 Find previous score for this user
+      const prevEntry = scores.find((s) => s.username === uname);
+      const prevScore = prevEntry ? Number(prevEntry.score) : 0;
 
-      await axios.put(eventPut, { ...evData, scores }, { headers });
-      console.log(`✅ Updated EVENT leaderboard for ${uname}`);
+      if (scoreVal > prevScore) {
+        // ✅ Only update if new score is higher
+        scores = [
+          ...scores.filter((s) => s.username !== uname),
+          {
+            username: uname,
+            score: scoreVal,
+            verified: true,
+            at: new Date().toISOString(),
+          },
+        ];
+
+        const payload = {
+          resetAt: evData.resetAt || new Date().toISOString(),
+          scores,
+        };
+
+        await axios.put(eventPut, payload, { headers });
+        console.log(`✅ Updated EVENT leaderboard for ${uname}: ${scoreVal} (prev ${prevScore})`);
+      } else {
+        console.log(`🚫 Ignored lower event score for ${uname}: ${scoreVal} < ${prevScore}`);
+      }
     }
 
     res.send(`✅ ${uname} → ${scoreVal} saved (${target})`);
