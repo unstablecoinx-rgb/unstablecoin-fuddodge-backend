@@ -294,6 +294,81 @@ async function writeBin(url, payload, tries = 3) {
   throw new Error("writeBin exhausted retries");
 }
 
+// ============================================================
+// 🕒 AUTO HOLDER SNAPSHOT SCHEDULER — UnStableCoin Bot v3.5
+// ============================================================
+// This module automatically captures event holder snapshots
+// ("start" & "end") at their scheduled times.
+// Requires: getCurrentEvent(), fetchAllHolders(), writeBin(), saveEventMeta()
+
+const REFRESH_INTERVAL = 60 * 1000; // check every minute
+
+// --- background check loop ---
+setInterval(async () => {
+  try {
+    const event = await getCurrentEvent();
+    if (!event || !event.id) return;
+
+    const now = Date.now();
+    const startTime = new Date(event.startTime).getTime();
+    const endTime = new Date(event.endTime).getTime();
+
+    // ✅ START snapshot
+    if (!event.startSnapshotTaken && now >= startTime && now < endTime) {
+      console.log("⏱ Auto-capturing START holders snapshot...");
+      await refreshHolders("start");
+      event.startSnapshotTaken = true;
+      await saveEventMeta(event);
+    }
+
+    // ✅ END snapshot
+    if (!event.endSnapshotTaken && now >= endTime) {
+      console.log("⏱ Auto-capturing END holders snapshot...");
+      await refreshHolders("end");
+      event.endSnapshotTaken = true;
+      await saveEventMeta(event);
+    }
+
+  } catch (err) {
+    console.warn("⚠️ Holder snapshot scheduler error:", err.message || err);
+  }
+}, REFRESH_INTERVAL);
+
+// ============================================================
+// 📦 refreshHolders(type) — collect and save holders snapshot
+// ============================================================
+
+async function refreshHolders(type = "start") {
+  try {
+    console.log(`🔍 Refreshing ${type.toUpperCase()} holders...`);
+
+    // 👇 Replace this call with your Solana scan / API logic
+    const holders = await fetchAllHolders();
+    const currentEvent = await getCurrentEvent();
+
+    const snapshot = {
+      eventId: currentEvent?.id || "unknown",
+      type,
+      updated: new Date().toISOString(),
+      total: holders.length,
+      holders,
+    };
+
+    const binId =
+      type === "start"
+        ? process.env.JSONBIN_HOLDERS_START
+        : process.env.JSONBIN_HOLDERS_END;
+
+    await writeBin(binId, snapshot);
+
+    console.log(
+      `💾 Saved ${holders.length} holders to ${type.toUpperCase()} snapshot (${snapshot.eventId})`
+    );
+  } catch (err) {
+    console.warn(`❌ refreshHolders(${type}) failed:`, err.message || err);
+  }
+}
+
 // ==========================================================
 // 8) CONFIG & HOLDERS
 // ==========================================================
