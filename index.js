@@ -1694,14 +1694,23 @@ app.post("/submit", async (req, res) => {
 
     const headers = { "X-Master-Key": process.env.JSONBIN_KEY, "Content-Type": "application/json" };
 
+    // === MAIN leaderboard ===
     if (target === "main" || target === "both") {
       const mainRes = await axios.get(`${MAIN_BIN_URL}/latest`, { headers });
-      let mainData = mainRes.data; while (mainData?.record) mainData = mainData.record;
-      mainData[uname] = scoreVal;
-      await axios.put(`${MAIN_BIN_URL}`, mainData, { headers });
-      console.log(`✅ Updated MAIN leaderboard for ${uname}`);
+      let mainData = mainRes.data;
+      while (mainData?.record) mainData = mainData.record;
+      const prev = Number(mainData[uname] || 0);
+
+      if (Number(scoreVal) > prev) {
+        mainData[uname] = scoreVal;
+        await axios.put(`${MAIN_BIN_URL}`, mainData, { headers });
+        console.log(`✅ Updated MAIN leaderboard for ${uname}: ${scoreVal} (prev ${prev})`);
+      } else {
+        console.log(`🚫 Ignored lower MAIN score for ${uname}: ${scoreVal} ≤ ${prev}`);
+      }
     }
 
+    // === EVENT leaderboard ===
     if (target === "event" || target === "both") {
       const meta = await readBin(`${EVENT_META_BIN_URL}/latest`);
       let eventMeta = meta || {};
@@ -1710,29 +1719,34 @@ app.post("/submit", async (req, res) => {
       const start = eventMeta?.startDate ? DateTime.fromISO(eventMeta.startDate, { zone: tz }) : null;
       const end = eventMeta?.endDate ? DateTime.fromISO(eventMeta.endDate, { zone: tz }) : null;
       const isActive = start && end && now >= start && now <= end;
+
       if (!isActive) {
         console.log(`⚠️ Event not active (${tz})`);
         return res.json({ ok: false, msg: "Event not active" });
       }
 
       const evRes = await axios.get(`${EVENT_BIN_URL}/latest`, { headers });
-      let evData = evRes.data; while (evData?.record) evData = evData.record;
+      let evData = evRes.data;
+      while (evData?.record) evData = evData.record;
       let scores = Array.isArray(evData.scores) ? evData.scores : [];
 
       const prevEntry = scores.find((s) => s.username === uname);
       const prevScore = prevEntry ? Number(prevEntry.score) : 0;
 
       if (scoreVal > prevScore) {
-        scores = [...scores.filter((s) => s.username !== uname), { username: uname, score: scoreVal, verified: true, at: new Date().toISOString() }];
+        scores = [
+          ...scores.filter((s) => s.username !== uname),
+          { username: uname, score: scoreVal, verified: true, at: new Date().toISOString() }
+        ];
         const payload = { resetAt: evData.resetAt || new Date().toISOString(), scores };
         await axios.put(`${EVENT_BIN_URL}`, payload, { headers });
         console.log(`✅ Updated EVENT leaderboard for ${uname}: ${scoreVal} (prev ${prevScore})`);
       } else {
-        console.log(`🚫 Ignored lower event score for ${uname}: ${scoreVal} < ${prevScore}`);
+        console.log(`🚫 Ignored lower EVENT score for ${uname}: ${scoreVal} ≤ ${prevScore}`);
       }
     }
 
-    res.send(`✅ ${uname} → ${scoreVal} saved (${target})`);
+    res.send(`✅ ${uname} → ${scoreVal} checked and saved (${target})`);
   } catch (err) {
     console.error("❌ /submit failed:", err.message);
     res.status(500).send("Server error: " + err.message);
