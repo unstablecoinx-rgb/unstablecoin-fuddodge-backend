@@ -703,6 +703,44 @@ async function refreshHolders(type = "start") {
   }
 }
 
+// ============================================================
+// 🕒 AUTO HOLDER SNAPSHOT SCHEDULER — UnStableCoin Bot v3.5
+// ============================================================
+const REFRESH_INTERVAL = 60 * 1000; // check every 60s
+
+console.log("🕒 Holder snapshot scheduler initialized (checks every 60s)");
+
+setInterval(async () => {
+  try {
+    const event = await getEventMeta();
+    if (!event?.startDate || !event?.endDate) return;
+
+    const now = Date.now();
+    const startTime = new Date(event.startDate).getTime();
+    const endTime   = new Date(event.endDate).getTime();
+
+    // ✅ START snapshot
+    if (!event.raw?.startSnapshotTaken && now >= startTime && now < endTime) {
+      console.log("⏱ Auto-capturing START holders snapshot...");
+      await refreshHolders("start");
+      event.raw.startSnapshotTaken = true;
+      event.raw.updatedAt = new Date().toISOString();
+      await writeBin(EVENT_META_BIN_URL, event.raw);
+    }
+
+    // ✅ END snapshot
+    if (!event.raw?.endSnapshotTaken && now >= endTime) {
+      console.log("⏱ Auto-capturing END holders snapshot...");
+      await refreshHolders("end");
+      event.raw.endSnapshotTaken = true;
+      event.raw.updatedAt = new Date().toISOString();
+      await writeBin(EVENT_META_BIN_URL, event.raw);
+    }
+  } catch (err) {
+    console.warn("⚠️ Holder snapshot scheduler error:", err.message || err);
+  }
+}, REFRESH_INTERVAL);
+
 // ==========================================================
 // 13) TELEGRAM SAFE SEND HELPERS
 // ==========================================================
