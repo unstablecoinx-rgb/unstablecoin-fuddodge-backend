@@ -345,12 +345,10 @@ setInterval(async () => {
 // ============================================================
 // 📦 refreshHolders(type) — collect and save holders snapshot
 // ============================================================
-
 async function refreshHolders(type = "start") {
   try {
     console.log(`🔍 Refreshing ${type.toUpperCase()} holders...`);
 
-    // 👇 Replace this call with your Solana scan / API logic
     const holders = await fetchAllHolders();
     const currentEvent = await getCurrentEvent();
 
@@ -367,11 +365,19 @@ async function refreshHolders(type = "start") {
         ? process.env.JSONBIN_HOLDERS_START
         : process.env.JSONBIN_HOLDERS_END;
 
-    await writeBin(binId, snapshot);
+    await writeBin(`https://api.jsonbin.io/v3/b/${binId}`, snapshot);
+    console.log(`💾 Saved ${holders.length} holders to ${type.toUpperCase()} snapshot (${snapshot.eventId})`);
 
-    console.log(
-      `💾 Saved ${holders.length} holders to ${type.toUpperCase()} snapshot (${snapshot.eventId})`
-    );
+    // ✅ Update event meta flags (safe version)
+    const meta = await getEventMeta();
+    if (meta?.raw) {
+      if (type === "start") meta.raw.startSnapshotTaken = true;
+      if (type === "end") meta.raw.endSnapshotTaken = true;
+      meta.raw.updatedAt = new Date().toISOString();
+      await writeBin(EVENT_META_BIN_URL, meta.raw);
+      console.log(`📍 Event meta updated: ${type.toUpperCase()} snapshot marked as taken.`);
+    }
+
   } catch (err) {
     console.warn(`❌ refreshHolders(${type}) failed:`, err.message || err);
   }
