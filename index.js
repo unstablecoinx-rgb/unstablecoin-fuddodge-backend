@@ -663,6 +663,23 @@ async function getVerifiedEventTopArray(limit = 10) {
   }
 }
 
+// ============================================================
+// 🪣 fetchAllHolders — unified holder fetch for snapshots
+// ============================================================
+async function fetchAllHolders() {
+  try {
+    const arr = await getHoldersArray();
+    return arr.map((h) => ({
+      username: h.username,
+      wallet: h.wallet,
+      amount: h.amount || 0,
+      verifiedAt: h.verifiedAt || null,
+    }));
+  } catch (err) {
+    console.error("❌ fetchAllHolders:", err.message);
+    return [];
+  }
+}
 
 // ============================================================
 // 📦 refreshHolders(type) — collect and save holders snapshot
