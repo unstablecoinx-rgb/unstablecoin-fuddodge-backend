@@ -54,7 +54,13 @@ const CONFIG_DEFAULTS = {
 
 // 🧩 Feature toggles
 const ATH_TEST_MODE = true; // disable test mode for production
-const ATH_CHAT_ID = process.env.ATH_CHAT_ID || "-1002703016911";
+// ✅ Use environment variable only (no fallback hardcoding)
+const ATH_CHAT_ID = process.env.ATH_CHAT_ID;
+
+if (!ATH_CHAT_ID) {
+  console.warn("⚠️ Warning: ATH_CHAT_ID not set — A.T.H. posts will be skipped.");
+}
+
 // Bug reports destination
 const BUG_REPORT_CHAT_ID = ATH_CHAT_ID;
 
@@ -160,6 +166,25 @@ app.get("/", (_req, res) => res.send("💛 UnStableCoin Bot running (webhook).")
 // 6) UTILITIES
 // ==========================================================
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// --- Safe Telegram sendPhoto retry helper ---
+async function postWithRetry(url, form, tries = 3) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      await axios.post(url, form, { headers: form.getHeaders() });
+      return true; // success
+    } catch (err) {
+      const code = err?.response?.status;
+      if (code === 429 && i < tries - 1) {
+        const delay = 1000 * (i + 1);
+        console.warn(`⏳ Telegram rate-limited, retry ${i + 1}/${tries} in ${delay} ms`);
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 function escapeXml(unsafe) {
   return String(unsafe)
@@ -1047,7 +1072,8 @@ bot.onText(/\/intro(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 bot.onText(/\/event(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
   try {
-    const tz = "Europe/Stockholm";
+   const meta = await getEventMeta();
+const tz = meta.timezone || "Europe/Stockholm"; 
     const now = DateTime.now().setZone(tz);
 
     const res = await axios.get("https://unstablecoin-fuddodge-backend.onrender.com/event");
@@ -1605,10 +1631,65 @@ bot.on("callback_query", async (query) => {
   }
 });
 
-// Dummy implementations to avoid reference errors if not defined elsewhere
-async function removeWallet(chatId) { /* no-op placeholder to keep behavior */ }
-async function changeWallet(chatId) { /* no-op placeholder to keep behavior */ }
+// ============================================================
+// 🧩 Actual wallet change/remove logic (restores functionality)
+// ============================================================
 
+async function removeWallet(chatId) {
+  try {
+    const holders = await getHoldersArray();
+    const user = holders.find(
+      (h) => normalizeName(h.username) === normalizeName(chatId.username)
+    );
+    if (!user) {
+      await sendSafeMessage(chatId, "⚠️ No wallet found to remove.");
+      return;
+    }
+
+    const filtered = holders.filter(
+      (h) => normalizeName(h.username) !== normalizeName(chatId.username)
+    );
+    await saveHoldersArray(filtered);
+    delete _cache[HOLDER_BIN_URL];
+    console.log(`🗑️ Wallet removed for ${chatId.username}`);
+    await sendSafeMessage(chatId, "🗑️ Wallet removed successfully.");
+  } catch (err) {
+    console.error("❌ removeWallet:", err.message);
+    await sendSafeMessage(chatId, "⚠️ Could not remove wallet. Try again later.");
+  }
+}
+
+async function changeWallet(chatId) {
+  try {
+    const holders = await getHoldersArray();
+    const existing = holders.find(
+      (h) => normalizeName(h.username) === normalizeName(chatId.username)
+    );
+    if (!existing) {
+      await sendSafeMessage(chatId, "⚠️ No wallet found. Use /addwallet first.");
+      return;
+    }
+
+    await bot.sendMessage(chatId, "🔁 Please send your new Solana wallet address:");
+    bot.once("message", async (m2) => {
+      const wallet = (m2.text || "").trim();
+      if (!isLikelySolanaAddress(wallet)) {
+        await sendSafeMessage(chatId, "❌ Invalid address. Try again with /changewallet.");
+        return;
+      }
+
+      existing.wallet = wallet;
+      existing.updatedAt = new Date().toISOString();
+      await saveHoldersArray(holders);
+      delete _cache[HOLDER_BIN_URL];
+      console.log(`🔁 Wallet changed for ${chatId.username}`);
+      await sendSafeMessage(chatId, `✅ Wallet updated to <code>${wallet.slice(0,4)}…${wallet.slice(-4)}</code>`, { parse_mode: "HTML" });
+    });
+  } catch (err) {
+    console.error("❌ changeWallet:", err.message);
+    await sendSafeMessage(chatId, "⚠️ Could not change wallet. Try again later.");
+  }
+}
 // ============================================================
 // 20.5) HOLDER SNAPSHOT VERIFICATION & WINNERS
 // ============================================================
@@ -2203,8 +2284,8 @@ bot.onText(/\/bugreport(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 // 22) SERVER START
 // ==========================================================
 app.listen(PORT, async () => {
-  console.log(`🚀 UnStableCoin Bot v3.4 running on port ${PORT}`);
-  console.log("💛 UnStableCoin Bot v3.4 merged build (2025-10-25) booted");
+  console.log(`🚀 UnStableCoin Bot v3.5 running on port ${PORT}`);
+  console.log("💛 UnStableCoin Bot v3.5 merged build (2025-10-25) booted");
   console.log("🏆 Most Hard-Core Player of the Year: @unstablecoinx");
   try {
     const cfg = await getConfig();
