@@ -77,6 +77,10 @@ const RENDER_EXTERNAL_HOSTNAME  = process.env.RENDER_EXTERNAL_HOSTNAME || null;
 const PORT                      = process.env.PORT || 10000;
 const PRICELIST_JSONBIN_ID      = process.env.PRICELIST_JSONBIN_ID;
 const REQUIRE_HOLDER_FOR_ATH    = process.env.REQUIRE_HOLDER_FOR_ATH === "true";
+const JSONBIN_HOLDERS_START     = process.env.JSONBIN_HOLDERS_START;
+const JSONBIN_HOLDERS_END       = process.env.JSONBIN_HOLDERS_END;
+
+
 
 // ✅ Validation — ensure required ENV vars exist
 if (
@@ -92,7 +96,9 @@ if (
   !ATH_CHARTS_BIN_ID ||
   !JSONBIN_KEY ||
   !RESET_KEY ||
-  !PRICELIST_JSONBIN_ID
+  !PRICELIST_JSONBIN_ID ||
+  !JSONBIN_HOLDERS_START ||
+  !JSONBIN_HOLDERS_END
 ) {
   console.error("❌ Missing one or more required environment variables!");
   process.exit(1);
@@ -110,6 +116,8 @@ const EVENT_BIN_URL           = `https://api.jsonbin.io/v3/b/${EVENT_JSONBIN_ID}
 const EVENT_META_BIN_URL      = `https://api.jsonbin.io/v3/b/${EVENT_META_JSONBIN_ID}`;
 const ATH_CHARTS_URL          = `https://api.jsonbin.io/v3/b/${ATH_CHARTS_BIN_ID}`;
 const PRICELIST_URL           = `https://api.jsonbin.io/v3/b/${PRICELIST_JSONBIN_ID}`;
+const HOLDERS_START_BIN_URL   = `https://api.jsonbin.io/v3/b/${JSONBIN_HOLDERS_START}`;
+const HOLDERS_END_BIN_URL     = `https://api.jsonbin.io/v3/b/${JSONBIN_HOLDERS_END}`;
 
 // ==========================================================
 // 4) ADMIN USERS
@@ -1536,6 +1544,109 @@ bot.on("callback_query", async (query) => {
 // Dummy implementations to avoid reference errors if not defined elsewhere
 async function removeWallet(chatId) { /* no-op placeholder to keep behavior */ }
 async function changeWallet(chatId) { /* no-op placeholder to keep behavior */ }
+
+// ============================================================
+// 20.5) HOLDER SNAPSHOT VERIFICATION & WINNERS
+// ============================================================
+
+async function readSnapshot(type = "start") {
+  const binId =
+    type === "start"
+      ? process.env.JSONBIN_HOLDERS_START
+      : process.env.JSONBIN_HOLDERS_END;
+  if (!binId) throw new Error(`Missing bin ID for ${type} snapshot`);
+  const res = await readBin(`https://api.jsonbin.io/v3/b/${binId}`);
+  return res?.record || res || {};
+}
+
+// --- /verifyholdersnapshot [wallet] ---
+bot.onText(/\/verifyholdersnapshot/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const parts = msg.text.trim().split(" ");
+  const wallet = (parts[1] || "").trim();
+
+  if (!wallet) {
+    return sendSafeMessage(chatId, "⚠️ Usage: /verifyholdersnapshot <wallet>");
+  }
+
+  try {
+    const startSnap = await readSnapshot("start");
+    const endSnap = await readSnapshot("end");
+
+    const heldStart = startSnap.holders?.find(
+      (h) => h.wallet?.toLowerCase() === wallet.toLowerCase()
+    );
+    const heldEnd = endSnap.holders?.find(
+      (h) => h.wallet?.toLowerCase() === wallet.toLowerCase()
+    );
+
+    if (heldStart && heldEnd) {
+      await sendSafeMessage(
+        chatId,
+        `✅ Wallet <code>${wallet.slice(0, 6)}…${wallet.slice(-4)}</code> held during both snapshots.\n\n💰 Start: ${heldStart.amount}\n💰 End: ${heldEnd.amount}`,
+        { parse_mode: "HTML" }
+      );
+    } else if (heldStart || heldEnd) {
+      await sendSafeMessage(
+        chatId,
+        `⚠️ Wallet <code>${wallet.slice(0, 6)}…${wallet.slice(-4)}</code> held during one snapshot only.`,
+        { parse_mode: "HTML" }
+      );
+    } else {
+      await sendSafeMessage(
+        chatId,
+        `❌ Wallet <code>${wallet.slice(0, 6)}…${wallet.slice(-4)}</code> not found in either snapshot.`,
+        { parse_mode: "HTML" }
+      );
+    }
+  } catch (err) {
+    console.error("❌ /verifyholdersnapshot failed:", err.message);
+    sendSafeMessage(chatId, "⚠️ Could not verify wallet from snapshots.");
+  }
+});
+
+// --- /winnerssnapshot ---
+bot.onText(/\/winnerssnapshot/i, async (msg) => {
+  const chatId = msg.chat.id;
+  const user = (msg.from.username || "").toLowerCase();
+  if (!ADMIN_USERS.includes(user)) return sendSafeMessage(chatId, "⚠️ Admins only.");
+
+  try {
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+    const startSnap = await readSnapshot("start");
+    const endSnap = await readSnapshot("end");
+
+    const eligible = startSnap.holders?.filter((h) =>
+      endSnap.holders?.some(
+        (x) =>
+          x.wallet?.toLowerCase() === h.wallet?.toLowerCase() &&
+          h.amount >= minHold &&
+          x.amount >= minHold
+      )
+    );
+
+    if (!eligible || !eligible.length)
+      return sendSafeMessage(chatId, "😔 No eligible wallets found.");
+
+    const lines = eligible
+      .slice(0, 20)
+      .map(
+        (w, i) =>
+          `${i + 1}. ${w.wallet.slice(0, 6)}…${w.wallet.slice(-4)} (${w.amount})`
+      );
+
+    await sendChunked(
+      chatId,
+      `🏆 <b>Eligible Wallets from Snapshots</b>\nMin Hold: ${minHold.toLocaleString()} $US\n\n`,
+      lines,
+      3800
+    );
+  } catch (err) {
+    console.error("❌ /winnerssnapshot failed:", err.message);
+    sendSafeMessage(chatId, "⚠️ Could not load winners from snapshots.");
+  }
+});
 
 // ==========================================================
 // 21) HTTP API
