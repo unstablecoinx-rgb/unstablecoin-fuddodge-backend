@@ -1218,41 +1218,84 @@ bot.onText(/\/validatewinners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   }
 });
 
+// ==========================================================
+// 🏁 /winners — Snapshot-verified version
+// ==========================================================
 bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   const chatId = msg.chat.id;
   const user = (msg.from.username || "").toLowerCase();
-  if (!ADMIN_USERS.includes(user)) return sendSafeMessage(chatId, "⚠️ Admins only.");
+  if (!ADMIN_USERS.includes(user))
+    return sendSafeMessage(chatId, "⚠️ Admins only.");
 
   try {
     const eventRes = await axios.get("https://unstablecoin-fuddodge-backend.onrender.com/event");
     const eventData = eventRes.data || {};
     const status = eventData.status || "inactive";
-    const title = eventData.title || "UnStable Challenge";
-    if (status !== "ended") return sendSafeMessage(chatId, "⚠️ Event not yet ended. Winners will be revealed once it is over.");
+    const title  = eventData.title || "UnStable Challenge";
 
-    const topVerified = await getVerifiedEventTopArray(50);
+    if (status !== "ended")
+      return sendSafeMessage(chatId, "⚠️ Event not yet ended. Winners will be revealed once it is over.");
+
+    // --- Load configs & snapshots ---
+    const cfg     = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+
+    const startSnap = await readBin(`${HOLDERS_START_BIN_URL}/latest`);
+    const endSnap   = await readBin(`${HOLDERS_END_BIN_URL}/latest`);
+    const start     = startSnap?.holders || [];
+    const end       = endSnap?.holders || [];
+
+    // --- Build eligible wallet list (in both snapshots + ≥ minHold) ---
+    const eligibleWallets = start
+      .filter((s) =>
+        end.some(
+          (e) =>
+            e.wallet?.toLowerCase() === s.wallet?.toLowerCase() &&
+            Number(s.amount || 0) >= minHold &&
+            Number(e.amount || 0) >= minHold
+        )
+      )
+      .map((x) => x.wallet?.toLowerCase());
+    console.log(`🏁 Snapshot eligible wallets: ${eligibleWallets.length}`);
+
+    if (!eligibleWallets.length)
+      return sendSafeMessage(chatId, "😔 No eligible snapshot holders found.");
+
+    // --- Load event top scores & prize pool ---
+    const topAll     = await getVerifiedEventTopArray(100); // reuse same sorting logic
+    const holdersMap = await getHoldersMapFromArray();
+
     const prizeRes = await axios.get(`${PRICELIST_URL}/latest`, { headers: { "X-Master-Key": JSONBIN_KEY } });
-    let prec = prizeRes.data;
-    while (prec?.record) prec = prec.record;
+    let prec = prizeRes.data; while (prec?.record) prec = prec.record;
     const prizes = prec?.prizes || [];
 
-    if (!topVerified.length) return sendSafeMessage(chatId, "⚠️ No verified holders found for this event.");
-    if (!prizes.length) return sendSafeMessage(chatId, "⚠️ No prize pool defined. Use /setpricepool first.");
+    if (!prizes.length)
+      return sendSafeMessage(chatId, "⚠️ No prize pool defined. Use /setpricepool first.");
 
-    const winners = topVerified.slice(0, prizes.length);
+    // --- Filter event scores to snapshot-eligible wallets only ---
+    const winners = topAll.filter((x) => {
+      const wallet = holdersMap[x.username]?.wallet?.toLowerCase();
+      return eligibleWallets.includes(wallet);
+    }).slice(0, prizes.length);
+
+    if (!winners.length)
+      return sendSafeMessage(chatId, "😔 No snapshot-verified winners found.");
+
+    // --- Format winners list ---
     const winnersList = winners
       .map((x, i) => {
         const prize = prizes[i]?.reward || "-";
-        const usernameTag = x.username.startsWith("@") ? x.username : `@${x.username}`;
-        return `${i + 1}. <b>${usernameTag}</b> — ${formatMcap(x.score)} | ${prize}`;
+        const uname = x.username.startsWith("@") ? x.username : `@${x.username}`;
+        return `${i + 1}. <b>${uname}</b> — ${formatMcap(x.score)} | ${prize}`;
       })
       .join("\n");
 
+    // --- Compose and send Telegram post ---
     const caption =
       `🏁 <b>${escapeXml(title)} — Verified Winners</b>\n\n` +
-      `Here are the top ${winners.length} verified holders who met all event criteria:\n\n` +
+      `Based on holder <b>snapshots</b> taken at event start and end.\n` +
+      `Only wallets holding ≥ ${minHold.toLocaleString()} $US in both snapshots qualified.\n\n` +
       `${winnersList}\n\n` +
-      `All wallets were verified during the event period. Holding confirmed at snapshot.\n\n` +
       `💛 Thank you all who joined and built this unstable ride.\n\n` +
       `#UnStableCoin #WAGMI-ish #Solana`;
 
@@ -1265,15 +1308,15 @@ bot.onText(/\/winners(@[A-Za-z0-9_]+)?$/i, async (msg) => {
       caption: trimmed,
       parse_mode: "HTML",
     });
-    console.log(`📤 Winners post sent (${winners.length} verified winners)`);
+    console.log(`📤 Snapshot-based winners post sent (${winners.length} verified)`);
 
     if (caption.length > 1020) {
       const remainder = caption.slice(1020);
       await sendSafeMessage(chatId, remainder, { parse_mode: "HTML" });
     }
   } catch (err) {
-    console.error("❌ /winners:", err.message);
-    await sendSafeMessage(chatId, "⚠️ Could not announce winners.");
+    console.error("❌ /winners (snapshot) failed:", err.message);
+    await sendSafeMessage(chatId, "⚠️ Could not announce snapshot-verified winners.");
   }
 });
 
