@@ -1589,12 +1589,17 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 // ==========================================================
-// 20) WALLET FLOWS
+// 20) WALLET FLOWS — fixed username handling
 // ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
   const chatId = msg.chat.id;
-  const realUser = msg.from?.username;
-  if (!realUser) return bot.sendMessage(chatId, "❌ You need a Telegram username (Settings → Username).");
+  let realUser = msg.from?.username;
+
+  // 🧠 fallback if username not set
+  if (!realUser) {
+    realUser = msg.from?.first_name || `user${msg.from?.id}`;
+    console.warn(`⚠️ User has no Telegram username. Using fallback ID: ${realUser}`);
+  }
 
   const holders = await getHoldersArray();
   const existing = holders.find((h) => normalizeName(h.username) === normalizeName(realUser));
@@ -1628,7 +1633,12 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
         return;
       }
       await bot.sendMessage(chatId, "Do you really want to change your wallet?", {
-        reply_markup: { inline_keyboard: [[{ text: "✅ Yes, change it", callback_data: "confirm_change_yes" }, { text: "❌ Cancel", callback_data: "confirm_change_no" }]] },
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Yes, change it", callback_data: "confirm_change_yes" },
+             { text: "❌ Cancel", callback_data: "confirm_change_no" }],
+          ],
+        },
       });
       return;
     }
@@ -1639,7 +1649,12 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
         return;
       }
       await bot.sendMessage(chatId, "Are you sure you want to remove your wallet?", {
-        reply_markup: { inline_keyboard: [[{ text: "✅ Yes, remove", callback_data: "confirm_remove_yes" }, { text: "❌ Cancel", callback_data: "confirm_remove_no" }]] },
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Yes, remove", callback_data: "confirm_remove_yes" },
+             { text: "❌ Cancel", callback_data: "confirm_remove_no" }],
+          ],
+        },
       });
       return;
     }
@@ -1650,9 +1665,14 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
         return;
       }
       await bot.sendMessage(chatId, "🔍 Checking on-chain balance...");
-      const res = await axios.post(`https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`, { username: "@" + realUser, wallet: existing.wallet });
-      if (res.data.ok) await bot.sendMessage(chatId, `✅ Verified successfully for @${realUser}!`, mainMenu);
-      else await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`, mainMenu);
+      const res = await axios.post(`https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`, {
+        username: "@" + realUser,
+        wallet: existing.wallet,
+      });
+      if (res.data.ok)
+        await bot.sendMessage(chatId, `✅ Verified successfully for @${realUser}!`, mainMenu);
+      else
+        await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`, mainMenu);
       return;
     }
   } catch (err) {
