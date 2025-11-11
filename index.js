@@ -811,21 +811,38 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
 }
 
 // ==========================================================
-// 14) MAIN MENU + BUTTON ROUTER
+// 14) MAIN MENU (Updated for Desktop/Web compatibility)
 // ==========================================================
-const mainMenu = {
-  reply_markup: {
-    keyboard: [
-      [{ text: "🌕 Add Wallet" }, { text: "⚡ Verify Holder" }],
-      [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
-      [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }],
-      [{ text: "🏁 Event Leaderboard" }],
-      [{ text: "🐞 Report Bug" }],
-    ],
-    resize_keyboard: true,
-    one_time_keyboard: false,
-  },
-};
+bot.onText(/\/start|\/menu/i, async (msg) => {
+  const chatId = msg.chat.id;
+
+  const welcome = `
+💛 <b>Welcome to UnStableCoin</b>
+
+Use the buttons below to manage your wallet, verify holdings, or join the current event. ⚡
+  `;
+
+  const inlineMenu = {
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🌕 Add Wallet", callback_data: "inline_addwallet" },
+          { text: "⚡ Verify Holder", callback_data: "inline_verifyholder" },
+        ],
+        [
+          { text: "🏆 Leaderboard", callback_data: "inline_top10" },
+          { text: "🚀 Current Event", callback_data: "inline_event" },
+        ],
+        [
+          { text: "🐞 Report Bug", callback_data: "inline_bugreport" },
+        ],
+      ],
+    },
+  };
+
+  await sendSafeMessage(chatId, welcome, inlineMenu);
+});
 
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
@@ -1627,6 +1644,45 @@ bot.on("callback_query", async (query) => {
     }
   } catch (err) {
     console.error("❌ callback_query handler error:", err);
+    try { await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." }); } catch {}
+  }
+});
+
+// ============================================================
+// Inline menu callback handler for /start (cross-platform support)
+// ============================================================
+bot.on("callback_query", async (query) => {
+  try {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+
+    // Handle inline menu callbacks
+    if (data.startsWith("inline_")) {
+      const cmd = data.replace("inline_", "");
+      switch (cmd) {
+        case "addwallet":
+          bot.processUpdate({ message: { chat: { id: chatId }, text: "/addwallet" } });
+          break;
+        case "verifyholder":
+          bot.processUpdate({ message: { chat: { id: chatId }, text: "/verifyholder" } });
+          break;
+        case "top10":
+          bot.processUpdate({ message: { chat: { id: chatId }, text: "/top10" } });
+          break;
+        case "event":
+          bot.processUpdate({ message: { chat: { id: chatId }, text: "/event" } });
+          break;
+        case "bugreport":
+          bot.processUpdate({ message: { chat: { id: chatId }, text: "/bugreport" } });
+          break;
+        default:
+          break;
+      }
+      await bot.answerCallbackQuery(query.id);
+      return; // prevent double handling
+    }
+  } catch (err) {
+    console.error("❌ inline callback error:", err.message);
     try { await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." }); } catch {}
   }
 });
