@@ -820,7 +820,7 @@ const mainMenu = {
 };
 
 // ==========================================================
-// 14.5) START / MENU — UnStable Main User Panel (v3.6 Clean)
+// 14.5) START / MENU — UnStable Main User Panel (v3.6 Connected)
 // ==========================================================
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
@@ -869,25 +869,60 @@ Stay unstable. 💛⚡
 });
 
 
-
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
-  const text = msg.text?.trim();
+// ==========================================================
+// 🧩 Inline Button Router — Connects Buttons → Commands
+// ==========================================================
+bot.on("callback_query", async (query) => {
   try {
-    switch (text) {
-      case "🌕 Add Wallet":        bot.processUpdate({ message: { ...msg, text: "/addwallet" } }); break;
-      case "⚡ Verify Holder":     bot.processUpdate({ message: { ...msg, text: "/verifyholder" } }); break;
-      case "🔁 Change Wallet":     bot.processUpdate({ message: { ...msg, text: "/changewallet" } }); break;
-      case "❌ Remove Wallet":     bot.processUpdate({ message: { ...msg, text: "/removewallet" } }); break;
-      case "🏆 Leaderboard":       bot.processUpdate({ message: { ...msg, text: "/top10" } }); break;
-      case "🚀 Current Event":     bot.processUpdate({ message: { ...msg, text: "/event" } }); break;
-      case "🏁 Event Leaderboard": bot.processUpdate({ message: { ...msg, text: "/eventtop10" } }); break;
-      case "🐞 Report Bug":        bot.processUpdate({ message: { ...msg, text: "/bugreport" } }); break;
-      default: break;
+    const chatId = query.message.chat.id;
+    const data = query.data;
+
+    console.log("🔥 Inline button clicked:", data);
+
+    switch (data) {
+      case "inline_addwallet":
+        bot.processUpdate({ message: { chat: { id: chatId }, text: "/addwallet" } });
+        break;
+
+      case "inline_verifyholder":
+        bot.processUpdate({ message: { chat: { id: chatId }, text: "/verifyholder" } });
+        break;
+
+      case "inline_changewallet":
+        bot.processUpdate({ message: { chat: { id: chatId }, text: "/changewallet" } });
+        break;
+
+      case "inline_removewallet":
+        bot.processUpdate({ message: { chat: { id: chatId }, text: "/removewallet" } });
+        break;
+
+      case "inline_top10":
+        bot.processUpdate({ message: { chat: { id: chatId }, text: "/top10" } });
+        break;
+
+      case "inline_event":
+        bot.processUpdate({ message: { chat: { id: chatId }, text: "/event" } });
+        break;
+
+      case "inline_info":
+        bot.processUpdate({ message: { chat: { id: chatId }, text: "/info" } });
+        break;
+
+      case "inline_bugreport":
+        bot.processUpdate({ message: { chat: { id: chatId }, text: "/bugreport" } });
+        break;
+
+      default:
+        console.log("⚠️ Unknown inline callback:", data);
+        break;
     }
+
+    await bot.answerCallbackQuery(query.id);
   } catch (err) {
-    console.error("❌ Menu handler error:", err.message);
-    await sendSafeMessage(chatId, "⚠️ Something went wrong while processing your request.");
+    console.error("❌ inline callback error:", err.message);
+    try {
+      await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." });
+    } catch {}
   }
 });
 
