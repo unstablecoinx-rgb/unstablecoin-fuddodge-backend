@@ -1589,21 +1589,24 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 
-// ==========================================================
-// 20) WALLET FLOWS — Final stable version (Linked username ↔ wallet)
-// ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
-  const chatId = msg.chat.id;
-  const tgId = msg.from?.id;
+  // 🧠 Safe user identification
+  const chatId = msg.chat?.id || msg.from?.id;
+  const tgId = msg.from?.id || msg.chat?.id;
   const handle = msg.from?.username ? "@" + msg.from.username : null;
-
-  if (!tgId) return bot.sendMessage(chatId, "❌ Cannot identify you. Please try again in private chat.");
-
-  // Make sure we have some display name for later
-  const username = handle || `id_${tgId}`;
+  const firstName = msg.from?.first_name || "friend";
+  
+  // ✅ Fallback username if no handle
+  const username = handle || `user${tgId}`;
+  
+  if (!tgId || !chatId) {
+    await bot.sendMessage(chatId || msg.chat.id, "⚠️ Identification error. Please send a text command like /addwallet manually.");
+    return;
+  }
 
   const holders = await getHoldersArray();
   const existing = holders.find(h => h.id === tgId || normalizeName(h.username) === normalizeName(username));
+
 
   const lower = msg.text.toLowerCase();
 
