@@ -868,9 +868,8 @@ Stay unstable. 💛⚡
   }
 });
 
-
 // ==========================================================
-// 🧩 Inline Button Router — Connects Buttons → Commands
+// 🧩 Inline Button Router — Connects Buttons → Commands (Fixed)
 // ==========================================================
 bot.on("callback_query", async (query) => {
   try {
@@ -879,39 +878,41 @@ bot.on("callback_query", async (query) => {
 
     console.log("🔥 Inline button clicked:", data);
 
+    const forwardCommand = (cmd) => {
+      bot.processUpdate({
+        message: {
+          chat: { id: chatId, type: "private" },
+          from: query.from,
+          text: cmd,
+        },
+      });
+    };
+
     switch (data) {
       case "inline_addwallet":
-        bot.processUpdate({ message: { chat: { id: chatId }, text: "/addwallet" } });
+        forwardCommand("/addwallet");
         break;
-
       case "inline_verifyholder":
-        bot.processUpdate({ message: { chat: { id: chatId }, text: "/verifyholder" } });
+        forwardCommand("/verifyholder");
         break;
-
       case "inline_changewallet":
-        bot.processUpdate({ message: { chat: { id: chatId }, text: "/changewallet" } });
+        forwardCommand("/changewallet");
         break;
-
       case "inline_removewallet":
-        bot.processUpdate({ message: { chat: { id: chatId }, text: "/removewallet" } });
+        forwardCommand("/removewallet");
         break;
-
       case "inline_top10":
-        bot.processUpdate({ message: { chat: { id: chatId }, text: "/top10" } });
+        forwardCommand("/top10");
         break;
-
       case "inline_event":
-        bot.processUpdate({ message: { chat: { id: chatId }, text: "/event" } });
+        forwardCommand("/event");
         break;
-
       case "inline_info":
-        bot.processUpdate({ message: { chat: { id: chatId }, text: "/info" } });
+        forwardCommand("/info");
         break;
-
       case "inline_bugreport":
-        bot.processUpdate({ message: { chat: { id: chatId }, text: "/bugreport" } });
+        forwardCommand("/bugreport");
         break;
-
       default:
         console.log("⚠️ Unknown inline callback:", data);
         break;
