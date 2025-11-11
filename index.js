@@ -1588,25 +1588,26 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
   });
 });
 
-
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
-  // 🧠 Safe user identification
+  // 🧠 Robust user detection
   const chatId = msg.chat?.id || msg.from?.id;
   const tgId = msg.from?.id || msg.chat?.id;
   const handle = msg.from?.username ? "@" + msg.from.username : null;
-  const firstName = msg.from?.first_name || "friend";
-  
-  // ✅ Fallback username if no handle
-  const username = handle || `user${tgId}`;
-  
-  if (!tgId || !chatId) {
-    await bot.sendMessage(chatId || msg.chat.id, "⚠️ Identification error. Please send a text command like /addwallet manually.");
+
+  // 👇 Construct clean display identity
+  const displayName = handle ? handle : `ID:${tgId}`;
+  const usernameKey = handle || `id_${tgId}`; // used for data consistency
+
+  if (!tgId) {
+    await bot.sendMessage(chatId, "❌ Cannot identify you. Try again manually.");
     return;
   }
 
   const holders = await getHoldersArray();
-  const existing = holders.find(h => h.id === tgId || normalizeName(h.username) === normalizeName(username));
-
+  const existing = holders.find(h =>
+    h.id === tgId ||
+    normalizeName(h.username) === normalizeName(usernameKey)
+  );
 
   const lower = msg.text.toLowerCase();
 
@@ -1614,7 +1615,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
     // === ADD WALLET ===
     if (lower.includes("addwallet")) {
       if (existing) {
-        await bot.sendMessage(chatId, `⚠️ You already have a wallet saved, ${username}.\nUse /changewallet instead.`, mainMenu);
+        await bot.sendMessage(chatId, `⚠️ You already have a wallet saved, ${displayName}.\nUse /changewallet instead.`, mainMenu);
         return;
       }
 
@@ -1628,14 +1629,14 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
 
         holders.push({
           id: tgId,
-          username,
+          username: usernameKey,
           wallet,
           verifiedAt: null
         });
 
         await saveHoldersArray(holders);
         delete _cache[HOLDER_BIN_URL];
-        await bot.sendMessage(chatId, `✅ Wallet added for ${username}! Use /verifyholder to confirm holdings.`, mainMenu);
+        await bot.sendMessage(chatId, `✅ Wallet added for ${displayName}! Use /verifyholder to confirm holdings.`, mainMenu);
       });
       return;
     }
@@ -1643,7 +1644,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
     // === CHANGE WALLET ===
     if (lower.includes("changewallet")) {
       if (!existing) {
-        await bot.sendMessage(chatId, `⚠️ No wallet saved yet, ${username}.\nUse /addwallet first.`, mainMenu);
+        await bot.sendMessage(chatId, `⚠️ No wallet saved yet, ${displayName}.\nUse /addwallet first.`, mainMenu);
         return;
       }
 
@@ -1661,7 +1662,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
     // === REMOVE WALLET ===
     if (lower.includes("removewallet")) {
       if (!existing) {
-        await bot.sendMessage(chatId, `⚠️ No wallet saved yet, ${username}.`, mainMenu);
+        await bot.sendMessage(chatId, `⚠️ No wallet saved yet, ${displayName}.`, mainMenu);
         return;
       }
 
@@ -1687,11 +1688,11 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       try {
         const res = await axios.post(
           `https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`,
-          { username, wallet: existing.wallet }
+          { username: usernameKey, wallet: existing.wallet }
         );
 
         if (res.data.ok)
-          await bot.sendMessage(chatId, `✅ Verified successfully for ${username}!`, mainMenu);
+          await bot.sendMessage(chatId, `✅ Verified successfully for ${displayName}!`, mainMenu);
         else
           await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`, mainMenu);
       } catch (err) {
@@ -1705,6 +1706,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
     await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.", mainMenu);
   }
 });
+
 
 // ==========================================================
 // INLINE CALLBACKS (Change / Remove Confirmations) — stable version
