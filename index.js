@@ -1665,31 +1665,56 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       return;
     }
 
-    // === VERIFY HOLDER ===
-    if (lower.includes("verifyholder")) {
-      if (!existing?.wallet) {
-        await bot.sendMessage(chatId, "⚠️ No wallet on file. Use /addwallet first.", mainMenu);
-        return;
-      }
-      await bot.sendMessage(chatId, "🔍 Checking on-chain balance...");
-      try {
-        const res = await axios.post(`https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`, {
-          username: username || `id_${tgId}`,
-          wallet: existing.wallet
-        });
-        if (res.data.ok)
-          await bot.sendMessage(chatId, `✅ Verified successfully for ${display}!`, mainMenu);
-        else
-          await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`, mainMenu);
-      } catch (err) {
-        console.error("verifyholder error:", err?.message || err);
-        await bot.sendMessage(chatId, "⚠️ Verification failed. Try again later.", mainMenu);
-      }
-      return;
+// ==========================================================
+// 🔍 VERIFY HOLDER — unified with Telegram wallet structure
+// ==========================================================
+app.post("/verifyHolder", async (req, res) => {
+  try {
+    let { username, wallet, id } = req.body;
+    if (!wallet) return res.status(400).json({ ok: false, message: "Missing wallet." });
+
+    // Normalize
+    if (username && !username.startsWith("@")) username = "@" + username;
+    const lookupKey = username ? username.toLowerCase() : id ? `id_${id}` : null;
+    if (!lookupKey) return res.status(400).json({ ok: false, message: "Missing user identity (id or username)." });
+
+    if (!isLikelySolanaAddress(wallet))
+      return res.status(400).json({ ok: false, message: "Invalid Solana address." });
+
+    // --- Load holders ---
+    const holders = await getHoldersArray();
+    const cfg = await getConfig();
+    const minHold = cfg.minHoldAmount || 0;
+
+    // --- Check on-chain balance ---
+    const check = await checkSolanaHolding(wallet, minHold);
+    if (!check.ok)
+      return res.json({ ok: false, message: `Below required hold (${minHold} $US)` });
+
+    // --- Find existing record (by id or username) ---
+    let rec = holders.find(
+      h => h.id === id ||
+      (h.username && h.username.toLowerCase() === lookupKey)
+    );
+
+    // --- Create or update record ---
+    if (rec) {
+      rec.wallet = wallet;
+      rec.verifiedAt = new Date().toISOString();
+      if (id && !rec.id) rec.id = id;
+      if (username && !rec.username) rec.username = username;
+    } else {
+      rec = { id: id || null, username: username || `id_${id}`, wallet, verifiedAt: new Date().toISOString() };
+      holders.push(rec);
     }
+
+    await saveHoldersArray(holders);
+
+    console.log(`✅ Verified holder synced: ${username || `ID:${id}`} (${wallet.slice(0,4)}…${wallet.slice(-4)})`);
+    return res.json({ ok: true, message: "Verified!", display: username || `ID:${id}` });
   } catch (err) {
-    console.error("⚠️ Wallet flow error:", err?.message || err);
-    await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.", mainMenu);
+    console.error("❌ /verifyHolder:", err.message);
+    res.status(500).json({ ok: false, message: "Server error." });
   }
 });
 
