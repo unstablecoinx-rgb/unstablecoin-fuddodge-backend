@@ -1589,7 +1589,7 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 // ==========================================================
-// 20) WALLET FLOWS — Clean Stable v3.3 Logic + Menu Refresh
+// 20) WALLET FLOWS — Clean Stable v3.6 (Unified + Fixed)
 // ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
   const chatId = msg.chat.id;
@@ -1597,16 +1597,16 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
   // ✅ Primary source: Telegram username (as in v3.3)
   let realUser = msg.from?.username;
 
-  // 🧩 Hybrid fallback (WebApp or no username)
+  // 🧩 Hybrid fallback (WebApp or first_name)
   if (!realUser && msg.from?.first_name)
     realUser = msg.from.first_name.replace(/\s+/g, "_");
   if (!realUser && msg.web_app_data?.user?.username)
     realUser = msg.web_app_data.user.username;
+
   if (!realUser)
     return bot.sendMessage(chatId, "❌ You need a Telegram username (Settings → Username).");
 
   const username = realUser.startsWith("@") ? realUser : "@" + realUser;
-
   const holders = await getHoldersArray();
   const existing = holders.find((h) => normalizeName(h.username) === normalizeName(username));
 
@@ -1619,7 +1619,6 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
         await bot.sendMessage(chatId, `⚠️ You already have a wallet saved, ${username}.\nUse /changewallet instead.`, mainMenu);
         return;
       }
-
       await bot.sendMessage(chatId, "🪙 Add wallet – please paste your Solana wallet address:");
       bot.once("message", async (m2) => {
         const wallet = (m2.text || "").trim();
@@ -1641,12 +1640,13 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
         await bot.sendMessage(chatId, `⚠️ No wallet saved yet, ${username}.\nUse /addwallet first.`, mainMenu);
         return;
       }
-
       await bot.sendMessage(chatId, "Do you really want to change your wallet?", {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "✅ Yes, change it", callback_data: "confirm_change_yes" },
-             { text: "❌ Cancel", callback_data: "confirm_change_no" }],
+            [
+              { text: "✅ Yes, change it", callback_data: "confirm_change_yes" },
+              { text: "❌ Cancel", callback_data: "confirm_change_no" },
+            ],
           ],
         },
       });
@@ -1659,12 +1659,13 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
         await bot.sendMessage(chatId, `⚠️ No wallet saved yet, ${username}.`, mainMenu);
         return;
       }
-
       await bot.sendMessage(chatId, "Are you sure you want to remove your wallet?", {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "✅ Yes, remove", callback_data: "confirm_remove_yes" },
-             { text: "❌ Cancel", callback_data: "confirm_remove_no" }],
+            [
+              { text: "✅ Yes, remove", callback_data: "confirm_remove_yes" },
+              { text: "❌ Cancel", callback_data: "confirm_remove_no" },
+            ],
           ],
         },
       });
@@ -1703,7 +1704,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
 
 
 // ==========================================================
-// INLINE CALLBACKS (Change / Remove Confirmations) — single handler
+// INLINE CALLBACKS (Confirmations) — single unified handler
 // ==========================================================
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
@@ -1719,38 +1720,14 @@ bot.on("callback_query", async (query) => {
     switch (data) {
       // === REMOVE WALLET ===
       case "confirm_remove_yes":
-        if (idx === -1) {
-          await bot.sendMessage(chatId, "⚠️ No wallet found to remove.", mainMenu);
-          break;
-        }
-        holders.splice(idx, 1);
-        await saveHoldersArray(holders);
-        delete _cache[HOLDER_BIN_URL];
-        await bot.sendMessage(chatId, `💛 Your wallet has been removed.`, mainMenu);
+        await removeWallet(chatId, username);
         await bot.sendMessage(chatId, "💛 Menu refreshed.", mainMenu);
         break;
 
       // === CHANGE WALLET ===
       case "confirm_change_yes":
-        if (idx === -1) {
-          await bot.sendMessage(chatId, `⚠️ No wallet found. Use /addwallet first.`, mainMenu);
-          break;
-        }
-        await bot.sendMessage(chatId, "Paste your new Solana wallet address:");
-        bot.once("message", async (m2) => {
-          const wallet = (m2.text || "").trim();
-          if (!isLikelySolanaAddress(wallet)) {
-            await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /changewallet.", mainMenu);
-            return;
-          }
-          holders[idx].prevWallet = holders[idx].wallet || null;
-          holders[idx].wallet = wallet;
-          holders[idx].verifiedAt = new Date().toISOString();
-          await saveHoldersArray(holders);
-          delete _cache[HOLDER_BIN_URL];
-          await bot.sendMessage(chatId, `⚡ Wallet successfully changed.`, mainMenu);
-          await bot.sendMessage(chatId, "💛 Menu refreshed.", mainMenu);
-        });
+        await changeWallet(chatId, username);
+        await bot.sendMessage(chatId, "💛 Menu refreshed.", mainMenu);
         break;
 
       // === CANCEL ===
@@ -1758,165 +1735,53 @@ bot.on("callback_query", async (query) => {
       case "confirm_remove_no":
         await bot.sendMessage(chatId, "❌ Action cancelled.", mainMenu);
         break;
-    }
-  } catch (err) {
-    console.error("❌ callback_query handler error:", err);
-    try { await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." }); } catch {}
-  }
-});
-
-// ==========================================================
-// INLINE CALLBACKS (Change / Remove Confirmations)
-// ==========================================================
-bot.on("callback_query", async (query) => {
-  const chatId = query.message.chat.id;
-  const data = query.data;
-  const realUser = query.from?.username || query.from?.first_name || "anon";
-  const username = realUser.startsWith("@") ? realUser : "@" + realUser;
-
-  try {
-    await bot.answerCallbackQuery(query.id);
-    const holders = await getHoldersArray();
-
-    switch (data) {
-      case "confirm_remove_yes":
-        await removeWallet(chatId);
-        await bot.sendMessage(chatId, `💛 Wallet removed for ${username}.`, mainMenu);
-        break;
-
-      case "confirm_change_yes":
-        await changeWallet(chatId);
-        await bot.sendMessage(chatId, `⚡ Wallet successfully changed for ${username}.`, mainMenu);
-        break;
-
-      case "confirm_change_no":
-      case "confirm_remove_no":
-        await bot.sendMessage(chatId, "❌ Action cancelled.", mainMenu);
-        break;
 
       default:
         break;
     }
   } catch (err) {
     console.error("❌ callback_query handler error:", err);
-    try { await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." }); } catch {}
+    try {
+      await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." });
+    } catch {}
   }
 });
 
 
-// ==========================================================
-// INLINE CALLBACKS (reuse existing confirmation logic)
-// ==========================================================
-bot.on("callback_query", async (query) => {
-  const chatId = query.message.chat.id;
-  const messageId = query.message.message_id;
-  const data = query.data;
-
-  try {
-    await bot.answerCallbackQuery(query.id);
-
-    switch (data) {
-      case "confirm_remove_yes":
-        await removeWallet(chatId);
-        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
-        await sendSafeMessage(chatId, "💛 Your wallet has been removed.");
-        break;
-
-      case "confirm_change_yes":
-        await changeWallet(chatId);
-        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
-        await sendSafeMessage(chatId, "⚡ Wallet successfully changed.");
-        break;
-
-      case "confirm_change_no":
-      case "confirm_remove_no":
-        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
-        await sendSafeMessage(chatId, "❌ Action cancelled.");
-        break;
-
-      default:
-        break;
-    }
-  } catch (err) {
-    console.error("❌ callback_query handler error:", err);
-    try { await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." }); } catch {}
-  }
-});
-
 // ============================================================
-// Inline menu callback handler for /start (cross-platform support)
+// 🧩 Actual wallet change/remove logic (fixed v3.6 helpers)
 // ============================================================
-bot.on("callback_query", async (query) => {
-  try {
-    const chatId = query.message.chat.id;
-    const data = query.data;
-
-    // Handle inline menu callbacks
-    if (data.startsWith("inline_")) {
-      const cmd = data.replace("inline_", "");
-      switch (cmd) {
-        case "addwallet":
-          bot.processUpdate({ message: { chat: { id: chatId }, text: "/addwallet" } });
-          break;
-        case "verifyholder":
-          bot.processUpdate({ message: { chat: { id: chatId }, text: "/verifyholder" } });
-          break;
-        case "top10":
-          bot.processUpdate({ message: { chat: { id: chatId }, text: "/top10" } });
-          break;
-        case "event":
-          bot.processUpdate({ message: { chat: { id: chatId }, text: "/event" } });
-          break;
-        case "bugreport":
-          bot.processUpdate({ message: { chat: { id: chatId }, text: "/bugreport" } });
-          break;
-        default:
-          break;
-      }
-      await bot.answerCallbackQuery(query.id);
-      return; // prevent double handling
-    }
-  } catch (err) {
-    console.error("❌ inline callback error:", err.message);
-    try { await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." }); } catch {}
-  }
-});
-
-// ============================================================
-// 🧩 Actual wallet change/remove logic (restores functionality)
-// ============================================================
-
-async function removeWallet(chatId) {
+async function removeWallet(chatId, username) {
   try {
     const holders = await getHoldersArray();
-    const user = holders.find(
-      (h) => normalizeName(h.username) === normalizeName(chatId.username)
+    const idx = holders.findIndex(
+      (h) => normalizeName(h.username) === normalizeName(username)
     );
-    if (!user) {
+
+    if (idx === -1) {
       await sendSafeMessage(chatId, "⚠️ No wallet found to remove.");
       return;
     }
 
-    const filtered = holders.filter(
-      (h) => normalizeName(h.username) !== normalizeName(chatId.username)
-    );
-    await saveHoldersArray(filtered);
+    holders.splice(idx, 1);
+    await saveHoldersArray(holders);
     delete _cache[HOLDER_BIN_URL];
-    console.log(`🗑️ Wallet removed for ${chatId.username}`);
-    await sendSafeMessage(chatId, "🗑️ Wallet removed successfully.");
+    console.log(`🗑️ Wallet removed for ${username}`);
+    await sendSafeMessage(chatId, "💛 Wallet removed successfully.", mainMenu);
   } catch (err) {
     console.error("❌ removeWallet:", err.message);
     await sendSafeMessage(chatId, "⚠️ Could not remove wallet. Try again later.");
   }
 }
 
-async function changeWallet(chatId) {
+async function changeWallet(chatId, username) {
   try {
     const holders = await getHoldersArray();
-    const existing = holders.find(
-      (h) => normalizeName(h.username) === normalizeName(chatId.username)
+    const idx = holders.findIndex(
+      (h) => normalizeName(h.username) === normalizeName(username)
     );
-    if (!existing) {
+
+    if (idx === -1) {
       await sendSafeMessage(chatId, "⚠️ No wallet found. Use /addwallet first.");
       return;
     }
@@ -1929,18 +1794,23 @@ async function changeWallet(chatId) {
         return;
       }
 
-      existing.wallet = wallet;
-      existing.updatedAt = new Date().toISOString();
+      holders[idx].wallet = wallet;
+      holders[idx].updatedAt = new Date().toISOString();
       await saveHoldersArray(holders);
       delete _cache[HOLDER_BIN_URL];
-      console.log(`🔁 Wallet changed for ${chatId.username}`);
-      await sendSafeMessage(chatId, `✅ Wallet updated to <code>${wallet.slice(0,4)}…${wallet.slice(-4)}</code>`, { parse_mode: "HTML" });
+      console.log(`🔁 Wallet changed for ${username}`);
+      await sendSafeMessage(
+        chatId,
+        `✅ Wallet updated to <code>${wallet.slice(0,4)}…${wallet.slice(-4)}</code>`,
+        { parse_mode: "HTML" }
+      );
     });
   } catch (err) {
     console.error("❌ changeWallet:", err.message);
     await sendSafeMessage(chatId, "⚠️ Could not change wallet. Try again later.");
   }
 }
+
 // ============================================================
 // 20.5) HOLDER SNAPSHOT VERIFICATION & WINNERS
 // ============================================================
