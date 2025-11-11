@@ -811,39 +811,60 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
 }
 
 // ==========================================================
-// 🧭 MAIN MENU BUTTONS
+// 🧭 MAIN MENU PLACEHOLDER (for backward compatibility)
 // ==========================================================
 const mainMenu = {
   reply_markup: {
-    keyboard: [
-      [{ text: "🌕 Add Wallet" }, { text: "⚡ Verify Holder" }],
-      [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
-      [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }],
-      [{ text: "🏁 Event Leaderboard" }],
-      [{ text: "🐞 Report Bug" }],
-    ],
-    resize_keyboard: true,
-    one_time_keyboard: false,
+    remove_keyboard: true, // hides the old bottom keyboard
   },
 };
 
 // ==========================================================
-// 14.5) START + MENU COMMAND (must come *after* mainMenu is defined)
+// 14.5) START / MENU — UnStable Main User Panel (v3.6 Clean)
 // ==========================================================
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
-  const welcome =
-    "💛 <b>Welcome to UnStableCoin</b>\n" +
-    "Use the buttons below to manage wallet, verify holdings, or join the current event.\n\n" +
-    "🎮 /play — Open the game\n" +
-    "🏆 /top10 — Global leaderboard\n" +
-    "🚀 /event — Current contest\n\n" +
-    "Stay unstable. 💛⚡";
+
+  const welcomeText = `
+💛 <b>Welcome to UnStableCoin</b>
+
+Use the buttons below to manage your wallet, verify holdings,
+view leaderboards, or join the current event.
+
+Stay unstable. 💛⚡
+`;
+
+  const startMenu = {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🌕 Add Wallet", callback_data: "inline_addwallet" },
+          { text: "⚡ Verify Holder", callback_data: "inline_verifyholder" },
+        ],
+        [
+          { text: "🔁 Change Wallet", callback_data: "inline_changewallet" },
+          { text: "❌ Remove Wallet", callback_data: "inline_removewallet" },
+        ],
+        [
+          { text: "🏆 Global Top 10", callback_data: "inline_top10" },
+          { text: "🚀 Event & Prizes", callback_data: "inline_event" },
+        ],
+        [
+          { text: "🎮 Play FUD Dodge", web_app: { url: "https://theunstable.io/fuddodge" } },
+        ],
+        [
+          { text: "📖 Game Info", callback_data: "inline_info" },
+          { text: "🐞 Report Bug", callback_data: "inline_bugreport" },
+        ],
+      ],
+    },
+    parse_mode: "HTML",
+  };
 
   try {
-    await sendSafeMessage(chatId, welcome, { ...mainMenu, parse_mode: "HTML" });
+    await sendSafeMessage(chatId, welcomeText, startMenu);
   } catch (err) {
-    console.error("❌ /start failed:", err.message);
+    console.error("❌ /start panel failed:", err.message);
   }
 });
 
