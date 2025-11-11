@@ -1589,14 +1589,15 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
-  // 🧠 Robust user detection
   const chatId = msg.chat?.id || msg.from?.id;
   const tgId = msg.from?.id || msg.chat?.id;
-  const handle = msg.from?.username ? "@" + msg.from.username : null;
 
-  // 👇 Construct clean display identity
-  const displayName = handle ? handle : `ID:${tgId}`;
-  const usernameKey = handle || `id_${tgId}`; // used for data consistency
+  // ✅ Always try to fetch Telegram's visible @username
+  let username = msg.from?.username ? "@" + msg.from.username : null;
+
+  // 🔠 Normalize capitalization (store consistent but keep display nice)
+  const displayName = username ? username : `ID:${tgId}`;
+  const storageKey = username ? username.toLowerCase() : `id_${tgId}`;
 
   if (!tgId) {
     await bot.sendMessage(chatId, "❌ Cannot identify you. Try again manually.");
@@ -1606,7 +1607,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
   const holders = await getHoldersArray();
   const existing = holders.find(h =>
     h.id === tgId ||
-    normalizeName(h.username) === normalizeName(usernameKey)
+    (h.username && h.username.toLowerCase() === storageKey)
   );
 
   const lower = msg.text.toLowerCase();
@@ -1629,7 +1630,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
 
         holders.push({
           id: tgId,
-          username: usernameKey,
+          username: username || `id_${tgId}`,
           wallet,
           verifiedAt: null
         });
@@ -1688,7 +1689,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       try {
         const res = await axios.post(
           `https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`,
-          { username: usernameKey, wallet: existing.wallet }
+          { username: username || `id_${tgId}`, wallet: existing.wallet }
         );
 
         if (res.data.ok)
@@ -1706,7 +1707,6 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
     await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.", mainMenu);
   }
 });
-
 
 // ==========================================================
 // INLINE CALLBACKS (Change / Remove Confirmations) — stable version
