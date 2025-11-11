@@ -688,100 +688,16 @@ async function getVerifiedEventTopArray(limit = 10) {
   }
 }
 
-// ============================================================
-// 🪣 fetchAllHolders — unified holder fetch for snapshots
-// ============================================================
-async function fetchAllHolders() {
-  try {
-    const arr = await getHoldersArray();
-    return arr.map((h) => ({
-      username: h.username,
-      wallet: h.wallet,
-      amount: h.amount || 0,
-      verifiedAt: h.verifiedAt || null,
-    }));
-  } catch (err) {
-    console.error("❌ fetchAllHolders:", err.message);
-    return [];
-  }
-}
+// 🪣 fetchAllHolders …
+async function fetchAllHolders() { … }
 
-// ============================================================
-// 📦 refreshHolders(type) — collect and save holders snapshot
-// ============================================================
-async function refreshHolders(type = "start") {
-  try {
-    console.log(`🔍 Refreshing ${type.toUpperCase()} holders...`);
+// 📦 refreshHolders(type) …
+async function refreshHolders(type = "start") { … }
 
-    const holders = await fetchAllHolders();
-    const currentEvent = await getEventMeta();
+// 🕒 AUTO HOLDER SNAPSHOT SCHEDULER …
+const REFRESH_INTERVAL …
+setInterval(async () => { … }, REFRESH_INTERVAL);
 
-    const snapshot = {
-      eventId: currentEvent?.title || "unknown",
-      type,
-      updated: new Date().toISOString(),
-      total: holders.length,
-      holders,
-    };
-
-    const binUrl =
-      type === "start" ? HOLDERS_START_BIN_URL : HOLDERS_END_BIN_URL;
-
-    await writeBin(binUrl, snapshot);
-    console.log(`💾 Saved ${holders.length} holders to ${type.toUpperCase()} snapshot (${snapshot.eventId})`);
-
-    // ✅ Mark flag in meta
-    const meta = await getEventMeta();
-    if (meta?.raw) {
-      if (type === "start") meta.raw.startSnapshotTaken = true;
-      if (type === "end") meta.raw.endSnapshotTaken = true;
-      meta.raw.updatedAt = new Date().toISOString();
-      await writeBin(EVENT_META_BIN_URL, meta.raw);
-      console.log(`📍 Event meta updated: ${type.toUpperCase()} snapshot marked as taken.`);
-    }
-
-  } catch (err) {
-    console.warn(`❌ refreshHolders(${type}) failed:`, err.message || err);
-  }
-}
-
-// ============================================================
-// 🕒 AUTO HOLDER SNAPSHOT SCHEDULER — UnStableCoin Bot v3.5
-// ============================================================
-const REFRESH_INTERVAL = 60 * 1000; // check every 60s
-
-console.log("🕒 Holder snapshot scheduler initialized (checks every 60s)");
-
-setInterval(async () => {
-  try {
-    const event = await getEventMeta();
-    if (!event?.startDate || !event?.endDate) return;
-
-    const now = Date.now();
-    const startTime = new Date(event.startDate).getTime();
-    const endTime   = new Date(event.endDate).getTime();
-
-    // ✅ START snapshot
-    if (!event.raw?.startSnapshotTaken && now >= startTime && now < endTime) {
-      console.log("⏱ Auto-capturing START holders snapshot...");
-      await refreshHolders("start");
-      event.raw.startSnapshotTaken = true;
-      event.raw.updatedAt = new Date().toISOString();
-      await writeBin(EVENT_META_BIN_URL, event.raw);
-    }
-
-    // ✅ END snapshot
-    if (!event.raw?.endSnapshotTaken && now >= endTime) {
-      console.log("⏱ Auto-capturing END holders snapshot...");
-      await refreshHolders("end");
-      event.raw.endSnapshotTaken = true;
-      event.raw.updatedAt = new Date().toISOString();
-      await writeBin(EVENT_META_BIN_URL, event.raw);
-    }
-  } catch (err) {
-    console.warn("⚠️ Holder snapshot scheduler error:", err.message || err);
-  }
-}, REFRESH_INTERVAL);
 
 // ==========================================================
 // 13) TELEGRAM SAFE SEND HELPERS
