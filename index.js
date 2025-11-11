@@ -2017,70 +2017,85 @@ app.get("/pricepool", async (req, res) => {
 app.post("/submit", async (req, res) => {
   try {
     const { username, score, target = "both" } = req.body;
-    if (!username || !score) return res.status(400).send("Missing username or score.");
+    if (!username || !score)
+      return res.status(400).json({ ok: false, message: "Missing username or score" });
 
     const uname = username.startsWith("@") ? username : "@" + username;
     const scoreVal = Math.round(Number(score));
-    console.log(`🧩 Manual submit: ${uname} → ${scoreVal} (${target})`);
+    const headers = { "X-Master-Key": JSONBIN_KEY, "Content-Type": "application/json" };
 
-    const headers = { "X-Master-Key": process.env.JSONBIN_KEY, "Content-Type": "application/json" };
+    console.log(`🧩 Manual submit: ${uname} → ${scoreVal} (${target})`);
 
     // === MAIN leaderboard ===
     if (target === "main" || target === "both") {
-      const mainRes = await axios.get(`${MAIN_BIN_URL}/latest`, { headers });
-      let mainData = mainRes.data;
-      while (mainData?.record) mainData = mainData.record;
-      const prev = Number(mainData[uname] || 0);
+      try {
+        const mainRes = await axios.get(`${MAIN_BIN_URL}/latest`, { headers });
+        let mainData = mainRes.data;
+        while (mainData?.record) mainData = mainData.record;
+        const prev = Number(mainData[uname] || 0);
 
-      if (Number(scoreVal) > prev) {
-        mainData[uname] = scoreVal;
-        await axios.put(`${MAIN_BIN_URL}`, mainData, { headers });
-        console.log(`✅ Updated MAIN leaderboard for ${uname}: ${scoreVal} (prev ${prev})`);
-      } else {
-        console.log(`🚫 Ignored lower MAIN score for ${uname}: ${scoreVal} ≤ ${prev}`);
+        if (scoreVal > prev) {
+          mainData[uname] = scoreVal;
+          await axios.put(MAIN_BIN_URL, mainData, { headers });
+          console.log(`✅ Updated MAIN leaderboard for ${uname}: ${scoreVal} (prev ${prev})`);
+        } else {
+          console.log(`🚫 Ignored lower MAIN score for ${uname}: ${scoreVal} ≤ ${prev}`);
+        }
+      } catch (err) {
+        console.error("❌ MAIN leaderboard update failed:", err.message);
       }
     }
 
     // === EVENT leaderboard ===
     if (target === "event" || target === "both") {
-      const meta = await readBin(`${EVENT_META_BIN_URL}/latest`);
-      let eventMeta = meta || {};
-      const tz = eventMeta?.timezone || "Europe/Stockholm";
-      const now = DateTime.now().setZone(tz);
-      const start = eventMeta?.startDate ? DateTime.fromISO(eventMeta.startDate, { zone: tz }) : null;
-      const end = eventMeta?.endDate ? DateTime.fromISO(eventMeta.endDate, { zone: tz }) : null;
-      const isActive = start && end && now >= start && now <= end;
+      try {
+        const meta = await readBin(`${EVENT_META_BIN_URL}/latest`);
+        const tz = meta?.timezone || "Europe/Stockholm";
+        const now = DateTime.now().setZone(tz);
+        const start = meta?.startDate ? DateTime.fromISO(meta.startDate, { zone: tz }) : null;
+        const end = meta?.endDate ? DateTime.fromISO(meta.endDate, { zone: tz }) : null;
+        const isActive = start && end && now >= start && now <= end;
 
-      if (!isActive) {
-        console.log(`⚠️ Event not active (${tz})`);
-        return res.json({ ok: false, msg: "Event not active" });
-      }
+        if (!isActive) {
+          console.log(`⚠️ Event not active (${tz})`);
+          return res.json({ ok: false, message: "Event not active" });
+        }
 
-      const evRes = await axios.get(`${EVENT_BIN_URL}/latest`, { headers });
-      let evData = evRes.data;
-      while (evData?.record) evData = evData.record;
-      let scores = Array.isArray(evData.scores) ? evData.scores : [];
+        const evRes = await axios.get(`${EVENT_BIN_URL}/latest`, { headers });
+        let evData = evRes.data;
+        while (evData?.record) evData = evData.record;
+        let scores = Array.isArray(evData.scores) ? evData.scores : [];
 
-      const prevEntry = scores.find((s) => s.username === uname);
-      const prevScore = prevEntry ? Number(prevEntry.score) : 0;
+        const prevEntry = scores.find((s) => s.username === uname);
+        const prevScore = prevEntry ? Number(prevEntry.score) : 0;
 
-      if (scoreVal > prevScore) {
-        scores = [
-          ...scores.filter((s) => s.username !== uname),
-          { username: uname, score: scoreVal, verified: true, at: new Date().toISOString() }
-        ];
-        const payload = { resetAt: evData.resetAt || new Date().toISOString(), scores };
-        await axios.put(`${EVENT_BIN_URL}`, payload, { headers });
-        console.log(`✅ Updated EVENT leaderboard for ${uname}: ${scoreVal} (prev ${prevScore})`);
-      } else {
-        console.log(`🚫 Ignored lower EVENT score for ${uname}: ${scoreVal} ≤ ${prevScore}`);
+        if (scoreVal > prevScore) {
+          scores = [
+            ...scores.filter((s) => s.username !== uname),
+            { username: uname, score: scoreVal, verified: true, at: new Date().toISOString() },
+          ];
+          const payload = { resetAt: evData.resetAt || new Date().toISOString(), scores };
+          await axios.put(EVENT_BIN_URL, payload, { headers });
+          console.log(`✅ Updated EVENT leaderboard for ${uname}: ${scoreVal} (prev ${prevScore})`);
+        } else {
+          console.log(`🚫 Ignored lower EVENT score for ${uname}: ${scoreVal} ≤ ${prevScore}`);
+        }
+      } catch (err) {
+        console.error("❌ EVENT leaderboard update failed:", err.message);
       }
     }
 
-    res.send(`✅ ${uname} → ${scoreVal} checked and saved (${target})`);
+    // ✅ Clean JSON response (no emojis, valid structure)
+    res.json({
+      ok: true,
+      username: uname,
+      score: scoreVal,
+      target,
+      message: "Score processed successfully",
+    });
   } catch (err) {
     console.error("❌ /submit failed:", err.message);
-    res.status(500).send("Server error: " + err.message);
+    res.status(500).json({ ok: false, message: "Server error", error: err.message });
   }
 });
 
