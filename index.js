@@ -1589,7 +1589,7 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 // ==========================================================
-// 20) WALLET FLOWS — Restored v3.3 Logic + Hybrid Fallback
+// 20) WALLET FLOWS — Clean Stable v3.3 Logic + Menu Refresh
 // ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
   const chatId = msg.chat.id;
@@ -1597,7 +1597,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
   // ✅ Primary source: Telegram username (as in v3.3)
   let realUser = msg.from?.username;
 
-  // 🧩 Hybrid fallback for WebApp or missing username cases
+  // 🧩 Hybrid fallback (WebApp or no username)
   if (!realUser && msg.from?.first_name)
     realUser = msg.from.first_name.replace(/\s+/g, "_");
   if (!realUser && msg.web_app_data?.user?.username)
@@ -1605,7 +1605,6 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
   if (!realUser)
     return bot.sendMessage(chatId, "❌ You need a Telegram username (Settings → Username).");
 
-  // Ensure leading @
   const username = realUser.startsWith("@") ? realUser : "@" + realUser;
 
   const holders = await getHoldersArray();
@@ -1699,6 +1698,70 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
   } catch (err) {
     console.error("⚠️ Wallet flow error:", err?.message || err);
     await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.", mainMenu);
+  }
+});
+
+
+// ==========================================================
+// INLINE CALLBACKS (Change / Remove Confirmations) — single handler
+// ==========================================================
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const data = query.data;
+  const realUser = query.from?.username || query.from?.first_name || "anon";
+  const username = realUser.startsWith("@") ? realUser : "@" + realUser;
+
+  try {
+    await bot.answerCallbackQuery(query.id);
+    const holders = await getHoldersArray();
+    const idx = holders.findIndex((h) => normalizeName(h.username) === normalizeName(username));
+
+    switch (data) {
+      // === REMOVE WALLET ===
+      case "confirm_remove_yes":
+        if (idx === -1) {
+          await bot.sendMessage(chatId, "⚠️ No wallet found to remove.", mainMenu);
+          break;
+        }
+        holders.splice(idx, 1);
+        await saveHoldersArray(holders);
+        delete _cache[HOLDER_BIN_URL];
+        await bot.sendMessage(chatId, `💛 Your wallet has been removed.`, mainMenu);
+        await bot.sendMessage(chatId, "💛 Menu refreshed.", mainMenu);
+        break;
+
+      // === CHANGE WALLET ===
+      case "confirm_change_yes":
+        if (idx === -1) {
+          await bot.sendMessage(chatId, `⚠️ No wallet found. Use /addwallet first.`, mainMenu);
+          break;
+        }
+        await bot.sendMessage(chatId, "Paste your new Solana wallet address:");
+        bot.once("message", async (m2) => {
+          const wallet = (m2.text || "").trim();
+          if (!isLikelySolanaAddress(wallet)) {
+            await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /changewallet.", mainMenu);
+            return;
+          }
+          holders[idx].prevWallet = holders[idx].wallet || null;
+          holders[idx].wallet = wallet;
+          holders[idx].verifiedAt = new Date().toISOString();
+          await saveHoldersArray(holders);
+          delete _cache[HOLDER_BIN_URL];
+          await bot.sendMessage(chatId, `⚡ Wallet successfully changed.`, mainMenu);
+          await bot.sendMessage(chatId, "💛 Menu refreshed.", mainMenu);
+        });
+        break;
+
+      // === CANCEL ===
+      case "confirm_change_no":
+      case "confirm_remove_no":
+        await bot.sendMessage(chatId, "❌ Action cancelled.", mainMenu);
+        break;
+    }
+  } catch (err) {
+    console.error("❌ callback_query handler error:", err);
+    try { await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." }); } catch {}
   }
 });
 
