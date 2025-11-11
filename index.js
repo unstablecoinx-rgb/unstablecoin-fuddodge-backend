@@ -688,16 +688,143 @@ async function getVerifiedEventTopArray(limit = 10) {
   }
 }
 
-// 🪣 fetchAllHolders …
-async function fetchAllHolders() { … }
+// ============================================================
+// 🪣 ON-CHAIN HOLDER SNAPSHOT SYSTEM — UnStableCoin Bot v3.6
+// ============================================================
 
-// 📦 refreshHolders(type) …
-async function refreshHolders(type = "start") { … }
+const REFRESH_INTERVAL = 60 * 1000; // 60 seconds
+console.log("🕒 On-chain holder snapshot scheduler initialized (checks every 60s)");
 
-// 🕒 AUTO HOLDER SNAPSHOT SCHEDULER …
-const REFRESH_INTERVAL …
-setInterval(async () => { … }, REFRESH_INTERVAL);
+// --- fetchAllOnchainHolders: read all token accounts on-chain and group by wallet ---
+async function fetchAllOnchainHolders() {
+  try {
+    const cfg = await getConfig();
+    const rpc = process.env.SOLANA_RPC_URL || clusterApiUrl(cfg.network || "mainnet-beta");
+    const conn = new Connection(rpc, "confirmed");
+    const mintPub = new PublicKey(cfg.tokenMint);
 
+    console.log("🔍 Fetching all token holders on-chain…");
+    const accounts = await conn.getProgramAccounts(
+      new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+      {
+        filters: [
+          { dataSize: 165 },
+          { memcmp: { offset: 0, bytes: mintPub.toBase58() } }
+        ],
+      }
+    );
+
+    console.log(`📦 Found ${accounts.length} token accounts for ${cfg.tokenMint}`);
+
+    const holdersMap = new Map();
+
+    for (const acc of accounts) {
+      try {
+        const data = acc.account.data;
+        const info = conn._deserializeAccountInfo
+          ? conn._deserializeAccountInfo(data)
+          : null;
+
+        let owner = null;
+        let amount = 0;
+        if (info?.owner) {
+          owner = info.owner;
+          amount = Number(info.amount || 0) / Math.pow(10, info.decimals || 9);
+        } else {
+          // fallback manual decode
+          const ownerBytes = data.slice(32, 64);
+          owner = new PublicKey(ownerBytes).toBase58();
+          const amt = data.slice(64, 72);
+          amount = Number(Buffer.from(amt).readBigUInt64LE()) / 1e9;
+        }
+
+        if (!owner || amount <= 0) continue;
+        const prev = holdersMap.get(owner) || 0;
+        holdersMap.set(owner, prev + amount);
+      } catch (err) {
+        console.warn("⚠️ Error parsing token account:", err.message);
+      }
+    }
+
+    const holders = [];
+    for (const [wallet, amount] of holdersMap.entries()) {
+      holders.push({
+        wallet,
+        amount,
+        updated: new Date().toISOString(),
+      });
+    }
+
+    holders.sort((a, b) => b.amount - a.amount);
+    console.log(`✅ Parsed ${holders.length} unique holders`);
+    return holders;
+  } catch (err) {
+    console.error("❌ fetchAllOnchainHolders:", err.message);
+    return [];
+  }
+}
+
+// --- refreshOnchainSnapshot: save all holders into JSONBin (start/end) ---
+async function refreshOnchainSnapshot(type = "start") {
+  try {
+    console.log(`🔄 Taking ${type.toUpperCase()} snapshot of on-chain holders…`);
+    const holders = await fetchAllOnchainHolders();
+    const currentEvent = await getEventMeta();
+
+    const snapshot = {
+      eventId: currentEvent?.title || "unknown",
+      type,
+      updated: new Date().toISOString(),
+      total: holders.length,
+      holders,
+    };
+
+    const binUrl = type === "start" ? HOLDERS_START_BIN_URL : HOLDERS_END_BIN_URL;
+
+    await writeBin(binUrl, snapshot);
+    console.log(`💾 Saved ${holders.length} on-chain holders to ${type.toUpperCase()} snapshot (${snapshot.eventId})`);
+
+    // mark in event meta
+    const meta = await getEventMeta();
+    if (meta?.raw) {
+      if (type === "start") meta.raw.startSnapshotTaken = true;
+      if (type === "end") meta.raw.endSnapshotTaken = true;
+      meta.raw.updatedAt = new Date().toISOString();
+      await writeBin(EVENT_META_BIN_URL, meta.raw);
+      console.log(`📍 Event meta updated: ${type.toUpperCase()} snapshot marked as taken.`);
+    }
+  } catch (err) {
+    console.error(`❌ refreshOnchainSnapshot(${type}) failed:`, err.message);
+  }
+}
+
+// --- automatic start/end scheduler ---
+setInterval(async () => {
+  try {
+    const event = await getEventMeta();
+    if (!event?.startDate || !event?.endDate) return;
+
+    const now = Date.now();
+    const start = new Date(event.startDate).getTime();
+    const end = new Date(event.endDate).getTime();
+
+    if (!event.raw) return;
+
+    // START snapshot
+    if (!event.raw.startSnapshotTaken && now >= start && now < end) {
+      console.log("⏱ Auto-capturing START on-chain snapshot…");
+      await refreshOnchainSnapshot("start");
+    }
+
+    // END snapshot
+    if (!event.raw.endSnapshotTaken && now >= end) {
+      console.log("⏱ Auto-capturing END on-chain snapshot…");
+      await refreshOnchainSnapshot("end");
+    }
+  } catch (err) {
+    console.warn("⚠️ On-chain snapshot scheduler error:", err.message);
+  }
+}, REFRESH_INTERVAL);
 
 // ==========================================================
 // 13) TELEGRAM SAFE SEND HELPERS
