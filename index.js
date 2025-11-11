@@ -1589,18 +1589,24 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 // ==========================================================
-// 20) WALLET FLOWS — automatic username, no undefined
+// 20) WALLET FLOWS — Restored v3.3 Logic + Hybrid Fallback
 // ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
   const chatId = msg.chat.id;
-  const tgUser = msg.from || {};
 
-  // ✅ Always get username automatically (with safe fallback)
-  const username = tgUser.username
-    ? `@${tgUser.username}`
-    : tgUser.first_name
-    ? tgUser.first_name
-    : `user${tgUser.id}`;
+  // ✅ Primary source: Telegram username (as in v3.3)
+  let realUser = msg.from?.username;
+
+  // 🧩 Hybrid fallback for WebApp or missing username cases
+  if (!realUser && msg.from?.first_name)
+    realUser = msg.from.first_name.replace(/\s+/g, "_");
+  if (!realUser && msg.web_app_data?.user?.username)
+    realUser = msg.web_app_data.user.username;
+  if (!realUser)
+    return bot.sendMessage(chatId, "❌ You need a Telegram username (Settings → Username).");
+
+  // Ensure leading @
+  const username = realUser.startsWith("@") ? realUser : "@" + realUser;
 
   const holders = await getHoldersArray();
   const existing = holders.find((h) => normalizeName(h.username) === normalizeName(username));
@@ -1608,7 +1614,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
   try {
     const lower = msg.text.toLowerCase();
 
-    // --- ADD WALLET ---
+    // === ADD WALLET ===
     if (lower.includes("addwallet")) {
       if (existing) {
         await bot.sendMessage(chatId, `⚠️ You already have a wallet saved, ${username}.\nUse /changewallet instead.`, mainMenu);
@@ -1622,7 +1628,6 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
           await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /addwallet.", mainMenu);
           return;
         }
-
         holders.push({ username, wallet, verifiedAt: null });
         await saveHoldersArray(holders);
         delete _cache[HOLDER_BIN_URL];
@@ -1631,10 +1636,10 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       return;
     }
 
-    // --- CHANGE WALLET ---
+    // === CHANGE WALLET ===
     if (lower.includes("changewallet")) {
       if (!existing) {
-        await bot.sendMessage(chatId, `⚠️ You do not have any wallet saved yet, ${username}.\nUse /addwallet first.`, mainMenu);
+        await bot.sendMessage(chatId, `⚠️ No wallet saved yet, ${username}.\nUse /addwallet first.`, mainMenu);
         return;
       }
 
@@ -1649,10 +1654,10 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       return;
     }
 
-    // --- REMOVE WALLET ---
+    // === REMOVE WALLET ===
     if (lower.includes("removewallet")) {
       if (!existing) {
-        await bot.sendMessage(chatId, `⚠️ You do not have any wallet saved yet, ${username}.`, mainMenu);
+        await bot.sendMessage(chatId, `⚠️ No wallet saved yet, ${username}.`, mainMenu);
         return;
       }
 
@@ -1667,7 +1672,7 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       return;
     }
 
-    // --- VERIFY HOLDER ---
+    // === VERIFY HOLDER ===
     if (lower.includes("verifyholder")) {
       if (!existing?.wallet) {
         await bot.sendMessage(chatId, "⚠️ No wallet on file. Use /addwallet first.", mainMenu);
@@ -1675,15 +1680,20 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       }
 
       await bot.sendMessage(chatId, "🔍 Checking on-chain balance...");
-      const res = await axios.post(
-        `https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`,
-        { username, wallet: existing.wallet }
-      );
+      try {
+        const res = await axios.post(
+          `https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`,
+          { username, wallet: existing.wallet }
+        );
 
-      if (res.data.ok)
-        await bot.sendMessage(chatId, `✅ Verified successfully for ${username}!`, mainMenu);
-      else
-        await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`, mainMenu);
+        if (res.data.ok)
+          await bot.sendMessage(chatId, `✅ Verified successfully for ${username}!`, mainMenu);
+        else
+          await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`, mainMenu);
+      } catch (err) {
+        console.error("verifyholder error:", err?.message || err);
+        await bot.sendMessage(chatId, "⚠️ Verification failed. Try again later.", mainMenu);
+      }
       return;
     }
   } catch (err) {
@@ -1691,6 +1701,45 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
     await bot.sendMessage(chatId, "⚠️ Something went wrong. Try again later.", mainMenu);
   }
 });
+
+// ==========================================================
+// INLINE CALLBACKS (Change / Remove Confirmations)
+// ==========================================================
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const data = query.data;
+  const realUser = query.from?.username || query.from?.first_name || "anon";
+  const username = realUser.startsWith("@") ? realUser : "@" + realUser;
+
+  try {
+    await bot.answerCallbackQuery(query.id);
+    const holders = await getHoldersArray();
+
+    switch (data) {
+      case "confirm_remove_yes":
+        await removeWallet(chatId);
+        await bot.sendMessage(chatId, `💛 Wallet removed for ${username}.`, mainMenu);
+        break;
+
+      case "confirm_change_yes":
+        await changeWallet(chatId);
+        await bot.sendMessage(chatId, `⚡ Wallet successfully changed for ${username}.`, mainMenu);
+        break;
+
+      case "confirm_change_no":
+      case "confirm_remove_no":
+        await bot.sendMessage(chatId, "❌ Action cancelled.", mainMenu);
+        break;
+
+      default:
+        break;
+    }
+  } catch (err) {
+    console.error("❌ callback_query handler error:", err);
+    try { await bot.answerCallbackQuery(query.id, { text: "⚠️ Something went wrong." }); } catch {}
+  }
+});
+
 
 // ==========================================================
 // INLINE CALLBACKS (reuse existing confirmation logic)
