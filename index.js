@@ -1589,29 +1589,32 @@ bot.onText(/\/setholdingreq(@[A-Za-z0-9_]+)?$/i, async (msg) => {
 });
 
 // ==========================================================
-// 20) WALLET FLOWS — fixed username handling
+// 20) WALLET FLOWS — automatic username, no undefined
 // ==========================================================
 bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (msg) => {
   const chatId = msg.chat.id;
-  let realUser = msg.from?.username;
+  const tgUser = msg.from || {};
 
-  // 🧠 fallback if username not set
-  if (!realUser) {
-    realUser = msg.from?.first_name || `user${msg.from?.id}`;
-    console.warn(`⚠️ User has no Telegram username. Using fallback ID: ${realUser}`);
-  }
+  // ✅ Always get username automatically (with safe fallback)
+  const username = tgUser.username
+    ? `@${tgUser.username}`
+    : tgUser.first_name
+    ? tgUser.first_name
+    : `user${tgUser.id}`;
 
   const holders = await getHoldersArray();
-  const existing = holders.find((h) => normalizeName(h.username) === normalizeName(realUser));
+  const existing = holders.find((h) => normalizeName(h.username) === normalizeName(username));
 
   try {
     const lower = msg.text.toLowerCase();
 
+    // --- ADD WALLET ---
     if (lower.includes("addwallet")) {
       if (existing) {
-        await bot.sendMessage(chatId, `⚠️ You already have a wallet saved, @${realUser}.\nUse /changewallet instead.`, mainMenu);
+        await bot.sendMessage(chatId, `⚠️ You already have a wallet saved, ${username}.\nUse /changewallet instead.`, mainMenu);
         return;
       }
+
       await bot.sendMessage(chatId, "🪙 Add wallet – please paste your Solana wallet address:");
       bot.once("message", async (m2) => {
         const wallet = (m2.text || "").trim();
@@ -1619,19 +1622,22 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
           await bot.sendMessage(chatId, "❌ Invalid wallet address. Try again with /addwallet.", mainMenu);
           return;
         }
-        holders.push({ username: "@" + realUser, wallet, verifiedAt: null });
+
+        holders.push({ username, wallet, verifiedAt: null });
         await saveHoldersArray(holders);
         delete _cache[HOLDER_BIN_URL];
-        await bot.sendMessage(chatId, `✅ Wallet added for @${realUser}! Use /verifyholder to confirm holdings.`, mainMenu);
+        await bot.sendMessage(chatId, `✅ Wallet added for ${username}! Use /verifyholder to confirm holdings.`, mainMenu);
       });
       return;
     }
 
+    // --- CHANGE WALLET ---
     if (lower.includes("changewallet")) {
       if (!existing) {
-        await bot.sendMessage(chatId, `⚠️ You do not have any wallet saved yet, @${realUser}.\nUse /addwallet first.`, mainMenu);
+        await bot.sendMessage(chatId, `⚠️ You do not have any wallet saved yet, ${username}.\nUse /addwallet first.`, mainMenu);
         return;
       }
+
       await bot.sendMessage(chatId, "Do you really want to change your wallet?", {
         reply_markup: {
           inline_keyboard: [
@@ -1643,11 +1649,13 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       return;
     }
 
+    // --- REMOVE WALLET ---
     if (lower.includes("removewallet")) {
       if (!existing) {
-        await bot.sendMessage(chatId, `⚠️ You do not have any wallet saved yet, @${realUser}.`, mainMenu);
+        await bot.sendMessage(chatId, `⚠️ You do not have any wallet saved yet, ${username}.`, mainMenu);
         return;
       }
+
       await bot.sendMessage(chatId, "Are you sure you want to remove your wallet?", {
         reply_markup: {
           inline_keyboard: [
@@ -1659,18 +1667,21 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
       return;
     }
 
+    // --- VERIFY HOLDER ---
     if (lower.includes("verifyholder")) {
       if (!existing?.wallet) {
         await bot.sendMessage(chatId, "⚠️ No wallet on file. Use /addwallet first.", mainMenu);
         return;
       }
+
       await bot.sendMessage(chatId, "🔍 Checking on-chain balance...");
-      const res = await axios.post(`https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`, {
-        username: "@" + realUser,
-        wallet: existing.wallet,
-      });
+      const res = await axios.post(
+        `https://unstablecoin-fuddodge-backend.onrender.com/verifyHolder`,
+        { username, wallet: existing.wallet }
+      );
+
       if (res.data.ok)
-        await bot.sendMessage(chatId, `✅ Verified successfully for @${realUser}!`, mainMenu);
+        await bot.sendMessage(chatId, `✅ Verified successfully for ${username}!`, mainMenu);
       else
         await bot.sendMessage(chatId, `⚠️ Verification failed: ${res.data.message || "Not enough tokens."}`, mainMenu);
       return;
@@ -1681,31 +1692,30 @@ bot.onText(/\/addwallet|\/changewallet|\/removewallet|\/verifyholder/i, async (m
   }
 });
 
-// Inline callbacks for wallet flows and admin confirmations
+// ==========================================================
+// INLINE CALLBACKS (reuse existing confirmation logic)
+// ==========================================================
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const messageId = query.message.message_id;
   const data = query.data;
+
   try {
     await bot.answerCallbackQuery(query.id);
 
     switch (data) {
-      // handle both legacy and new keys
-      case "confirm_remove":
       case "confirm_remove_yes":
-        await removeWallet(chatId); // you may implement removeWallet if used elsewhere
+        await removeWallet(chatId);
         await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
         await sendSafeMessage(chatId, "💛 Your wallet has been removed.");
         break;
 
-      case "confirm_change":
       case "confirm_change_yes":
-        await changeWallet(chatId); // you may implement changeWallet if used elsewhere
+        await changeWallet(chatId);
         await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
         await sendSafeMessage(chatId, "⚡ Wallet successfully changed.");
         break;
 
-      case "cancel":
       case "confirm_change_no":
       case "confirm_remove_no":
         await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: messageId });
@@ -1713,7 +1723,6 @@ bot.on("callback_query", async (query) => {
         break;
 
       default:
-        // ignore
         break;
     }
   } catch (err) {
