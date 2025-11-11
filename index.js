@@ -811,45 +811,43 @@ async function sendChunked(chatId, header, lines, maxLen = 3500) {
 }
 
 // ==========================================================
-// 14) MAIN MENU (Updated for Desktop/Web compatibility)
+// 🧭 MAIN MENU BUTTONS
+// ==========================================================
+const mainMenu = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "🌕 Add Wallet" }, { text: "⚡ Verify Holder" }],
+      [{ text: "🔁 Change Wallet" }, { text: "❌ Remove Wallet" }],
+      [{ text: "🏆 Leaderboard" }, { text: "🚀 Current Event" }],
+      [{ text: "🏁 Event Leaderboard" }],
+      [{ text: "🐞 Report Bug" }],
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false,
+  },
+};
+
+// ==========================================================
+// 14.5) START + MENU COMMAND (must come *after* mainMenu is defined)
 // ==========================================================
 bot.onText(/\/start|\/menu/i, async (msg) => {
   const chatId = msg.chat.id;
-
-  const welcome = `
-💛 <b>Welcome to UnStableCoin</b>
-
-Use the buttons below to manage your wallet, verify holdings, or join the current event. ⚡
-  `;
-
-  const inlineMenu = {
-    parse_mode: "HTML",
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "🌕 Add Wallet", callback_data: "inline_addwallet" },
-          { text: "⚡ Verify Holder", callback_data: "inline_verifyholder" },
-        ],
-        [
-          { text: "🏆 Leaderboard", callback_data: "inline_top10" },
-          { text: "🚀 Current Event", callback_data: "inline_event" },
-        ],
-        [
-          { text: "🐞 Report Bug", callback_data: "inline_bugreport" },
-        ],
-      ],
-    },
-  };
-
-  await sendSafeMessage(chatId, welcome, inlineMenu);
-});
-
-bot.onText(/\/start|\/menu/i, async (msg) => {
-  const chatId = msg.chat.id;
   const welcome =
-    "💛 <b>Welcome to UnStableCoin</b>\nUse the buttons below to manage wallet, verify holdings, or join the current event.";
-  await sendSafeMessage(chatId, welcome, { ...mainMenu, parse_mode: "HTML" });
+    "💛 <b>Welcome to UnStableCoin</b>\n" +
+    "Use the buttons below to manage wallet, verify holdings, or join the current event.\n\n" +
+    "🎮 /play — Open the game\n" +
+    "🏆 /top10 — Global leaderboard\n" +
+    "🚀 /event — Current contest\n\n" +
+    "Stay unstable. 💛⚡";
+
+  try {
+    await sendSafeMessage(chatId, welcome, { ...mainMenu, parse_mode: "HTML" });
+  } catch (err) {
+    console.error("❌ /start failed:", err.message);
+  }
 });
+
+
 
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
