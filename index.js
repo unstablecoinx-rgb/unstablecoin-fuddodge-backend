@@ -2245,7 +2245,7 @@ app.get("/event", async (req, res) => {
 
     const participation = `
 Participation
-Hold at least ${cfg.minHoldAmount.toLocaleString()} $US to join and appear on event leaderboards.
+Hold at least ${cfg.minHoldAmount.toLocaleString()} UnstableCoin ($US) to join and appear on event leaderboards.
 Add your wallet from the start menu in the UnStableCoin Game Bot.
 
 Community events reward holders, builders, and creative chaos.
