@@ -42,7 +42,7 @@ const { DateTime } = require("luxon");
 const sharp = require("sharp");
 const { Connection, PublicKey, clusterApiUrl } = require("@solana/web3.js");
 const FormData = require("form-data");
-const { DateTime } = require("luxon");
+
 
 // ==========================================================
 // 1) IMPORTS & CONFIG DEFAULTS
@@ -2237,9 +2237,6 @@ app.get("/event", async (req, res) => {
         minHoldAmount: 0,
       });
     }
-
-    import { DateTime } from "luxon"; // add at top of file if not already
-
     const tz = data.timezone || "Europe/Stockholm";
     const now = DateTime.now().setZone(tz);
     const start = DateTime.fromISO(data.startDate, { zone: tz });
