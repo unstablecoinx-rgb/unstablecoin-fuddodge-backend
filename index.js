@@ -2237,10 +2237,15 @@ app.get("/event", async (req, res) => {
       });
     }
 
-    const now = new Date();
-    const start = new Date(data.startDate);
-    const end = new Date(data.endDate);
+    import { DateTime } from "luxon"; // add at top of file if not already
+
+    const tz = data.timezone || "Europe/Stockholm";
+    const now = DateTime.now().setZone(tz);
+    const start = DateTime.fromISO(data.startDate, { zone: tz });
+    const end = DateTime.fromISO(data.endDate, { zone: tz });
     const status = now < start ? "upcoming" : now > end ? "ended" : "active";
+
+    console.log(`📤 /event → ${status.toUpperCase()} (${start.toISO()} → ${end.toISO()}) [now: ${now.toISO()}]`);
     const cfg = await getConfig();
 
     const participation = `
